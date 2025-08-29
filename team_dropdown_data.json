@@ -1,0 +1,392 @@
+{
+  "teams": [
+    {
+      "code": "ARI",
+      "name": "ARI (2 key players)",
+      "key_players": 2,
+      "status": "Partial"
+    },
+    {
+      "code": "ATL",
+      "name": "ATL (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "BAL",
+      "name": "BAL (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "BUF",
+      "name": "BUF (2 key players)",
+      "key_players": 2,
+      "status": "Partial"
+    },
+    {
+      "code": "CAR",
+      "name": "CAR (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "CHI",
+      "name": "CHI (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "CIN",
+      "name": "CIN (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "CLE",
+      "name": "CLE (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "DAL",
+      "name": "DAL (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "DEN",
+      "name": "DEN (2 key players)",
+      "key_players": 2,
+      "status": "Partial"
+    },
+    {
+      "code": "DET",
+      "name": "DET (2 key players)",
+      "key_players": 2,
+      "status": "Partial"
+    },
+    {
+      "code": "GB",
+      "name": "GB (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "HOU",
+      "name": "HOU (3 key players)",
+      "key_players": 3,
+      "status": "Ready"
+    },
+    {
+      "code": "IND",
+      "name": "IND (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "JAX",
+      "name": "JAX (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "KC",
+      "name": "KC (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "LAC",
+      "name": "LAC (3 key players)",
+      "key_players": 3,
+      "status": "Ready"
+    },
+    {
+      "code": "LAR",
+      "name": "LAR (2 key players)",
+      "key_players": 2,
+      "status": "Partial"
+    },
+    {
+      "code": "LV",
+      "name": "LV (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "MIA",
+      "name": "MIA (2 key players)",
+      "key_players": 2,
+      "status": "Partial"
+    },
+    {
+      "code": "MIN",
+      "name": "MIN (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "NE",
+      "name": "NE (2 key players)",
+      "key_players": 2,
+      "status": "Partial"
+    },
+    {
+      "code": "NO",
+      "name": "NO (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "NYG",
+      "name": "NYG (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "NYJ",
+      "name": "NYJ (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "PHI",
+      "name": "PHI (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "PIT",
+      "name": "PIT (2 key players)",
+      "key_players": 2,
+      "status": "Partial"
+    },
+    {
+      "code": "SEA",
+      "name": "SEA (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "SF",
+      "name": "SF (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "TB",
+      "name": "TB (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "TEN",
+      "name": "TEN (2 key players)",
+      "key_players": 2,
+      "status": "Ready"
+    },
+    {
+      "code": "WSH",
+      "name": "WSH (2 key players)",
+      "key_players": 2,
+      "status": "Partial"
+    }
+  ],
+  "team_details": {
+    "ARI": {
+      "key_players_added": 2,
+      "active_injuries": 28,
+      "mapped_injuries": 2,
+      "mapping_rate": 7.142857142857142
+    },
+    "ATL": {
+      "key_players_added": 2,
+      "active_injuries": 5,
+      "mapped_injuries": 4,
+      "mapping_rate": 80.0
+    },
+    "BAL": {
+      "key_players_added": 2,
+      "active_injuries": 7,
+      "mapped_injuries": 5,
+      "mapping_rate": 71.42857142857143
+    },
+    "BUF": {
+      "key_players_added": 2,
+      "active_injuries": 5,
+      "mapped_injuries": 3,
+      "mapping_rate": 60.0
+    },
+    "CAR": {
+      "key_players_added": 2,
+      "active_injuries": 7,
+      "mapped_injuries": 6,
+      "mapping_rate": 85.71428571428571
+    },
+    "CHI": {
+      "key_players_added": 2,
+      "active_injuries": 7,
+      "mapped_injuries": 7,
+      "mapping_rate": 100.0
+    },
+    "CIN": {
+      "key_players_added": 2,
+      "active_injuries": 5,
+      "mapped_injuries": 5,
+      "mapping_rate": 100.0
+    },
+    "CLE": {
+      "key_players_added": 2,
+      "active_injuries": 14,
+      "mapped_injuries": 10,
+      "mapping_rate": 71.42857142857143
+    },
+    "DAL": {
+      "key_players_added": 2,
+      "active_injuries": 17,
+      "mapped_injuries": 14,
+      "mapping_rate": 82.35294117647058
+    },
+    "DEN": {
+      "key_players_added": 2,
+      "active_injuries": 4,
+      "mapped_injuries": 2,
+      "mapping_rate": 50.0
+    },
+    "DET": {
+      "key_players_added": 2,
+      "active_injuries": 11,
+      "mapped_injuries": 7,
+      "mapping_rate": 63.63636363636363
+    },
+    "GB": {
+      "key_players_added": 2,
+      "active_injuries": 10,
+      "mapped_injuries": 10,
+      "mapping_rate": 100.0
+    },
+    "HOU": {
+      "key_players_added": 3,
+      "active_injuries": 15,
+      "mapped_injuries": 12,
+      "mapping_rate": 80.0
+    },
+    "IND": {
+      "key_players_added": 2,
+      "active_injuries": 4,
+      "mapped_injuries": 4,
+      "mapping_rate": 100.0
+    },
+    "JAX": {
+      "key_players_added": 2,
+      "active_injuries": 7,
+      "mapped_injuries": 6,
+      "mapping_rate": 85.71428571428571
+    },
+    "KC": {
+      "key_players_added": 2,
+      "active_injuries": 8,
+      "mapped_injuries": 7,
+      "mapping_rate": 87.5
+    },
+    "LAC": {
+      "key_players_added": 3,
+      "active_injuries": 9,
+      "mapped_injuries": 7,
+      "mapping_rate": 77.77777777777779
+    },
+    "LAR": {
+      "key_players_added": 2,
+      "active_injuries": 2,
+      "mapped_injuries": 0,
+      "mapping_rate": 0.0
+    },
+    "LV": {
+      "key_players_added": 2,
+      "active_injuries": 5,
+      "mapped_injuries": 5,
+      "mapping_rate": 100.0
+    },
+    "MIA": {
+      "key_players_added": 2,
+      "active_injuries": 16,
+      "mapped_injuries": 10,
+      "mapping_rate": 62.5
+    },
+    "MIN": {
+      "key_players_added": 2,
+      "active_injuries": 10,
+      "mapped_injuries": 10,
+      "mapping_rate": 100.0
+    },
+    "NE": {
+      "key_players_added": 2,
+      "active_injuries": 10,
+      "mapped_injuries": 6,
+      "mapping_rate": 60.0
+    },
+    "NO": {
+      "key_players_added": 2,
+      "active_injuries": 9,
+      "mapped_injuries": 9,
+      "mapping_rate": 100.0
+    },
+    "NYG": {
+      "key_players_added": 2,
+      "active_injuries": 14,
+      "mapped_injuries": 11,
+      "mapping_rate": 78.57142857142857
+    },
+    "NYJ": {
+      "key_players_added": 2,
+      "active_injuries": 14,
+      "mapped_injuries": 14,
+      "mapping_rate": 100.0
+    },
+    "PHI": {
+      "key_players_added": 2,
+      "active_injuries": 10,
+      "mapped_injuries": 10,
+      "mapping_rate": 100.0
+    },
+    "PIT": {
+      "key_players_added": 2,
+      "active_injuries": 9,
+      "mapped_injuries": 5,
+      "mapping_rate": 55.55555555555556
+    },
+    "SEA": {
+      "key_players_added": 2,
+      "active_injuries": 7,
+      "mapped_injuries": 6,
+      "mapping_rate": 85.71428571428571
+    },
+    "SF": {
+      "key_players_added": 2,
+      "active_injuries": 10,
+      "mapped_injuries": 9,
+      "mapping_rate": 90.0
+    },
+    "TB": {
+      "key_players_added": 2,
+      "active_injuries": 11,
+      "mapped_injuries": 9,
+      "mapping_rate": 81.81818181818183
+    },
+    "TEN": {
+      "key_players_added": 2,
+      "active_injuries": 6,
+      "mapped_injuries": 6,
+      "mapping_rate": 100.0
+    },
+    "WSH": {
+      "key_players_added": 2,
+      "active_injuries": 2,
+      "mapped_injuries": 1,
+      "mapping_rate": 50.0
+    }
+  },
+  "generated_at": "2025-08-18T18:37:12.566290",
+  "total_teams": 32
+}

@@ -1,0 +1,363 @@
+date,team,player,position,acquired,relinquished,notes,source,scraped_at,injury_status,injury_comment,injury_type,is_injury,is_return,processed_at
+2025-08-09,UNK,Will Hernandez,G,,Will Hernandez,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.759795,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Devin Neal,RB,,Devin Neal,Status: Aug 17 - Questionable,ESPN_WEB,2025-08-09T19:18:24.814785,Aug 17,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Juwan Johnson,TE,,Juwan Johnson,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.814785,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Chris Olave,WR,,Chris Olave,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.814785,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Rico Payton,CB,,Rico Payton,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.814785,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Brock Lampe,FB,,Brock Lampe,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.810784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Christian Gonzalez,CB,,Christian Gonzalez,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.810784,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Yasir Durant,OT,,Yasir Durant,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.810784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jaquelin Roy,DT,,Jaquelin Roy,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.810784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Nick Saldiveri,OT,,Nick Saldiveri,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.814785,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Marcellas Dial Jr.,CB,,Marcellas Dial Jr.,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.810784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Stefon Diggs,WR,,Stefon Diggs,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.810784,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Ja'Lynn Polk,WR,,Ja'Lynn Polk,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.810784,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Lan Larison,RB,,Lan Larison,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.810784,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,C.J. Ham,FB,,C.J. Ham,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.807784,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Mekhi Blackmon,CB,,Mekhi Blackmon,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.807784,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Gavin Bartholomew,TE,,Gavin Bartholomew,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.807784,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Alex Williams,DE,,Alex Williams,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.807784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Christian Darrisaw,OT,,Christian Darrisaw,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.806785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kendrick Bourne,WR,,Kendrick Bourne,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.810784,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,J.T. Gray,S,,J.T. Gray,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.814785,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Foster Moreau,TE,,Foster Moreau,Status: Aug 10 - Out,ESPN_WEB,2025-08-09T19:18:24.814785,Aug 10,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Taysom Hill,TE,,Taysom Hill,Status: Aug 10 - Out,ESPN_WEB,2025-08-09T19:18:24.814785,Aug 10,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Will McDonald IV,DE,,Will McDonald IV,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.822785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Byron Cowart,DT,,Byron Cowart,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.822785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Eric Gray,RB,,Eric Gray,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.818786,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Andrew Thomas,OT,,Andrew Thomas,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.818786,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Dexter Lawrence II,DT,,Dexter Lawrence II,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.818786,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Bryce Ford-Wheaton,WR,,Bryce Ford-Wheaton,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.818786,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,D.J. Davidson,DT,,D.J. Davidson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.818786,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Victor Dimukeje,LB,,Victor Dimukeje,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.818786,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Cor'Dale Flott,CB,,Cor'Dale Flott,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.818786,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Thomas Fidone II,TE,,Thomas Fidone II,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.818786,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Cam Skattebo,RB,,Cam Skattebo,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.818786,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Rushawn Baker,RB,,Rushawn Baker,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.818786,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Malik Nabers,WR,,Malik Nabers,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.818786,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Darius Slayton,WR,,Darius Slayton,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.818786,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jalin Hyatt,WR,,Jalin Hyatt,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.818786,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Anthony Johnson Jr.,S,,Anthony Johnson Jr.,Status: Oct 5 - Out,ESPN_WEB,2025-08-09T19:18:24.818786,Oct 5,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Pete Werner,LB,,Pete Werner,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.814785,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jaylan Ford,LB,,Jaylan Ford,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.814785,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,D'Marco Jackson,LB,,D'Marco Jackson,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.814785,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,T.J. Hockenson,TE,,T.J. Hockenson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.806785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Azareye'h Thomas,CB,,Azareye'h Thomas,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.822785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Justin Jefferson,WR,,Justin Jefferson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.806785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jason Maitre,CB,,Jason Maitre,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.803784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jared Verse,LB,,Jared Verse,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.799796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Cam Hart,CB,,Cam Hart,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.796796,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Del'Shawn Phillips,LB,,Del'Shawn Phillips,Status: Aug 10 - Out,ESPN_WEB,2025-08-09T19:18:24.796796,Aug 10,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jalen Reagor,WR,,Jalen Reagor,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.796796,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Otito Ogbonnia,DT,,Otito Ogbonnia,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.796796,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Mekhi Becton,OT,,Mekhi Becton,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.796796,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Josh Fuga,DT,,Josh Fuga,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.796796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Ladd McConkey,WR,,Ladd McConkey,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.796796,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kobie Turner,DE,,Kobie Turner,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.799796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Najee Harris,RB,,Najee Harris,Status: Aug 10 - Out,ESPN_WEB,2025-08-09T19:18:24.796796,Aug 10,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Rashawn Slater,OT,,Rashawn Slater,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.796796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Lonnie Johnson Jr.,CB,,Lonnie Johnson Jr.,Status: Aug 7 - Doubtful,ESPN_WEB,2025-08-09T19:18:24.793796,Aug 7,Doubtful,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Leki Fotu,DT,,Leki Fotu,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.793796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,BJ Thompson,DE,,BJ Thompson,Status: Feb 9 - Out,ESPN_WEB,2025-08-09T19:18:24.790796,Feb 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Keaontay Ingram,RB,,Keaontay Ingram,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.790796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jake Briningstool,TE,,Jake Briningstool,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.790796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Drue Tranquill,LB,,Drue Tranquill,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.790796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jared Wiley,TE,,Jared Wiley,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.790796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jordan Petaia,TE,,Jordan Petaia,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.796796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Matthew Stafford,QB,,Matthew Stafford,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.799796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Nate Landman,LB,,Nate Landman,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.799796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Terrance Ferguson,TE,,Terrance Ferguson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.799796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Liam Eichenberg,OT,,Liam Eichenberg,Status: Aug 10 - Out,ESPN_WEB,2025-08-09T19:18:24.803784,Aug 10,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Artie Burns,CB,,Artie Burns,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.803784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Aaron Brewer,G,,Aaron Brewer,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.803784,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Ashtyn Davis,S,,Ashtyn Davis,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.803784,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Obinna Eze,OT,,Obinna Eze,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.803784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Bayron Matos,OT,,Bayron Matos,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.803784,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kader Kohou,CB,,Kader Kohou,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.803784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Dee Eskridge,WR,,Dee Eskridge,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.803784,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jaelan Phillips,LB,,Jaelan Phillips,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.803784,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Alec Ingold,FB,,Alec Ingold,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.803784,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Austin Jackson,G,,Austin Jackson,Status: Sep 7 - Questionable,ESPN_WEB,2025-08-09T19:18:24.803784,Sep 7,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jalin Conyers,TE,,Jalin Conyers,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.803784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Darren Waller,TE,,Darren Waller,Status: Aug 10 - Out,ESPN_WEB,2025-08-09T19:18:24.803784,Aug 10,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Tyreek Hill,WR,,Tyreek Hill,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.802784,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Nick Hampton,LB,,Nick Hampton,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.799796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Tru Edwards,WR,,Tru Edwards,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.799796,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Alaric Jackson,OT,,Alaric Jackson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.799796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kam Curl,S,,Kam Curl,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.799796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Emmanuel Forbes Jr.,CB,,Emmanuel Forbes Jr.,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.799796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Rondale Moore,WR,,Rondale Moore,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.806785,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Mason Taylor,TE,,Mason Taylor,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.822785,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Tyrod Taylor,QB,,Tyrod Taylor,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.822785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Xavier Gipson,WR,,Xavier Gipson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.822785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Tristan Wirfs,OT,,Tristan Wirfs,Status: Oct 5 - Out,ESPN_WEB,2025-08-09T19:18:24.847784,Oct 5,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Benjamin Morrison,CB,,Benjamin Morrison,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.847784,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Marcus Banks,S,,Marcus Banks,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.847784,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Rylie Mills,DT,,Rylie Mills,Status: Aug 7 - Out,ESPN_WEB,2025-08-09T19:18:24.843788,Aug 7,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Johnathan Hankins,DT,,Johnathan Hankins,Status: Aug 7 - Out,ESPN_WEB,2025-08-09T19:18:24.842784,Aug 7,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Uchenna Nwosu,LB,,Uchenna Nwosu,Status: Sep 7 - Out,ESPN_WEB,2025-08-09T19:18:24.842784,Sep 7,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kenny McIntosh,RB,,Kenny McIntosh,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.842784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Charles Cross,OT,,Charles Cross,Status: Sep 7 - Questionable,ESPN_WEB,2025-08-09T19:18:24.842784,Sep 7,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Chris Godwin,WR,,Chris Godwin,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.847784,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,AJ Finley,S,,AJ Finley,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.842784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Tyrice Knight,LB,,Tyrice Knight,Status: Aug 15 - Questionable,ESPN_WEB,2025-08-09T19:18:24.842784,Aug 15,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Josh Ross,LB,,Josh Ross,Status: Aug 15 - Questionable,ESPN_WEB,2025-08-09T19:18:24.842784,Aug 15,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Steven Sims,WR,,Steven Sims,Status: Aug 15 - Questionable,ESPN_WEB,2025-08-09T19:18:24.842784,Aug 15,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Tre Tomlinson,CB,,Tre Tomlinson,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.838786,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Trent Taylor,WR,,Trent Taylor,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.838786,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kurtis Rourke,QB,,Kurtis Rourke,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.838786,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Malik Mustapha,S,,Malik Mustapha,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.838786,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Andre Dillard,OT,,Andre Dillard,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.838786,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Olu Oluwatimi,C,,Olu Oluwatimi,Status: Aug 15 - Questionable,ESPN_WEB,2025-08-09T19:18:24.842784,Aug 15,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Sua Opeta,G,,Sua Opeta,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.847784,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Cade Otton,TE,,Cade Otton,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.847784,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,David Walker,LB,,David Walker,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.847784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Sam Cosmi,G,,Sam Cosmi,Status: Sep 7 - Out,ESPN_WEB,2025-08-09T19:18:24.858785,Sep 7,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Brandon Coleman,OT,,Brandon Coleman,Status: Aug 8 - Questionable,ESPN_WEB,2025-08-09T19:18:24.858785,Aug 8,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Marcus Mariota,QB,,Marcus Mariota,Status: Aug 18 - Questionable,ESPN_WEB,2025-08-09T19:18:24.858785,Aug 18,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Luke McCaffrey,WR,,Luke McCaffrey,Status: Aug 18 - Questionable,ESPN_WEB,2025-08-09T19:18:24.858785,Aug 18,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jaelyn Duncan,OT,,Jaelyn Duncan,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.853785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Andrew Rupcich,OT,,Andrew Rupcich,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.852784,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kevin Zeitler,G,,Kevin Zeitler,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.852784,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,L'Jarius Sneed,CB,,L'Jarius Sneed,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.852784,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Lloyd Cushenberry III,C,,Lloyd Cushenberry III,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.852784,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Will Levis,QB,,Will Levis,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.852784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Treylon Burks,WR,,Treylon Burks,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.852784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,T'Vondre Sweat,DT,,T'Vondre Sweat,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.852784,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Blake Hance,G,,Blake Hance,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.852784,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Chandler Brewer,OT,,Chandler Brewer,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.852784,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Desmond Watson,DT,,Desmond Watson,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.848784,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Michael Pratt,QB,,Michael Pratt,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.847784,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Anthony Walker Jr.,LB,,Anthony Walker Jr.,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.847784,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Trey Palmer,WR,,Trey Palmer,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.847784,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kameron Johnson,WR,,Kameron Johnson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.847784,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Yetur Gross-Matos,DE,,Yetur Gross-Matos,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.838786,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Renardo Green,CB,,Renardo Green,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.837785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jacob Cowing,WR,,Jacob Cowing,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.837785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Tarron Jackson,DE,,Tarron Jackson,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.837785,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jalen Carter,DT,,Jalen Carter,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.828786,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Nolan Smith Jr.,LB,,Nolan Smith Jr.,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.828786,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,A.J. Brown,WR,,A.J. Brown,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.828786,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Landon Dickerson,G,,Landon Dickerson,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.827785,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Elijah Cooks,WR,,Elijah Cooks,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.827785,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Zack Baun,LB,,Zack Baun,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.827785,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Terrace Marshall Jr.,WR,,Terrace Marshall Jr.,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.827785,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Montrell Johnson Jr.,RB,,Montrell Johnson Jr.,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.827785,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Byron Young,DT,,Byron Young,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.827785,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Cameron Latu,TE,,Cameron Latu,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.827785,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kenyon Green,G,,Kenyon Green,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.827785,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Charley Hughlett,LS,,Charley Hughlett,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.827785,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jermaine Johnson,LB,,Jermaine Johnson,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.823785,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Irvin Charles,WR,,Irvin Charles,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.823785,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Quinnen Williams,DT,,Quinnen Williams,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.823785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Gus Hartwig,C,,Gus Hartwig,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.823785,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Malachi Moore,S,,Malachi Moore,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.823785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,John Simpson,G,,John Simpson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.823785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kris Boyd,CB,,Kris Boyd,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.822785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Nakobe Dean,LB,,Nakobe Dean,Status: Aug 16 - Out,ESPN_WEB,2025-08-09T19:18:24.828786,Aug 16,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Deon Bush,S,,Deon Bush,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.790796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Calvin Austin III,WR,,Calvin Austin III,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.832786,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Alex Highsmith,LB,,Alex Highsmith,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.832786,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Deommodore Lenoir,CB,,Deommodore Lenoir,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.837785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Isaac Guerendo,RB,,Isaac Guerendo,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.837785,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jauan Jennings,WR,,Jauan Jennings,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.837785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kevin Givens,DT,,Kevin Givens,Status: Sep 7 - Questionable,ESPN_WEB,2025-08-09T19:18:24.837785,Sep 7,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kyle Juszczyk,FB,,Kyle Juszczyk,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.837785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Ji'Ayir Brown,S,,Ji'Ayir Brown,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.837785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Sam Okuayinonu,DT,,Sam Okuayinonu,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.837785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Evan Anderson,DT,,Evan Anderson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.837785,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Brandon Aiyuk,WR,,Brandon Aiyuk,Status: Sep 7 - Out,ESPN_WEB,2025-08-09T19:18:24.837785,Sep 7,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jordan James,RB,,Jordan James,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.837785,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Mykel Williams,DE,,Mykel Williams,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.837785,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Equanimeous St. Brown,WR,,Equanimeous St. Brown,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.837785,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Donald Parham Jr.,TE,,Donald Parham Jr.,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.832786,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Broderick Jones,OT,,Broderick Jones,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.832786,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Cory Trice Jr.,CB,,Cory Trice Jr.,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.832786,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jacob Slade,DT,,Jacob Slade,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.832786,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Dean Lowry,DT,,Dean Lowry,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.832786,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Calvin Anderson,OT,,Calvin Anderson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.832786,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Joey Porter Jr.,CB,,Joey Porter Jr.,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.832786,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Will Howard,QB,,Will Howard,Status: Aug 21 - Questionable,ESPN_WEB,2025-08-09T19:18:24.832786,Aug 21,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Eric Scott Jr.,CB,,Eric Scott Jr.,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.790796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Rashee Rice,WR,,Rashee Rice,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.790796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Hollywood Brown,WR,,Hollywood Brown,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.790796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Mike Gesicki,TE,,Mike Gesicki,Status: Aug 18 - Questionable,ESPN_WEB,2025-08-09T19:18:24.767795,Aug 18,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Dax Hill,CB,,Dax Hill,Status: Aug 18 - Questionable,ESPN_WEB,2025-08-09T19:18:24.767795,Aug 18,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Geno Stone,S,,Geno Stone,Status: Aug 23 - Questionable,ESPN_WEB,2025-08-09T19:18:24.767795,Aug 23,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Andrew Billings,DT,,Andrew Billings,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.765795,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jaylon Johnson,CB,,Jaylon Johnson,Status: Aug 10 - Out,ESPN_WEB,2025-08-09T19:18:24.765795,Aug 10,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Shemar Turner,DT,,Shemar Turner,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.765795,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Ricky Stromberg,C,,Ricky Stromberg,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.765795,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Deion Hankins,RB,,Deion Hankins,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.765795,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Cedric Johnson,DE,,Cedric Johnson,Status: Aug 18 - Questionable,ESPN_WEB,2025-08-09T19:18:24.767795,Aug 18,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Miles Boykin,WR,,Miles Boykin,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.765795,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Roschon Johnson,RB,,Roschon Johnson,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.765795,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Doug Kramer Jr.,C,,Doug Kramer Jr.,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.765795,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jordan Murray,TE,,Jordan Murray,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.765795,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kyler Gordon,CB,,Kyler Gordon,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.765795,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jonathon Brooks,RB,,Jonathon Brooks,Status: Feb 9 - Out,ESPN_WEB,2025-08-09T19:18:24.764795,Feb 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Popo Aumavae,DT,,Popo Aumavae,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.764795,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Derrick Brown,DE,,Derrick Brown,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.764795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Chandler Zavala,G,,Chandler Zavala,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.764795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kiran Amegadjie,OT,,Kiran Amegadjie,Status: Aug 10 - Questionable,ESPN_WEB,2025-08-09T19:18:24.765795,Aug 10,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Marco Wilson,CB,,Marco Wilson,Status: Aug 18 - Questionable,ESPN_WEB,2025-08-09T19:18:24.767795,Aug 18,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Erick All Jr.,TE,,Erick All Jr.,Status: Feb 9 - Out,ESPN_WEB,2025-08-09T19:18:24.767795,Feb 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,B.J. Hill,DT,,B.J. Hill,Status: Aug 18 - Questionable,ESPN_WEB,2025-08-09T19:18:24.767795,Aug 18,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Mazi Smith,DT,,Mazi Smith,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.771795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jaydon Blue,RB,,Jaydon Blue,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.771795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Dakoda Shepley,OT,,Dakoda Shepley,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.771795,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Micah Parsons,DE,,Micah Parsons,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.771795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Rob Jones,G,,Rob Jones,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.771795,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jake Ferguson,TE,,Jake Ferguson,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.770795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jeremiah Owusu-Koramoah,LB,,Jeremiah Owusu-Koramoah,Status: Feb 9 - Out,ESPN_WEB,2025-08-09T19:18:24.769795,Feb 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Justin Osborne,C,,Justin Osborne,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.769795,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Deshaun Watson,QB,,Deshaun Watson,Status: Aug 16 - Out,ESPN_WEB,2025-08-09T19:18:24.769795,Aug 16,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Mike Hall Jr.,DT,,Mike Hall Jr.,Status: Aug 16 - Out,ESPN_WEB,2025-08-09T19:18:24.769795,Aug 16,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,David Bell,WR,,David Bell,Status: Aug 16 - Out,ESPN_WEB,2025-08-09T19:18:24.769795,Aug 16,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Martin Emerson Jr.,CB,,Martin Emerson Jr.,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.769795,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Greg Newsome II,CB,,Greg Newsome II,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.769795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kenny Pickett,QB,,Kenny Pickett,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.769795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Dillon Gabriel,QB,,Dillon Gabriel,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.769795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Anthony Kendall,CB,,Anthony Kendall,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.769795,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Luke Floriea,WR,,Luke Floriea,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.768795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Gage Larvadain,WR,,Gage Larvadain,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.768795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,LaMareon James,CB,,LaMareon James,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.768795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Tommy Tremble,TE,,Tommy Tremble,Status: Aug 16 - Out,ESPN_WEB,2025-08-09T19:18:24.764795,Aug 16,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jaycee Horn,CB,,Jaycee Horn,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.764795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Claudin Cherelus,LB,,Claudin Cherelus,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.764795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Hunter Renfrow,WR,,Hunter Renfrow,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.764795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Marcus Major Jr.,RB,,Marcus Major Jr.,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.761795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kyle Hamilton,S,,Kyle Hamilton,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.761795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Bilhal Kone,CB,,Bilhal Kone,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.761795,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,T.J. Tampa,CB,,T.J. Tampa,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.761795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,William Kwenkeu,LB,,William Kwenkeu,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.761795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Robert Longerbeam,CB,,Robert Longerbeam,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.760796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Troy Andersen,LB,,Troy Andersen,Status: Aug 15 - Out,ESPN_WEB,2025-08-09T19:18:24.760796,Aug 15,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Malik Verdon,S,,Malik Verdon,Status: Aug 15 - Out,ESPN_WEB,2025-08-09T19:18:24.760796,Aug 15,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Darnell Mooney,WR,,Darnell Mooney,Status: Aug 22 - Questionable,ESPN_WEB,2025-08-09T19:18:24.760796,Aug 22,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Blake Gillikin,P,,Blake Gillikin,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.759795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Sean Murphy-Bunting,CB,,Sean Murphy-Bunting,Status: Feb 9 - Out,ESPN_WEB,2025-08-09T19:18:24.759795,Feb 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Walter Nolen III,DT,,Walter Nolen III,Status: Aug 23 - Out,ESPN_WEB,2025-08-09T19:18:24.759795,Aug 23,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Bilal Nichols,DT,,Bilal Nichols,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.759795,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,J.J. Russell,LB,,J.J. Russell,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.759795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Starling Thomas V,CB,,Starling Thomas V,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.759795,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Quez Watkins,WR,,Quez Watkins,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.759795,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,BJ Ojulari,LB,,BJ Ojulari,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.759795,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Joey Blount,S,,Joey Blount,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.759795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Valentin Senn,OT,,Valentin Senn,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.759795,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Keaton Mitchell,RB,,Keaton Mitchell,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.761795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Tyler Guyton,OT,,Tyler Guyton,Status: Aug 22 - Questionable,ESPN_WEB,2025-08-09T19:18:24.771795,Aug 22,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Rasheen Ali,RB,,Rasheen Ali,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.761795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Ar'Darius Washington,S,,Ar'Darius Washington,Status: Dec 7 - Out,ESPN_WEB,2025-08-09T19:18:24.761795,Dec 7,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Damien Lewis,G,,Damien Lewis,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.764795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Sedrick Van Pran-Granger,C,,Sedrick Van Pran-Granger,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.763796,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Terrel Bernard,LB,,Terrel Bernard,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kaden Prather,WR,,Kaden Prather,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Curtis Samuel,WR,,Curtis Samuel,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Maxwell Hairston,CB,,Maxwell Hairston,Status: Aug 17 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 17,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Alec Anderson,OT,,Alec Anderson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Shaq Thompson,LB,,Shaq Thompson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Reggie Gilliam,FB,,Reggie Gilliam,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Dane Jackson,CB,,Dane Jackson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Deone Walker,DT,,Deone Walker,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Cole Bishop,S,,Cole Bishop,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Khalil Shakir,WR,,Khalil Shakir,Status: Aug 23 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 23,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Tylan Grable,OT,,Tylan Grable,Status: Aug 17 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 17,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Taylor Rapp,S,,Taylor Rapp,Status: Aug 17 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 17,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Baylon Spector,LB,,Baylon Spector,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.762795,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Tyler Bass,PK,,Tyler Bass,Status: Aug 17 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 17,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Daequan Hardy,CB,,Daequan Hardy,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.762795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Emery Jones Jr.,OT,,Emery Jones Jr.,Status: Aug 16 - Out,ESPN_WEB,2025-08-09T19:18:24.761795,Aug 16,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Isaiah Likely,TE,,Isaiah Likely,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.761795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Tyree Jackson,TE,,Tyree Jackson,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.858785,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Brevyn Spann-Ford,TE,,Brevyn Spann-Ford,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.771795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Justin Barron,LB,,Justin Barron,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.771795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Denico Autry,DE,,Denico Autry,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.781795,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Folorunso Fatukasi,DT,,Folorunso Fatukasi,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.781795,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Tank Dell,WR,,Tank Dell,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.781795,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Christian Harris,LB,,Christian Harris,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.781795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Derek Barnett,DE,,Derek Barnett,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.781795,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kurt Hinish,DT,,Kurt Hinish,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.781795,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Trent Brown,OT,,Trent Brown,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.781795,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Alijah Huzzie,CB,,Alijah Huzzie,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.781795,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,LaDarius Henderson,G,,LaDarius Henderson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.781795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Joe Mixon,RB,,Joe Mixon,Status: Sep 7 - Out,ESPN_WEB,2025-08-09T19:18:24.781795,Sep 7,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jaylen Reed,S,,Jaylen Reed,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.781795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Johnny Johnson III,WR,,Johnny Johnson III,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.781795,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jimmie Ward,S,,Jimmie Ward,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.781795,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Nick Chubb,RB,,Nick Chubb,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.781795,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,C.J. Gardner-Johnson,S,,C.J. Gardner-Johnson,Status: Sep 7 - Questionable,ESPN_WEB,2025-08-09T19:18:24.781795,Sep 7,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Aaron Banks,G,,Aaron Banks,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.779795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Rasheed Walker,OT,,Rasheed Walker,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.778796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kamal Hadden,CB,,Kamal Hadden,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.778796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kyonte Hamilton,DT,,Kyonte Hamilton,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.781795,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Justin Walley,CB,,Justin Walley,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.784796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Salvon Ahmed,RB,,Salvon Ahmed,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.784796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Charvarius Ward,CB,,Charvarius Ward,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.784796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Brashard Smith,RB,,Brashard Smith,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.790796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kristian Fulton,CB,,Kristian Fulton,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.790796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Cooper Hodges,OT,,Cooper Hodges,Status: Feb 9 - Out,ESPN_WEB,2025-08-09T19:18:24.787796,Feb 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Maason Smith,DT,,Maason Smith,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.787796,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Montaric Brown,CB,,Montaric Brown,Status: Sep 7 - Questionable,ESPN_WEB,2025-08-09T19:18:24.787796,Sep 7,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Caleb Ransaw,CB,,Caleb Ransaw,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.787796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Cole Van Lanen,OT,,Cole Van Lanen,Status: Sep 7 - Questionable,ESPN_WEB,2025-08-09T19:18:24.787796,Sep 7,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jalen McLeod,LB,,Jalen McLeod,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.787796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Arik Armstead,DE,,Arik Armstead,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.787796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Johnny Mundt,TE,,Johnny Mundt,Status: Aug 17 - Questionable,ESPN_WEB,2025-08-09T19:18:24.787796,Aug 17,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Levi Wallace,CB,,Levi Wallace,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.787796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jaylon Carlies,LB,,Jaylon Carlies,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.784796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jack Wilson,OT,,Jack Wilson,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.784796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jaylon Jones,CB,,Jaylon Jones,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.784796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,JuJu Brents,CB,,JuJu Brents,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.784796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Samson Ebukam,DE,,Samson Ebukam,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.784796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,DeForest Buckner,DT,,DeForest Buckner,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.784796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Zaire Franklin,LB,,Zaire Franklin,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.784796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Segun Olubi,LB,,Segun Olubi,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.784796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Arron Mosby,DE,,Arron Mosby,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.778796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Emanuel Wilson,RB,,Emanuel Wilson,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.778796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Christian Watson,WR,,Christian Watson,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.778796,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Nate Hobbs,CB,,Nate Hobbs,Status: Sep 7 - Questionable,ESPN_WEB,2025-08-09T19:18:24.778796,Sep 7,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Dominic Lovett,WR,,Dominic Lovett,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.775796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Ennis Rakestraw Jr.,CB,,Ennis Rakestraw Jr.,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.775796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Morice Norris,S,,Morice Norris,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.775796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Sione Vaki,RB,,Sione Vaki,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.775796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Frank Crum,OT,,Frank Crum,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.773796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,A.T. Perry,WR,,A.T. Perry,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.773796,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Johnny Walker Jr.,LB,,Johnny Walker Jr.,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.773796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Dre Greenlaw,LB,,Dre Greenlaw,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.773796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Michael Burton,FB,,Michael Burton,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.773796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Drew Sanders,LB,,Drew Sanders,Status: Sep 7 - Questionable,ESPN_WEB,2025-08-09T19:18:24.773796,Sep 7,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Matt Henningsen,DE,,Matt Henningsen,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.773796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Josh Butler,CB,,Josh Butler,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.771795,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,DeMarvion Overshown,LB,,DeMarvion Overshown,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.771795,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Trevon Diggs,CB,,Trevon Diggs,Status: Aug 22 - Out,ESPN_WEB,2025-08-09T19:18:24.771795,Aug 22,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Caelen Carson,CB,,Caelen Carson,Status: Sep 4 - Questionable,ESPN_WEB,2025-08-09T19:18:24.771795,Sep 4,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Hakeem Adeniji,OT,,Hakeem Adeniji,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.771795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Miles Sanders,RB,,Miles Sanders,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.771795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Shavon Revel Jr.,CB,,Shavon Revel Jr.,Status: Sep 4 - Out,ESPN_WEB,2025-08-09T19:18:24.771795,Sep 4,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Tyler Smith,G,,Tyler Smith,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.771795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Kye Robichaux,RB,,Kye Robichaux,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.775796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Juanyeh Thomas,S,,Juanyeh Thomas,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.771795,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jamarco Jones,OT,,Jamarco Jones,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.775796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Pat O'Connor,DE,,Pat O'Connor,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.775796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Quay Walker,LB,,Quay Walker,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.778796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Sam Brown Jr.,WR,,Sam Brown Jr.,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.778796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Travis Glover,OT,,Travis Glover,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.778796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Xavier McKinney,S,,Xavier McKinney,Status: Aug 23 - Questionable,ESPN_WEB,2025-08-09T19:18:24.778796,Aug 23,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,MarShawn Lloyd,RB,,MarShawn Lloyd,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.778796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Dontayvion Wicks,WR,,Dontayvion Wicks,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.778796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Elgton Jenkins,G,,Elgton Jenkins,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.778796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Collin Oliver,DE,,Collin Oliver,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.778796,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,John Williams,G,,John Williams,Status: Aug 9 - Out,ESPN_WEB,2025-08-09T19:18:24.778796,Aug 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Jayden Reed,WR,,Jayden Reed,Status: Aug 9 - Questionable,ESPN_WEB,2025-08-09T19:18:24.778796,Aug 9,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Josh Paschal,DE,,Josh Paschal,Status: Aug 16 - Out,ESPN_WEB,2025-08-09T19:18:24.776795,Aug 16,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Khalil Dorsey,CB,,Khalil Dorsey,Status: Aug 16 - Out,ESPN_WEB,2025-08-09T19:18:24.776795,Aug 16,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Miles Frazier,G,,Miles Frazier,Status: Aug 16 - Out,ESPN_WEB,2025-08-09T19:18:24.776795,Aug 16,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Malcolm Rodriguez,LB,,Malcolm Rodriguez,Status: Aug 16 - Out,ESPN_WEB,2025-08-09T19:18:24.776795,Aug 16,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Mekhi Wingo,DT,,Mekhi Wingo,Status: Aug 16 - Out,ESPN_WEB,2025-08-09T19:18:24.776795,Aug 16,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Levi Onwuzurike,DE,,Levi Onwuzurike,Status: Feb 9 - Out,ESPN_WEB,2025-08-09T19:18:24.776795,Feb 9,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Alim McNeill,DT,,Alim McNeill,Status: Dec 4 - Out,ESPN_WEB,2025-08-09T19:18:24.775796,Dec 4,Out,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Terrion Arnold,CB,,Terrion Arnold,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.775796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Dan Skipper,OT,,Dan Skipper,Status: Aug 16 - Questionable,ESPN_WEB,2025-08-09T19:18:24.775796,Aug 16,Questionable,status_update,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Dan Jackson,S,,Dan Jackson,Status: Feb 9 - Injured Reserve,ESPN_WEB,2025-08-09T19:18:24.775796,Feb 9,Injured Reserve,other,True,False,2025-08-09T19:18:24.870784
+2025-08-09,UNK,Terry McLaurin,WR,,Terry McLaurin,Status: Aug 8 - Out,ESPN_WEB,2025-08-09T19:18:24.858785,Aug 8,Out,status_update,True,False,2025-08-09T19:18:24.870784

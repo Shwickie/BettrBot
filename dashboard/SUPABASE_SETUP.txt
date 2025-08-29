@@ -1,0 +1,74 @@
+
+SUPABASE SETUP - STEP BY STEP
+================================
+
+1. Create Account
+   - Go to https://supabase.com
+   - Sign up with GitHub or email
+   - Create new project (choose free tier)
+   - Wait for project to be ready
+
+2. Create Tables
+   - Go to "SQL Editor" in your Supabase dashboard
+   - Copy and paste this SQL:
+
+CREATE TABLE games (
+    game_id TEXT PRIMARY KEY,
+    home_team TEXT,
+    away_team TEXT,
+    game_date TEXT,
+    season INTEGER,
+    week INTEGER,
+    home_score INTEGER,
+    away_score INTEGER
+);
+
+CREATE TABLE odds (
+    id SERIAL PRIMARY KEY,
+    game_id TEXT,
+    sportsbook TEXT,
+    home_odds REAL,
+    away_odds REAL,
+    home_spread REAL,
+    away_spread REAL,
+    over_under REAL,
+    timestamp TEXT
+);
+
+CREATE TABLE team_season_summary (
+    id SERIAL PRIMARY KEY,
+    team TEXT,
+    season INTEGER,
+    wins INTEGER,
+    losses INTEGER,
+    power_score REAL,
+    point_diff REAL
+);
+
+3. Import Data
+   - Go to "Table editor"
+   - Click on "games" table
+   - Click "Insert" > "Import data from CSV"
+   - Upload games.csv from cloud_export folder
+   - Repeat for odds and team_season_summary tables
+
+4. Get Connection String
+   - Go to Settings > Database
+   - Copy the connection string
+   - Looks like: postgresql://postgres:password@db.xxx.supabase.co:5432/postgres
+
+5. Update Your Code
+   - Replace this line in your dashboard files:
+   
+   OLD: DB_PATH = "sqlite:///E:/Bettr Bot/betting-bot/data/betting.db"
+   NEW: DB_PATH = "your_supabase_connection_string_here"
+
+6. Test
+   - Run your dashboard
+   - Should work from anywhere now!
+
+Benefits:
+- Works when your PC is off
+- Access from anywhere in the world
+- Fast and reliable
+- Free tier includes 500MB database

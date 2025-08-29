@@ -1,0 +1,415 @@
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+from sqlalchemy import create_engine
+import time
+import random
+import json
+from datetime import datetime
+from urllib.parse import urljoin
+
+# --------------------------
+# CONFIG
+# --------------------------
+DB_PATH = "sqlite:///E:/Bettr Bot/betting-bot/data/betting.db"
+engine = create_engine(DB_PATH)
+CSV_BACKUP = "injury_data_backup.csv"
+
+def load_cookies_from_file(cookie_file):
+    """Load cookies from JSON file for prosportstransactions.com"""
+    try:
+        with open(cookie_file, 'r') as f:
+            cookie_data = json.load(f)
+        
+        cookies = {}
+        for cookie in cookie_data:
+            cookies[cookie['name']] = cookie['value']
+        return cookies
+    except Exception as e:
+        print(f"⚠️ Could not load cookies: {e}")
+        return {}
+
+def scrape_prosports_with_cookies():
+    """Try to scrape prosportstransactions.com with cookies"""
+    print("🏈 Attempting to scrape prosportstransactions.com with saved cookies...")
+    
+    # Load cookies from your file
+    cookies = load_cookies_from_file("injury_cookies.json")
+    if not cookies:
+        print("❌ No cookies loaded, skipping prosportstransactions.com")
+        return []
+    
+    session = requests.Session()
+    session.cookies.update(cookies)
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'Connection': 'keep-alive',
+        'Referer': 'https://www.prosportstransactions.com/',
+    })
+    
+    # Build search URL for recent NFL injuries
+    search_url = "https://www.prosportstransactions.com/football/Search/SearchResults.php"
+    params = {
+        'Player': '',
+        'Team': '',
+        'BeginDate': '2024-08-01',
+        'EndDate': '2025-08-31',
+        'ILChkBx': 'yes',
+        'InjuriesChkBx': 'yes',
+        'submit': 'Search'
+    }
+    
+    all_data = []
+    
+    try:
+        # Try just the first page to test
+        response = session.get(search_url, params=params, timeout=15)
+        
+        if response.status_code == 403:
+            print("❌ Still getting 403 Forbidden - cookies may be expired")
+            return []
+        
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Find the data table
+        table = soup.find('table', {'border': '1'})
+        if not table:
+            print("❌ No injury table found")
+            return []
+        
+        # Get all rows except header
+        rows = table.find_all('tr')[1:]
+        
+        for row in rows:
+            cols = row.find_all('td')
+            if len(cols) < 4:
+                continue
+            
+            date = cols[0].get_text(strip=True)
+            team = cols[1].get_text(strip=True)
+            acquired = cols[2].get_text(strip=True)
+            relinquished = cols[3].get_text(strip=True)
+            notes = cols[4].get_text(strip=True) if len(cols) > 4 else ""
+            
+            # Determine player name
+            player = acquired if acquired else relinquished
+            if not player:
+                continue
+            
+            all_data.append({
+                "date": date,
+                "team": team,
+                "player": player,
+                "acquired": acquired,
+                "relinquished": relinquished,
+                "notes": notes,
+                "source": "prosportstransactions",
+                "scraped_at": datetime.now().isoformat()
+            })
+        
+        print(f"✅ Scraped {len(all_data)} records from prosportstransactions.com")
+        
+    except Exception as e:
+        print(f"❌ Prosports scraping failed: {e}")
+        return []
+    
+    return all_data
+
+def get_espn_injury_data():
+    """Get real injury data from ESPN"""
+    print("\n🔄 Fetching injury data from ESPN...")
+    
+    # ESPN injury report URLs for all teams
+    espn_teams = [
+        'ari', 'atl', 'bal', 'buf', 'car', 'chi', 'cin', 'cle', 'dal', 'den',
+        'det', 'gb', 'hou', 'ind', 'jax', 'kc', 'lv', 'lac', 'lar', 'mia',
+        'min', 'ne', 'no', 'nyg', 'nyj', 'phi', 'pit', 'sf', 'sea', 'tb',
+        'ten', 'wsh'
+    ]
+    
+    all_injuries = []
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    })
+    
+    for team_code in espn_teams:
+        try:
+            # ESPN team depth chart/injury URL
+            url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{team_code}/depthchart"
+            
+            response = session.get(url, timeout=10)
+            if response.status_code != 200:
+                continue
+            
+            data = response.json()
+            
+            # Parse injury data from depth chart
+            if 'athletes' in data:
+                for athlete in data['athletes']:
+                    if 'items' in athlete:
+                        for item in athlete['items']:
+                            if 'athlete' in item:
+                                player_data = item['athlete']
+                                player_name = player_data.get('displayName', 'Unknown')
+                                
+                                # Check for injury status
+                                if 'status' in player_data:
+                                    status = player_data['status']
+                                    if status.get('type') and status['type'].get('name') in ['Injured', 'Questionable', 'Doubtful', 'Out']:
+                                        injury_status = status['type']['name']
+                                        injury_detail = status.get('detail', '')
+                                        
+                                        all_injuries.append({
+                                            "date": datetime.now().strftime('%Y-%m-%d'),
+                                            "team": team_code.upper(),
+                                            "player": player_name,
+                                            "acquired": "",
+                                            "relinquished": player_name,
+                                            "notes": f"Status: {injury_status} - {injury_detail}",
+                                            "source": "ESPN_API",
+                                            "scraped_at": datetime.now().isoformat(),
+                                            "injury_status": injury_status,
+                                            "injury_detail": injury_detail
+                                        })
+            
+            time.sleep(0.5)  # Rate limiting
+            
+        except Exception as e:
+            print(f"⚠️ Failed to get {team_code} injuries: {e}")
+            continue
+    
+    print(f"✅ ESPN: Found {len(all_injuries)} current injury records")
+    return all_injuries
+
+def scrape_espn_injury_page():
+    """Scrape the main ESPN NFL injuries page"""
+    print("\n🔄 Scraping ESPN injury report page...")
+    
+    try:
+        url = "https://www.espn.com/nfl/injuries"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Find injury tables
+        injuries = []
+        
+        # Look for tables with injury data
+        tables = soup.find_all('table', class_='Table')
+        
+        for table in tables:
+            # Try to find team name
+            team_header = table.find_previous('h3') or table.find_previous('h2')
+            team_name = "UNK"
+            if team_header:
+                team_text = team_header.get_text(strip=True)
+                # Extract team abbreviation if possible
+                team_name = team_text.split()[-1] if team_text else "UNK"
+            
+            # Process table rows
+            rows = table.find_all('tr')[1:]  # Skip header
+            
+            for row in rows:
+                cols = row.find_all(['td', 'th'])
+                if len(cols) >= 4:
+                    player_name = cols[0].get_text(strip=True)
+                    position = cols[1].get_text(strip=True)
+                    status = cols[2].get_text(strip=True)
+                    comment = cols[3].get_text(strip=True)
+                    
+                    if player_name and status:
+                        injuries.append({
+                            "date": datetime.now().strftime('%Y-%m-%d'),
+                            "team": team_name,
+                            "player": player_name,
+                            "position": position,
+                            "acquired": "",
+                            "relinquished": player_name,
+                            "notes": f"Status: {status} - {comment}",
+                            "source": "ESPN_WEB",
+                            "scraped_at": datetime.now().isoformat(),
+                            "injury_status": status,
+                            "injury_comment": comment
+                        })
+        
+        print(f"✅ ESPN Web: Found {len(injuries)} injury records")
+        return injuries
+        
+    except Exception as e:
+        print(f"❌ ESPN web scraping failed: {e}")
+        return []
+
+def process_and_store_data(raw_data):
+    """Process and store all injury data"""
+    if not raw_data:
+        print("❌ No data to process")
+        return False
+    
+    print(f"\n📊 Processing {len(raw_data)} injury records...")
+    
+    # Create DataFrame
+    df = pd.DataFrame(raw_data)
+    
+    # Clean and process dates
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    original_count = len(df)
+    df = df.dropna(subset=["date"])  # Remove invalid dates
+    if len(df) < original_count:
+        print(f"   ⚠️ Removed {original_count - len(df)} records with invalid dates")
+    
+    # Clean player names
+    df["player"] = df["player"].astype(str).str.strip()
+    df = df[df["player"] != ""]
+    
+    # Remove exact duplicates
+    df = df.drop_duplicates()
+    
+    # Sort by date
+    df = df.sort_values("date").reset_index(drop=True)
+    
+    # Add injury analysis
+    df["injury_type"] = df["notes"].apply(classify_injury_type)
+    df["is_injury"] = df["notes"].str.contains(
+        "injury|injured|hurt|sprain|strain|tear|break|fracture|reserve|ir|pup|questionable|doubtful|out", 
+        case=False, na=False
+    )
+    df["is_return"] = df["notes"].str.contains(
+        "activated|return|practice|cleared", 
+        case=False, na=False
+    )
+    
+    # Add processing metadata
+    df["processed_at"] = datetime.now().isoformat()
+    
+    # Save main CSV backup
+    csv_file = CSV_BACKUP
+    df.to_csv(csv_file, index=False)
+    print(f"✅ Saved complete dataset to {csv_file}")
+    
+    # Save to database
+    try:
+        with engine.begin() as conn:
+            df.to_sql("nfl_injuries", conn, index=False, if_exists="replace")
+        
+        print(f"✅ Saved {len(df)} injury records to database")
+        print(f"📅 Date range: {df['date'].min().date()} to {df['date'].max().date()}")
+        print(f"🏥 Injury-related records: {df['is_injury'].sum()}")
+        print(f"🏥 Return-related records: {df['is_return'].sum()}")
+        print(f"👥 Unique players: {df['player'].nunique()}")
+        print(f"🏟️ Teams represented: {df['team'].nunique()}")
+        
+        # Show injury type breakdown
+        if df['is_injury'].sum() > 0:
+            print(f"\n📋 Injury Type Breakdown:")
+            injury_counts = df[df['is_injury'] == True]['injury_type'].value_counts()
+            for injury_type, count in injury_counts.head(10).items():
+                print(f"   {injury_type}: {count}")
+        
+        # Show source breakdown
+        print(f"\n📋 Source Breakdown:")
+        source_counts = df['source'].value_counts()
+        for source, count in source_counts.items():
+            print(f"   {source}: {count}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Database storage failed: {e}")
+        print(f"💾 Data is still saved in {csv_file}")
+        return False
+
+def classify_injury_type(notes):
+    """Classify injury type from transaction notes"""
+    if pd.isna(notes):
+        return "unknown"
+    
+    notes_lower = str(notes).lower()
+    
+    # Specific injury classifications
+    if any(word in notes_lower for word in ["concussion", "head", "brain"]):
+        return "head/concussion"
+    elif any(word in notes_lower for word in ["knee", "acl", "mcl", "meniscus"]):
+        return "knee"
+    elif any(word in notes_lower for word in ["ankle", "foot"]):
+        return "ankle/foot"
+    elif any(word in notes_lower for word in ["shoulder", "arm", "elbow", "wrist", "hand"]):
+        return "upper_body"
+    elif any(word in notes_lower for word in ["back", "spine", "neck"]):
+        return "back/neck"
+    elif any(word in notes_lower for word in ["hamstring", "quad", "groin", "hip", "thigh"]):
+        return "leg/hip"
+    elif any(word in notes_lower for word in ["chest", "rib", "abdomen"]):
+        return "torso"
+    elif any(word in notes_lower for word in ["covid", "illness", "personal"]):
+        return "non_injury"
+    elif any(word in notes_lower for word in ["questionable", "doubtful", "out"]):
+        return "status_update"
+    else:
+        return "other"
+
+def main():
+    print("🏈 NFL Injury Data Scraper - FIXED VERSION")
+    print("="*60)
+    print("This will try multiple sources for NFL injury data")
+    print("="*60)
+    
+    all_injury_data = []
+    
+    try:
+        # Step 1: Try prosportstransactions with cookies
+        print("\n🚀 PHASE 1: Trying prosportstransactions.com...")
+        historical_data = scrape_prosports_with_cookies()
+        if historical_data:
+            all_injury_data.extend(historical_data)
+        
+        # Step 2: Get ESPN API data
+        print("\n🚀 PHASE 2: Getting ESPN API data...")
+        espn_api_data = get_espn_injury_data()
+        if espn_api_data:
+            all_injury_data.extend(espn_api_data)
+        
+        # Step 3: Scrape ESPN web page
+        print("\n🚀 PHASE 3: Scraping ESPN injury page...")
+        espn_web_data = scrape_espn_injury_page()
+        if espn_web_data:
+            all_injury_data.extend(espn_web_data)
+        
+        print(f"\n📊 TOTAL DATA: {len(all_injury_data)} records")
+        
+        if not all_injury_data:
+            print("❌ No data collected from any source")
+            return
+        
+        # Step 4: Process and store
+        print("\n🚀 PHASE 4: Processing and storing data...")
+        success = process_and_store_data(all_injury_data)
+        
+        if success:
+            print("\n🎯 SUCCESS! Injury database updated.")
+            print(f"💾 Data saved to: {CSV_BACKUP}")
+            print(f"🗄️ Database table: nfl_injuries")
+        else:
+            print("\n⚠️ Processing had issues, but CSV backup was created.")
+        
+    except KeyboardInterrupt:
+        print("\n⏹️ Scraping interrupted by user")
+        print("💾 Any collected data should be in backup files")
+    except Exception as e:
+        print(f"\n💥 Critical error: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    print("\n🏁 Scraper finished")
+
+if __name__ == "__main__":
+    main()

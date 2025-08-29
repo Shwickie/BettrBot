@@ -1,0 +1,80 @@
+{
+  "admin": {
+    "password": "scrypt:32768:8:1$7c9K2qRLFjQb0agI$339f3ecad0588a8442c2bc2724b99077cdbd5d0c099ac417ac91d65c7ea9e2aee69bcc327e8b9e4e2d6c70e807f4e27cae167eb178c28df4cdc625009d26a3fc",
+    "name": "Admin",
+    "bankroll": 4995.1,
+    "deposits": 5000.0,
+    "withdrawals": 0.0,
+    "bet_profit_loss": 0.0,
+    "bet_history": [],
+    "transactions": [],
+    "money_transactions": [],
+    "betting_profit_loss": 0.0,
+    "is_admin": true,
+    "total_deposits": 5021.0,
+    "total_withdrawals": 1.0
+  },
+  "ktm": {
+    "password": "scrypt:32768:8:1$EWlQ8ggFXvlnJTDS$869c23640e7672f54fe38996052b2b8aa4945852d987dc0fffa908100cf6ed7c62e297dadf5502067f9d91ac0533f162db4cb606ed3d764ecff8316e232b4880",
+    "name": "Ryan",
+    "bankroll": 0.0,
+    "total_deposits": 0.0,
+    "total_withdrawals": 0.0,
+    "betting_profit_loss": 0.0,
+    "bet_history": [],
+    "money_transactions": [],
+    "is_admin": false
+  },
+  "reggie": {
+    "password": "scrypt:32768:8:1$lbOAHbLghjuR0A2Y$4489479bfda98740c7fb54bc28768284e23a3e4cf732f1a650e1cd061c081d580b7db6312fe95dc171be581f4888fd298545bb6a4e839784fe68b610d4388e58",
+    "name": "Jordan",
+    "bankroll": 0.0,
+    "total_deposits": 0.0,
+    "total_withdrawals": 0.0,
+    "betting_profit_loss": 0.0,
+    "bet_history": [],
+    "money_transactions": [],
+    "is_admin": false
+  },
+  "cam": {
+    "password": "scrypt:32768:8:1$QXQ4HtA3zBF6ZKZ1$709256dcf4e83813214af8933d56fd9f38e5d0564cd44de8947aeb36b4fe7b621e68e2773e15d2748a83c13f2ed41f728f1aab6b97af031be517a196c09ebe51",
+    "name": "Camryn",
+    "bankroll": 0.0,
+    "total_deposits": 0.0,
+    "total_withdrawals": 0.0,
+    "betting_profit_loss": 0.0,
+    "bet_history": [],
+    "money_transactions": [],
+    "is_admin": false
+  },
+  "bailford": {
+    "password": "scrypt:32768:8:1$Vem8kDpJhGuquFsD$ce33848dfc62764b75a239cad0d4e8f28e0aa98235b37825367c59159d9aea5c60b754b398ed1b9df6e2b9bef84f47e8206d676cec5f2d13c43d5b6caac4788f",
+    "name": "Bailie",
+    "bankroll": 1.0,
+    "total_deposits": 1.0,
+    "total_withdrawals": 0.0,
+    "betting_profit_loss": 0.0,
+    "bet_history": [],
+    "money_transactions": [],
+    "is_admin": false
+  },
+  "tyler": {
+    "password": "scrypt:32768:8:1$TYGgYnkEXPt2wJIT$5841059f1b9426feb7b6bb00d145c93cb2a688fceac12ce1e765c662cec9654389fed6071104c4ca1dc9f35a6f3ba9112f86f44b5669cf135509fcbc08ffab97",
+    "name": "Sarah",
+    "bankroll": 100.0,
+    "total_deposits": 100.0,
+    "total_withdrawals": 0.0,
+    "betting_profit_loss": 0.0,
+    "bet_history": [],
+    "money_transactions": [
+      {
+        "date": "2025-08-28 22:04",
+        "type": "deposit",
+        "amount": 100.0,
+        "description": "test",
+        "balance_after": 100.0
+      }
+    ],
+    "is_admin": false
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "admin": {
+    "password": "scrypt:32768:8:1$A1AfKarpWCPbxH6f$0452b24a36a10e0ce3f5d5bb63fc993533773e76146b955f5039644c97f038a32cec82d991dd319cb2c83d75b00c1e622ce73d6689e05c152b07dc96051f962e",
+    "name": "Admin",
+    "initial_bankroll": 5000.0,
+    "current_bankroll": 5000.0,
+    "total_deposits": 5000.0,
+    "total_withdrawals": 0.0,
+    "betting_profit_loss": 0.0,
+    "bet_history": []
+  },
+  "john": {
+    "password": "scrypt:32768:8:1$4GURcltDJZRuzI0T$9102f93915a9054673f581a09101f8fe8e48e59fa240634894506eceab3e35202181be59ac17644b626f969356f819ec1221206188af23b8729b5e12c7a2a24f",
+    "name": "John",
+    "initial_bankroll": 1000.0,
+    "current_bankroll": 1000.0,
+    "total_deposits": 1000.0,
+    "total_withdrawals": 0.0,
+    "betting_profit_loss": 0.0,
+    "bet_history": []
+  },
+  "sarah": {
+    "password": "scrypt:32768:8:1$NOWJgKvUEzWSgamw$19351af4f68aa2de726afd854c7030472540f787cee46d2b7f65abfabd2377272f08f3d4064d48db84dc26f0d81f2f25000cc71f66b0e02d9d304e86d4ec5031",
+    "name": "Sarah",
+    "initial_bankroll": 2000.0,
+    "current_bankroll": 2000.0,
+    "total_deposits": 2000.0,
+    "total_withdrawals": 0.0,
+    "betting_profit_loss": 0.0,
+    "bet_history": []
+  }
+}
