@@ -1,0 +1,53 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.build/
+build/
+dist/
+
+# --- Virtualenvs ---
+venv/
+venv_311/
+.venv/
+
+# --- IDE/OS junk ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Databases & local state ---
+*.sqlite*
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# Root-level locals
+user_accounts.json
+user_data.json
+betting.db
+
+# data folder (keep code, ignore db/runtime stuff)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/venv/
+
+# dashboard
+dashboard/bettr.db
+dashboard/__pycache__/
+
+# secrets / cookies / large artifacts
+tools/cookies.json
+stats/injury_cookies.json
+stats/injury_data_backup.csv
+tools/chromedriver-win64/
+tools/chromedriver-win64.zip
+
+# misc
+Chat gpt pics/

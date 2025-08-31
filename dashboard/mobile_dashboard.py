@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 Bettr Bot Dashboard (updated)
@@ -19,6 +18,118 @@ from datetime import datetime, timedelta, date
 import sqlite3, os, json, threading, time
 import numpy as np
 import math
+from templates import LOGIN_TEMPLATE, HTML_TEMPLATE, AI_CHAT_TEMPLATE
+import sys
+import os
+from flask import Blueprint
+try:
+    from dashboard.ai_chat_stub import ai_bp
+except Exception:
+    import os, sys
+    sys.path.append(os.path.dirname(__file__))
+    from ai_chat_stub import ai_bp
+
+# -----------------
+# Auth decorators
+# -----------------
+
+def login_required(f):
+    @wraps(f)
+    def inner(*args, **kwargs):
+        if 'username' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return inner
+
+def admin_required(f):
+    @wraps(f)
+    def inner(*args, **kwargs):
+        if 'username' not in session:
+            return redirect(url_for('login'))
+        if not USERS.get(session['username'], {}).get('is_admin', False):
+            return jsonify({'error': 'Admin access required'}), 403
+        return f(*args, **kwargs)
+    return inner
+
+# ====== Trained Model loader (cached) ======
+import pickle
+
+MODEL_PKL = os.environ.get(
+    "BETTR_MODEL_PKL",
+    os.path.join(os.path.dirname(__file__), "betting_model.pkl")
+)
+_model_pack = None
+
+def load_model_pack():
+    """Load and cache packed model: {'model','scaler','feature_cols',...}"""
+    global _model_pack
+    if _model_pack is not None:
+        return _model_pack
+    if not os.path.exists(MODEL_PKL):
+        _model_pack = None
+        return None
+    try:
+        with open(MODEL_PKL, "rb") as f:
+            _model_pack = pickle.load(f)
+        return _model_pack
+    except Exception:
+        _model_pack = None
+        return None
+
+def build_features_for_games(conn, games_df: pd.DataFrame) -> pd.DataFrame:
+    """Build the same feature columns the trainer used, for each game (home-team perspective)."""
+    if games_df is None or games_df.empty:
+        return pd.DataFrame()
+
+    ts = pd.read_sql_query("""
+        SELECT season, team,
+               power_score AS power,
+               win_pct,
+               avg_points_for  AS off,
+               avg_points_against AS def
+        FROM team_season_summary
+    """, conn)
+
+    tmp = games_df.rename(columns={'home': 'home_team', 'away': 'away_team'}).copy()
+    tmp["season"] = pd.to_datetime(tmp["game_date"]).dt.year
+
+    home = ts.rename(columns={
+        "team": "home_team", "power": "home_power",
+        "off": "home_offense", "def": "home_defense",
+        "win_pct": "home_win_pct"
+    })
+    tmp = tmp.merge(home, on=["season", "home_team"], how="left")
+
+    away = ts.rename(columns={
+        "team": "away_team", "power": "away_power",
+        "off": "away_offense", "def": "away_defense",
+        "win_pct": "away_win_pct"
+    })
+    tmp = tmp.merge(away, on=["season", "away_team"], how="left")
+
+    # engineered features used by trainer
+    tmp["power_diff"]   = tmp["home_power"]   - tmp["away_power"]
+    tmp["win_pct_diff"] = tmp["home_win_pct"] - tmp["away_win_pct"]
+    tmp["offense_diff"] = tmp["home_offense"] - tmp["away_offense"]
+    tmp["defense_diff"] = tmp["home_defense"] - tmp["away_defense"]
+    tmp["form_diff"]    = 0.0
+    tmp["home_field_advantage"] = 3.0
+
+    dt = pd.to_datetime(tmp["game_date"])
+    tmp["month"] = dt.dt.month
+    tmp["day_of_week"] = dt.dt.weekday
+
+    # placeholders for schema stability
+    tmp["home_injury_impact"] = 0.0
+    tmp["away_injury_impact"] = 0.0
+    tmp["home_qb_injury"] = 0.0
+    tmp["away_qb_injury"] = 0.0
+    tmp["home_recent_form"] = 0.0
+    tmp["away_recent_form"] = 0.0
+    tmp["h2h_games"] = 0.0
+    tmp["home_h2h_win_rate"] = 0.5
+    return tmp
+
 
 
 # =========================
@@ -32,6 +143,8 @@ _engine = create_engine(f"sqlite:///{DB_PATH}")
 
 # Flask app
 app = Flask(__name__)
+# register AI blueprint at /api/ai-*
+app.register_blueprint(ai_bp, url_prefix="/api")
 app.secret_key = 'bettr-bot-enhanced-2025'
 # --- ADD: one-time indexes + WAL ---
 def ensure_indexes():
@@ -54,6 +167,11 @@ USER_DATA_FILE = os.environ.get(
     os.path.join(BASE_DIR, "..", "user_accounts.json")  # lives in project root
 )
 app.secret_key = os.environ.get("FLASK_SECRET", "bettr-bot-enhanced-2025")
+
+@app.route('/ai')
+@login_required
+def ai_page():
+    return render_template_string(AI_CHAT_TEMPLATE)
 
 @app.before_request
 def _init_once():
@@ -164,7 +282,7 @@ def get_unified_power_scores(conn):
     except Exception:
         base = pd.DataFrame(columns=['team','power_score','games_played','win_pct'])
 
-    # 2) Injury view (keep it light so we don’t drive everything negative)
+    # 2) Injury view (keep it light so we donâ€™t drive everything negative)
     # In get_unified_power_scores()
     try:
         inj = load_injury_impact_from_detail(conn)
@@ -177,13 +295,13 @@ def get_unified_power_scores(conn):
     df['injury_impact'] = df['injury_impact'].fillna(0.0)
     df['qb_risk'] = df['qb_risk'].fillna(0)
 
-    # 3) Small “form” component so 0–0 teams don’t all look identical
+    # 3) Small â€œformâ€ component so 0â€“0 teams donâ€™t all look identical
     df['form_component'] = df.apply(
         lambda r: (r['win_pct'] - 0.5) * 20 if pd.notnull(r['win_pct']) and pd.notnull(r['games_played']) and r['games_played'] > 0 else 0.0,
         axis=1
     )
 
-    # 4) Final adjusted power (keep roughly your historical 0–12 feel)
+    # 4) Final adjusted power (keep roughly your historical 0â€“12 feel)
     # In get_unified_power_scores()
     df['adj_power'] = (
         # Let the base power score have its full impact
@@ -416,28 +534,6 @@ def load_user_accounts():
 USERS = load_user_accounts()
 
 # -----------------
-# Auth decorators
-# -----------------
-
-def login_required(f):
-    @wraps(f)
-    def inner(*args, **kwargs):
-        if 'username' not in session:
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return inner
-
-def admin_required(f):
-    @wraps(f)
-    def inner(*args, **kwargs):
-        if 'username' not in session:
-            return redirect(url_for('login'))
-        if not USERS.get(session['username'], {}).get('is_admin', False):
-            return jsonify({'error': 'Admin access required'}), 403
-        return f(*args, **kwargs)
-    return inner
-
-# -----------------
 # Templates
 # -----------------
 from templates import LOGIN_TEMPLATE, HTML_TEMPLATE
@@ -499,7 +595,7 @@ def dashboard():
         merged_df = rankings_df.merge(injuries_df, on='team', how='left')
         merged_df['injury_impact'] = merged_df['injury_impact'].fillna(0.0)
         merged_df['form_component'] = np.where(merged_df['games_played'] > 0, (merged_df['win_pct'] - 0.5) * 20, 0)
-        # lighter injury weight so numbers don’t go negative
+        # lighter injury weight so numbers donâ€™t go negative
         merged_df['adjusted_power'] = (merged_df['power_score'] * 0.6 +
                                        merged_df['form_component'] * 0.2 -
                                        merged_df['injury_impact'] * 0.10)
@@ -820,6 +916,25 @@ def api_betting_analysis():
                AND x.ts = o.timestamp
         """, conn, params=game_ids)
         odds['ao'] = odds['odds'].apply(normalize_american_odds)
+            # === MODEL PROBS (prefer trained model; fallback to power-based) ===
+        engine = request.args.get('engine', 'hybrid')  # 'model' | 'calc' | 'hybrid' (default)
+        pack = load_model_pack()
+        home_probs = {}  # game_id (str) -> P(home wins)
+
+        if pack and engine in ('hybrid', 'model') and not games.empty:
+            feature_cols = pack.get('feature_cols', [])
+            mdl = pack['model']
+            scaler = pack['scaler']
+
+            # Build inference features to match training exactly
+            feat = build_features_for_games(conn, games[['game_id', 'home', 'away', 'game_date']].copy())
+
+            if not feat.empty and feature_cols:
+                X = feat.reindex(columns=feature_cols).fillna(0.0)
+                Xs = scaler.transform(X)  # keep as DataFrame to avoid sklearn warnings
+                ph = mdl.predict_proba(Xs)[:, 1]  # P(home)
+                home_probs = {str(gid): float(p) for gid, p in zip(feat['game_id'].tolist(), ph.tolist())}
+
     except Exception:
         odds = pd.DataFrame(columns=['game_id','team','sportsbook','odds','timestamp','ao'])
 
@@ -862,7 +977,14 @@ def api_betting_analysis():
         o_game['ao'] = o_game['odds'].apply(normalize_american_odds)
 
         for team in (home, away):
-            prob = model_prob(away, home, team)
+            if home_probs:
+                ph_home = home_probs.get(str(gid))
+                if ph_home is not None:
+                    prob = ph_home if to_full(team) == to_full(home) else (1.0 - ph_home)
+                else:
+                    prob = model_prob(away, home, team)
+            else:
+                prob = model_prob(away, home, team)
             team_odds = o_game[o_game['team'] == team]
             ml, book = best_line(team_odds)
             if ml is None:

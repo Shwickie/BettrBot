@@ -56,6 +56,28 @@ LOGIN_TEMPLATE = """
         @media (max-width: 480px) {
             .login-container { padding: 20px; margin: 10px; }
         }
+        .ai-message, .user-message, .ai-loading-message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .ai-message {
+            background: rgba(44, 134, 255, 0.1);
+            border-left: 3px solid #2c86ff;
+        }
+
+        .user-message {
+            background: rgba(255, 255, 255, 0.05);
+            border-left: 3px solid #86f093;
+            text-align: right;
+        }
+
+        .ai-loading-message {
+            background: rgba(255, 193, 7, 0.1);
+            border-left: 3px solid #ffc107;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -82,6 +104,249 @@ LOGIN_TEMPLATE = """
 </body>
 </html>
 """
+
+AI_CHAT_TEMPLATE = r"""
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Bettr Bot • AI Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#0e2339; --panel:#122b45; --panel2:#0f2841; --text:#e6f0ff;
+      --muted:#9db3d1; --accent:#00d4ff; --green:#15d07e; --chip:#183b5e;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Arial,sans-serif}
+    .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(180deg,#0f2a44,#0b2034)}
+    .brand{font-weight:800;letter-spacing:.3px}
+    .back a{color:var(--muted);text-decoration:none;border:1px solid #2b4664;padding:6px 10px;border-radius:10px}
+    .wrap{display:grid;grid-template-columns:320px 1fr;gap:16px;padding:16px}
+    .left{background:var(--panel);border-radius:16px;padding:14px}
+    .right{background:var(--panel);border-radius:16px;display:flex;flex-direction:column;min-height:70vh;overflow:hidden}
+    h2,h3{margin:0 0 10px 0}
+    .game-select{background:var(--panel2);border:1px solid #254664;border-radius:12px;padding:10px;height:52vh;overflow:auto}
+    .game{padding:8px;border-radius:10px;cursor:pointer}
+    .game:hover{background:#123455}
+    .game.active{background:#124c72;border:1px solid #256b92}
+    .muted{color:var(--muted);font-size:12px}
+    .chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0}
+    .chip{background:var(--chip);border:1px solid #2e5378;padding:6px 10px;border-radius:999px;cursor:pointer;font-size:12px}
+    .chip:hover{filter:brightness(1.1)}
+    .thread{flex:1;padding:16px;overflow:auto;background:linear-gradient(180deg,#102a45,#0e243a)}
+    .msg{max-width:820px;margin:10px auto;padding:12px 14px;border-radius:14px;line-height:1.45}
+    .me{background:#103a5f;border:1px solid #2b5b83}
+    .bot{background:#0f334f;border:1px solid #274f72}
+    .pick{padding:8px;border-radius:10px;cursor:pointer;background:#0f2841;border:1px solid #254664;margin-bottom:8px}
+    .pick:hover{background:#123455}
+    .pct{color:var(--green);font-weight:700}
+    .footer{display:flex;gap:8px;padding:12px;border-top:1px solid #1d3f5f;background:var(--panel2)}
+    input[type=text]{flex:1;background:#0e2a45;border:1px solid #2c4f73;border-radius:12px;padding:12px;color:var(--text)}
+    button{background:linear-gradient(180deg,#0db1d6,#089bbd);border:0;color:#05202c;padding:10px 14px;border-radius:12px;font-weight:700;cursor:pointer}
+    .pct{color:var(--green);font-weight:700}
+    @media (max-width:900px){.wrap{grid-template-columns:1fr}.left{order:2}.right{order:1}}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">🤖– Bettr Bot • AI Chat</div>
+    <div class="back"><a href="/"> ← Back to Dashboard</a></div>
+  </div>
+  <h3>Model Picks</h3>
+  <div class="muted">Click a pick to analyze it immediately.</div>
+  <div id="picks" class="game-select" style="height:28vh;margin-bottom:10px;"></div>
+
+  <h3 style="margin-top:6px;">Select a game</h3>
+  <div class="muted">Click a matchup, then use quick actions.</div>
+  <div class="wrap">
+    <aside class="left">
+      <h3>Select a game</h3>
+      <div class="muted">Click a matchup, then use quick actions or ask anything.</div>
+      <div id="games" class="game-select"></div>
+      <div class="chips">
+        <div class="chip" onclick="quick('analyze')">Analyze game</div>
+        <div class="chip" onclick="quick('value5')">Find value bets ≥5%</div>
+        <div class="chip" onclick="quick('explain')">Explain the pick</div>
+      </div>
+    </aside>
+
+    <main class="right">
+      <div id="thread" class="thread"></div>
+      <div class="footer">
+        <input id="msg" type="text" placeholder="Ask about a game, value bets, bankroll, etc." />
+        <button id="send">Send</button>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    let SELECTED = null;
+
+    function row(g){
+        const t = `${g.game}`;
+        return `<div class="game ${SELECTED && SELECTED.game_id===g.game_id ? 'active':''}"
+                    data-id="${g.game_id}"
+                    onclick='pick(${JSON.stringify(g)})'>
+                    <div>${t}</div>
+                    <div class="muted">${g.date} • ${g.time || ''}</div>
+                </div>`;
+    }
+
+
+
+    async function loadGames(){
+      const r = await fetch('/api/games');
+      const data = await r.json();
+      window.__GAMES = data.slice();
+      const box = document.getElementById('games');
+      box.innerHTML = data.map(row).join('') || '<div class="muted">No games found.</div>';
+
+      // Preselect via ?game_id=...
+      const url = new URL(location.href);
+      const gid = new URLSearchParams(window.location.search).get('game_id');
+      if (gid && !SELECTED) {  // <-- guard so it runs only once
+        const found = (data||[]).find(g => String(g.game_id) === String(gid));
+        if (found) { SELECTED = found; pick(found); setTimeout(()=>quick('analyze'),180); }
+      }
+
+
+    }
+
+    function pick(g){
+        SELECTED = g;
+        const box = document.getElementById('games');
+        if (box) {
+            box.querySelectorAll('.game').forEach(el => {
+            const isActive = el.getAttribute('data-id') === String(g.game_id);
+            el.classList.toggle('active', isActive);
+            });
+        }
+        pushBot(`Selected: <b>${g.game}</b><div class="muted">${g.date} • ${g.time || ''}</div>`);
+
+    }
+
+
+
+
+    function pushMe(text){
+      const t = document.getElementById('thread');
+      t.insertAdjacentHTML('beforeend', `<div class="msg me">${text}</div>`);
+      t.scrollTop = t.scrollHeight;
+    }
+    function pushBot(html){
+      const t = document.getElementById('thread');
+      t.insertAdjacentHTML('beforeend', `<div class="msg bot">${html}</div>`);
+      t.scrollTop = t.scrollHeight;
+    }
+    async function loadPicks(){
+    const r = await fetch('/api/predictions');
+    const data = await r.json();
+    const box = document.getElementById('picks');
+    const row = p => `
+      <div class="pick" onclick="goPick('${p.game_id}')">
+        <div><b>${p.matchup}</b></div>
+        <div class="muted">${p.game_date} ${(p.game_time||'').slice(0,5)} • pick <b>${p.prediction}</b> •
+          conf <span class="pct">${(p.confidence*100).toFixed(1)}%</span></div>
+      </div>`;
+    box.innerHTML = (data||[]).map(row).join('') || '<div class="muted">No upcoming picks.</div>';
+  }
+
+  function goPick(gameId){
+    // reflect selection in the URL
+    const url = new URL(location.href);
+    url.searchParams.set('game_id', gameId);
+    history.replaceState(null, '', url);
+
+    // if games are already loaded, select + analyze now
+    if (window.__GAMES){
+      const found = window.__GAMES.find(g => String(g.game_id) === String(gameId));
+      if (found){ pick(found); quick('analyze'); return; }
+    }
+    // else try again after games load
+    setTimeout(() => {
+      const found = (window.__GAMES||[]).find(g => String(g.game_id) === String(gameId));
+      if (found){ pick(found); quick('analyze'); }
+    }, 250);
+  }
+
+
+  // kick everything off
+  loadPicks();
+  loadGames();
+
+    async function callAI(message){
+      const payload = { message, game_id: SELECTED && SELECTED.game_id };
+      const r = await fetch('/api/ai-chat', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      const j = await r.json();
+      if(!j.ok){ pushBot('Sorry, something went wrong.'); return; }
+
+      if(j.intent==='analysis'){
+        const b = j.result?.best_bet || {};
+        const edgeTxt = (typeof b.edge === 'number') ? b.edge.toFixed(1) : '—';
+        const confTxt = (typeof b.confidence === 'number') ? b.confidence.toFixed(1) : '—';
+        const lineTxt = Number.isFinite(b.odds) ? `${b.odds}` : 'n/a';
+        pushBot(`Best bet: <b>${b.team || 'n/a'}</b> <span class="pct">${edgeTxt}%</span> edge • conf <span class="pct">${confTxt}%</span><br>Line: <b>${lineTxt}</b> @ ${b.sportsbook || 'best'}`);
+
+
+        let lines = [];
+        if(j.result.summary) lines.push(j.result.summary);
+        if(j.result.injuries){
+          const i = j.result.injuries;
+          const bits = [];
+          if(i.home && i.home.qb) bits.push(`Home QB risk: ${i.home.qb}`);
+          if(i.away && i.away.qb) bits.push(`Away QB risk: ${i.away.qb}`);
+          if(bits.length) lines.push(`<div class="muted">${bits.join(' • ')}</div>`);
+        }
+        pushBot(lines.join(''));
+      }else if(j.intent==='value_bets'){
+        const rows = (j.result||[]).map(r => `<div>• ${r.team} ML ${r.odds} — edge <span class="pct">${(r.edge_pct).toFixed(1)}%</span> (p=${(r.model_prob*100).toFixed(0)}%)</div>`);
+        pushBot(rows.join('') || 'No edges at that threshold.');
+      }else if (j.intent === 'explain_pick')  {
+        const team = j.result.team || (j.result.pick || '');
+        const list = (j.result.factors || []).map(s => `<li>${s}</li>`).join('');
+        const prob = (j.result.model_probability ?? j.result.probability);
+        const pct  = (prob != null) ? `${(prob*100).toFixed(1)}%` : '—';
+        pushBot(`<div><b>${team}</b> – why the model likes it</div>
+                <ul style="margin:6px 0 0 16px;">${list}</ul>
+                <div class="muted">Model probability ${pct}</div>`);
+      }else if (j.intent === 'explanation') {
+        pushBot(j.result.message || 'OK');
+
+      }else{
+        pushBot(j.result && j.result.message ? j.result.message : 'How can I help?');
+      }
+    }
+
+    function quick(kind){
+      if(kind==='analyze'){
+        if(!SELECTED) return pushBot('Pick a game first.');
+        pushMe('Analyze this game');
+        callAI('Analyze this game');
+      }else if(kind==='value5'){
+        pushMe('Find value bets with 5% edge');
+        callAI('Find value bets with 5% edge');
+      }else if(kind==='explain'){
+        if(!SELECTED) return pushBot('Pick a game first.');
+        pushMe('Explain the pick');
+        callAI('Explain the pick');
+      }
+    }
+
+    document.getElementById('send').onclick = () => {
+      const v = document.getElementById('msg').value.trim();
+      if(!v) return;
+      pushMe(v);
+      document.getElementById('msg').value = '';
+      callAI(v);
+    };
+
+    loadGames();
+  </script>
+</body>
+</html>
+"""
+
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -434,6 +699,52 @@ HTML_TEMPLATE = """
 <!-- Betting History Modal -->
 <div id=\"historyModal\" class=\"modal\"><div class=\"modal-content\"><div class=\"modal-header\"><h3>Betting History</h3><span class=\"close\" onclick=\"closeHistoryModal()\">&times;</span></div><div id=\"historyContent\"><div class=\"loading\">Loading betting history...</div></div></div></div>
 
+<!-- AI Assistant Panel -->
+<div class="panel">
+    <h3>🤖 AI Betting Assistant</h3>
+    <div class="controls">
+        <button class="btn btn-primary" onclick="openAIAssistant()">Ask AI</button>
+        <button class="btn btn-success" onclick="getAIPredictions()">Get Today's Picks</button>
+        <button class="btn btn-warning" onclick="findValueBets()">Find Value Bets</button>
+    </div>
+    <div id="ai-results" style="margin-top: 15px; max-height: 400px; overflow-y: auto;">
+        <div class="loading">AI Assistant ready. Click a button to get started.</div>
+    </div>
+</div>
+
+<!-- AI Chat Modal -->
+<div id="aiModal" class="modal">
+    <div class="modal-content" style="max-width: 800px;">
+        <div class="modal-header">
+            <h3>AI Betting Assistant</h3>
+            <span class="close" onclick="closeAIModal()">&times;</span>
+        </div>
+        
+        <!-- Chat Thread -->
+        <div id="ai-chat-thread" style="height: 400px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.1); padding: 15px; margin-bottom: 15px; background: rgba(0,0,0,0.3);">
+            <div class="ai-message">
+                <strong>AI:</strong> I'm your betting assistant. I've analyzed your 4 years of data and can help you find profitable bets. What would you like to know?
+            </div>
+        </div>
+        
+        <!-- Input Area -->
+        <div style="display: flex; gap: 10px;">
+            <input type="text" id="ai-input" placeholder="Ask about games, teams, or betting strategies..." 
+                   style="flex: 1; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white;">
+            <button class="btn btn-primary" onclick="sendAIMessage()">Send</button>
+        </div>
+        
+        <!-- Quick Actions -->
+        <div style="margin-top: 10px;">
+            <button class="btn btn-sm" onclick="askAI('Show me games with 5% edge or better')">5%+ Edge</button>
+            <button class="btn btn-sm" onclick="askAI('What are the best bets for today?')">Today's Best</button>
+            <button class="btn btn-sm" onclick="askAI('Analyze injuries for upcoming games')">Injury Report</button>
+            <button class="btn btn-sm" onclick="askAI('Show me underdog value bets')">Underdog Value</button>
+        </div>
+    </div>
+</div>
+
+
 <!-- Admin Panel Modal -->
 {% if user.is_admin %}
 <div id=\"adminModal\" class=\"modal\"><div class=\"modal-content admin-panel\"><div class=\"modal-header\"><h3>Admin Panel</h3><span class=\"close\" onclick=\"closeAdminModal()\">&times;</span></div>
@@ -488,16 +799,229 @@ HTML_TEMPLATE = """
     async function loadRecentActivity(){ try{ const r=await fetch('/api/recent-activity'); displayRecentActivity(await r.json()); }catch(e){ document.getElementById('recent-activity').innerHTML='<div class="loading">Error loading activity</div>'; } }
 
     function displayPredictions(data){
-        const tbody=document.getElementById('predictions-body'); if(!tbody) return;
-        if(!data||!data.length){ tbody.innerHTML='<tr><td colspan="4" class="loading">No predictions available</td></tr>'; return; }
-        tbody.innerHTML='';
-        data.forEach(p=>{
-            const dt = `${p.game_date||'TBD'} ${(p.game_time||'').slice(0,5)}`.trim();
-            const conf = (p.confidence*100).toFixed(1)+'%';
-            const row=document.createElement('tr');
-            row.innerHTML=`<td style="font-size:11px;">${p.matchup}</td><td style="font-size:10px;color:#a8b5d3;">${dt}</td><td style="font-size:11px;">${p.prediction}</td><td class="right" style="font-size:11px;"><span class="${p.confidence>0.65?'positive':p.confidence>0.55?'neutral':'negative'}">${conf}</span></td>`; tbody.appendChild(row);
-        });
+        const body = document.getElementById('predictions-body');
+        if (!Array.isArray(data) || data.length === 0){
+            body.innerHTML = '<tr><td colspan="4" class="loading">No upcoming games.</td></tr>';
+            return;
+        }
+        body.innerHTML = data.map(p => `
+            <tr>
+            <td>${p.matchup}</td>
+            <td>${p.game_date} ${(p.game_time || '').slice(0,5)}</td>
+            <td>${p.prediction}</td>
+            <td class="right">${(p.confidence*100).toFixed(1)}%</td>
+            </tr>
+        `).join('');
     }
+
+
+
+        
+    // AI Chat functionality
+    let currentGameContext = null;
+    let aiChatHistory = [];
+
+    function openAIAssistant(){
+        const gid = (window.selectedGameData && selectedGameData.game_id) ? selectedGameData.game_id : '';
+        const q = gid ? ('?game_id=' + encodeURIComponent(gid)) : '';
+        window.location.href = '/ai' + q;
+    }
+
+
+
+    function closeAIModal() {
+        document.getElementById('aiModal').style.display = 'none';
+    }
+
+    async function sendAIMessage() {
+        const input = document.getElementById('ai-input');
+        const message = input.value.trim();
+        if (!message) return;
+        
+        // Add user message to chat
+        addChatMessage('You', message, 'user');
+        input.value = '';
+        
+        // Show loading
+        addChatMessage('AI', '...thinking...', 'ai-loading');
+        
+        try {
+            const response = await fetch('/api/ai-chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    message: message,
+                    game_id: currentGameContext
+                })
+            });
+            
+            const data = await response.json();
+            
+            // Remove loading message
+            document.querySelector('.ai-loading')?.remove();
+            
+            if (data.ok) {
+                displayAIResponse(data.result, data.intent);
+            } else {
+                addChatMessage('AI', 'Sorry, I encountered an error: ' + (data.error || 'Unknown error'), 'ai');
+            }
+        } catch (error) {
+            document.querySelector('.ai-loading')?.remove();
+            addChatMessage('AI', 'Network error. Please try again.', 'ai');
+        }
+    }
+
+    function addChatMessage(sender, message, className) {
+        const thread = document.getElementById('ai-chat-thread');
+        const div = document.createElement('div');
+        div.className = className + '-message';
+        div.innerHTML = `<strong>${sender}:</strong> ${message}`;
+        thread.appendChild(div);
+        thread.scrollTop = thread.scrollHeight;
+    }
+
+    function displayAIResponse(result, intent) {
+        const thread = document.getElementById('ai-chat-thread');
+        const div = document.createElement('div');
+        div.className = 'ai-message';
+        
+        if (intent === 'value_bets' && Array.isArray(result)) {
+            // Display value bets
+            let html = '<strong>AI:</strong> I found these value betting opportunities:<br><br>';
+            result.forEach(bet => {
+                const edgeClass = bet.edge_pct > 5 ? 'positive' : bet.edge_pct > 2 ? 'neutral' : 'negative';
+                html += `
+                    <div style="margin: 10px 0; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 5px;">
+                        <strong>${bet.game}</strong> - ${bet.date}<br>
+                        Team: ${bet.team}<br>
+                        Edge: <span class="${edgeClass}">${bet.edge_pct.toFixed(1)}%</span><br>
+                        Odds: ${bet.odds > 0 ? '+' : ''}${bet.odds} @ ${bet.sportsbook}<br>
+                        <button class="btn btn-sm btn-success" onclick="placeBetFromAI('${bet.team}', ${bet.odds}, '${bet.sportsbook}')">
+                            Place Bet
+                        </button>
+                    </div>
+                `;
+            });
+            
+            if (result.length === 0) {
+                html += 'No value bets found with your criteria.';
+            }
+            
+            div.innerHTML = html;
+            
+        } else if (intent === 'analysis' && result.best_bet) {
+            // Display game analysis
+            let html = `<strong>AI:</strong> Here's my analysis of ${result.game}:<br><br>`;
+            html += `<strong>Win Probabilities:</strong><br>`;
+            html += `Home: ${(result.probabilities.home * 100).toFixed(1)}%<br>`;
+            html += `Away: ${(result.probabilities.away * 100).toFixed(1)}%<br><br>`;
+            
+            html += `<strong>Best Bet:</strong><br>`;
+            html += `${result.best_bet.team} at ${result.best_bet.odds > 0 ? '+' : ''}${result.best_bet.odds}<br>`;
+            html += `Edge: <span class="positive">${result.best_bet.edge.toFixed(1)}%</span><br>`;
+            html += `Confidence: ${result.best_bet.confidence}<br>`;
+            
+            if (result.injuries.home.qb > 0 || result.injuries.away.qb > 0) {
+                html += `<br><strong>⚠️ Injury Alert:</strong><br>`;
+                if (result.injuries.home.qb > 0) html += 'Home team has QB injury concerns<br>';
+                if (result.injuries.away.qb > 0) html += 'Away team has QB injury concerns<br>';
+            }
+            
+            div.innerHTML = html;
+            
+        } else if (intent === 'explanation' && result.explanation) {
+            // Display explanation
+            let html = `<strong>AI:</strong> ${result.explanation}<br><br>`;
+            html += `<strong>Confidence:</strong> ${result.confidence}<br>`;
+            if (result.bet_details) {
+                html += `<strong>Recommended Bet:</strong> ${result.bet_details.team} at ${result.bet_details.odds}<br>`;
+            }
+            div.innerHTML = html;
+            
+        } else {
+            // Generic response
+            div.innerHTML = `<strong>AI:</strong> ${JSON.stringify(result)}`;
+        }
+        
+        thread.appendChild(div);
+        thread.scrollTop = thread.scrollHeight;
+    }
+
+    function askAI(question) {
+        document.getElementById('ai-input').value = question;
+        sendAIMessage();
+    }
+
+    async function getAIPredictions() {
+        const resultsDiv = document.getElementById('ai-results');
+        resultsDiv.innerHTML = '<div class="loading">Getting AI predictions...</div>';
+        
+        try {
+            const response = await fetch('/api/ai-chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message: 'show me all value bets for today'})
+            });
+            
+            const data = await response.json();
+            
+            if (data.ok && data.result) {
+                let html = '<h4>AI Predictions</h4>';
+                
+                if (Array.isArray(data.result)) {
+                    data.result.forEach(bet => {
+                        html += `
+                            <div class="alert alert-success" style="margin: 10px 0;">
+                                <strong>${bet.game}</strong><br>
+                                Bet: ${bet.team} ML<br>
+                                Edge: ${bet.edge_pct.toFixed(1)}%<br>
+                                Odds: ${bet.odds}
+                            </div>
+                        `;
+                    });
+                }
+                
+                resultsDiv.innerHTML = html;
+            }
+        } catch (error) {
+            resultsDiv.innerHTML = '<div class="alert alert-error">Failed to get predictions</div>';
+        }
+    }
+
+    // in templates.js area of templates.py
+    function findValueBets(){
+        openAIAssistant();
+        document.getElementById('ai-input').value = 'Find value bets with 5% edge';
+        sendAIMessage();
+    }
+
+
+
+    function placeBetFromAI(team, odds, sportsbook) {
+        // Integrate with your existing bet placement system
+        openBetModal();
+        // Pre-fill the bet form
+        setTimeout(() => {
+            document.getElementById('betTeam').value = team;
+            document.getElementById('betOdds').value = odds;
+            document.getElementById('betSportsbook').value = sportsbook;
+        }, 100);
+    }
+
+    // Auto-analyze when game is selected
+    function analyzeGameWithAI(gameId) {
+        currentGameContext = gameId;
+        openAIAssistant();
+        askAI(`Analyze game ${gameId} and tell me the best bet`);
+    }
+
+    // Keyboard shortcut
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'a') {
+            e.preventDefault();
+            openAIAssistant();
+        }
+    });
 
     function displayRankings(data){
         const tbody=document.getElementById('rankings-body'); if(!tbody) return;
@@ -857,7 +1381,7 @@ HTML_TEMPLATE = """
 
     // ===== Admin clear =====
     async function clearSeasonData() {
-        if (!confirm('Clear ALL users’ bets and money activity?')) return;
+        if (!confirm('Clear ALL usersâ€™ bets and money activity?')) return;
         try {
         const data = await fetchJSON('/api/admin/clear-activity', { method: 'POST' });
         alert(data?.message || 'All activity cleared');
@@ -876,7 +1400,76 @@ HTML_TEMPLATE = """
         return (us > 0 ? `+${us}` : `${us}`);
     };
     
-    document.addEventListener('DOMContentLoaded', function(){ try{ initializeWeekTabs(); loadAllData(); document.getElementById('edge-filter').addEventListener('change', refreshAnalysis); setInterval(loadAllData, 60000); } catch(err){ console.error('Initialization error:', err); } });
+   // in DOMContentLoaded init (already calls loadAllData)
+    document.addEventListener('DOMContentLoaded', function(){
+    try {
+        initializeWeekTabs();
+        loadAllData();
+        getAIPredictions();  // <-- add this line so AI picks render on page load
+        document.getElementById('edge-filter').addEventListener('change', refreshAnalysis);
+        setInterval(loadAllData, 60000);
+    } catch(err){ console.error('Initialization error:', err); }
+    });
+
+
+    let AI_CONTEXT = { game_id: null, team: null };
+
+    function openAIChat(ctx = {}) {
+    AI_CONTEXT = { game_id: ctx.game_id || null, team: ctx.team || null };
+    const m = document.getElementById('aiChatModal');
+    const t = document.getElementById('aiChatThread');
+    document.getElementById('aiChatInput').value = '';
+    t.innerHTML = `<div class="loading">Hi! Ask me about specific games, value bets, or odds. Try: "Explain ${ctx.team||'the favorite'} in this game".</div>`;
+    m.style.display = 'block';
+    }
+
+    function closeAIChat(){ document.getElementById('aiChatModal').style.display='none'; }
+
+
+
+    function renderAIAnswer(resp){
+    const { intent, result } = resp;
+    if(intent === 'game_card' && result && !result.error){
+        const bHome = result.best_moneyline?.find?.(x=>x.team===result.teams?.home);
+        const bAway = result.best_moneyline?.find?.(x=>x.team===result.teams?.away);
+        const ph = Math.round((result.probs?.home||0)*100);
+        const pa = Math.round((result.probs?.away||0)*100);
+        const confTeam = result.pick?.team||'';
+        const confPct  = Math.round((result.pick?.confidence||0)*100);
+        return `
+        <div style="margin:8px 0;">
+            <div><strong>${result.matchup}</strong> — ${result.date} ${result.time||''}</div>
+            <div style="font-size:12px;color:#a8b5d3;">Home ${ph}% • Away ${pa}% • Pick: <strong>${confTeam}</strong> (${confPct}%)</div>
+            <div style="font-size:12px;margin-top:4px;">
+            Best ML — Home: ${bHome? (bHome.odds>0?`+${bHome.odds}`:bHome.odds) +' @ '+bHome.sportsbook : 'n/a'}
+            • Away: ${bAway? (bAway.odds>0?`+${bAway.odds}`:bAway.odds) +' @ '+bAway.sportsbook : 'n/a'}
+            </div>
+        </div>`;
+    }
+    if(intent === 'explain_pick' && result && !result.error){
+        const p = Math.round((result.model_probability||0)*100);
+        return `
+        <div style="margin:8px 0;">
+            <div><strong>Why ${result.team}?</strong></div>
+            <div style="font-size:12px;color:#a8b5d3;">Model probability: ${p}%.</div>
+            <ul style="margin:6px 0 0 16px; font-size:12px;">
+            ${(result.factors||[]).map(f=>`<li>${f}</li>`).join('')}
+            </ul>
+        </div>`;
+    }
+    if(intent === 'list_value_bets' && Array.isArray(result)){
+        const top = result.slice(0,12).map(r=>{
+        const e = Number(r.edge_pct||0).toFixed(1);
+        return `<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);">
+            <div><strong>${(r.away_team||'?')} @ ${(r.home_team||'?')}</strong> — ${r.date||''} ${(r.t||'').slice(0,5)}</div>
+            <div style="font-size:12px;color:#a8b5d3;">${r.team} ML @ ${r.sportsbook} ${Number(r.odds)>0?`+${r.odds}`:r.odds} • edge ${e}% • bet $${Number(r.recommended_amount||0).toFixed(2)}</div>
+        </div>`;
+        }).join('');
+        return `<div style="margin:8px 0;"><strong>Top value bets</strong>${top || '<div>No edges above threshold.</div>'}</div>`;
+    }
+    return `<div style="margin:8px 0;">(No formatted result)</div>`;
+    }
+
 </script>
 </body>
 </html>
