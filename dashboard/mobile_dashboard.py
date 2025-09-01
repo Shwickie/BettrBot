@@ -22,6 +22,22 @@ from templates import LOGIN_TEMPLATE, HTML_TEMPLATE, AI_CHAT_TEMPLATE
 import sys
 import os
 from flask import Blueprint
+
+import os, sys
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+# robust import so Windows path works when running from /dashboard
+try:
+    from model.ai_tools import list_value_bets
+except Exception:
+    import os, sys
+    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    if PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, PROJECT_ROOT)
+    from model.ai_tools import list_value_bets
+
+
 try:
     from dashboard.ai_chat_stub import ai_bp
 except Exception:
@@ -846,7 +862,21 @@ def api_betting_analysis():
     week = request.args.get('week', 'current')
     edge_filter = request.args.get('edge', 'all')
 
-    # time window
+    # --- user bankroll (define FIRST so any return path can use it) ---
+    try:
+        username = session.get('username', '')
+        user_bankroll = float(USERS.get(username, {}).get('bankroll', 100.0))
+    except Exception:
+        user_bankroll = 100.0
+
+    # --- staking + portfolio params ---
+    RISK_FRACTION     = 0.25   # quarter-Kelly
+    MAX_BET_PCT       = 0.05   # 5% cap per bet
+    MIN_BET           = 1.00   # $1 floor
+    SLATE_BUDGET_PCT  = 0.10   # total new exposure this slate/day
+    PER_GAME_CAP_PCT  = 0.06   # per-game exposure cap
+
+    # --- time window from UI ---
     today = datetime.utcnow().date()
     if week == 'current':
         start, end = today, today + timedelta(days=7)
@@ -859,187 +889,79 @@ def api_betting_analysis():
     else:
         start, end = today - timedelta(days=7), today + timedelta(days=60)
 
-    include_negative = (edge_filter == 'all')
-    min_edge = {'all': 0.0, 'positive': 0.0001, '2': 0.02, '5': 0.05}.get(edge_filter, 0.0)
+    # --- edge threshold from UI filter ---
+    min_edge = {'all': 0.0, 'positive': 0.0001, '5': 0.05, '7': 0.07}.get(edge_filter, 0.0)
 
-    # user bankroll (per-user basis)
+    # --- pull edges from the shared AI logic ---
     try:
-        username = session.get('username', '')
-        user_bankroll = float(USERS.get(username, {}).get('bankroll', 100.0))
-    except Exception:
-        user_bankroll = 100.0
+        raw = list_value_bets(edge_min=min_edge) or []
+    except Exception as e:
+        print("list_value_bets error:", e)
+        raw = []
 
-    # staking + portfolio controls
-    RISK_FRACTION = 0.25    # quarter-Kelly
-    MAX_BET_PCT  = 0.05     # 5% cap per bet
-    MIN_BET      = 1.00     # $1 floor
-    SLATE_BUDGET_PCT = 0.10 # total new exposure this slate/day
-    PER_GAME_CAP_PCT = 0.06 # total exposure per game
+    # --- filter to window (ai_tools returns date as 'YYYY-MM-DD') ---
+    def _parse_date(s):
+        from datetime import datetime
+        try:
+            return datetime.strptime(str(s), '%Y-%m-%d').date()
+        except Exception:
+            try:
+                return datetime.fromisoformat(str(s)).date()
+            except Exception:
+                return None
 
-    # games in window
-    try:
-        games = pd.read_sql_query(
-            """
-            SELECT game_id, away_team AS away, home_team AS home, game_date, start_time_local AS game_time
-            FROM games
-            WHERE date(game_date) BETWEEN date(?) AND date(?)
-            ORDER BY date(game_date), time(start_time_local)
-            """,
-            conn, params=[start, end]
-        )
-    except Exception:
-        return jsonify({"opportunities": [], "total_found": 0, "week": week, "edge_filter": edge_filter,
-                        "user_bankroll": round(user_bankroll, 2), "max_bet_cap": round(user_bankroll*MAX_BET_PCT, 2),
-                        "slate_budget": round(user_bankroll*SLATE_BUDGET_PCT, 2), "total_recommended": 0.0})
+    raw = [r for r in raw if (d := _parse_date(r.get('date'))) and (start <= d <= end)]
 
-    if games.empty:
-        return jsonify({"opportunities": [], "total_found": 0, "week": week, "edge_filter": edge_filter,
-                        "user_bankroll": round(user_bankroll, 2), "max_bet_cap": round(user_bankroll*MAX_BET_PCT, 2),
-                        "slate_budget": round(user_bankroll*SLATE_BUDGET_PCT, 2), "total_recommended": 0.0})
-
-    game_ids = games['game_id'].tolist()
-    ph = ",".join(["?"] * len(game_ids))
-
-    # latest moneyline per (game, team, book)
-    try:
-        odds = pd.read_sql_query(f"""
-            SELECT o.game_id, o.team, o.sportsbook, o.odds, o.timestamp
-            FROM odds o
-            JOIN (
-                SELECT game_id, team, sportsbook, MAX(timestamp) AS ts
-                FROM odds
-                WHERE market='h2h' AND game_id IN ({ph})
-                GROUP BY game_id, team, sportsbook
-            ) x ON x.game_id = o.game_id
-               AND x.team = o.team
-               AND x.sportsbook = o.sportsbook
-               AND x.ts = o.timestamp
-        """, conn, params=game_ids)
-        odds['ao'] = odds['odds'].apply(normalize_american_odds)
-            # === MODEL PROBS (prefer trained model; fallback to power-based) ===
-        engine = request.args.get('engine', 'hybrid')  # 'model' | 'calc' | 'hybrid' (default)
-        pack = load_model_pack()
-        home_probs = {}  # game_id (str) -> P(home wins)
-
-        if pack and engine in ('hybrid', 'model') and not games.empty:
-            feature_cols = pack.get('feature_cols', [])
-            mdl = pack['model']
-            scaler = pack['scaler']
-
-            # Build inference features to match training exactly
-            feat = build_features_for_games(conn, games[['game_id', 'home', 'away', 'game_date']].copy())
-
-            if not feat.empty and feature_cols:
-                X = feat.reindex(columns=feature_cols).fillna(0.0)
-                Xs = scaler.transform(X)  # keep as DataFrame to avoid sklearn warnings
-                ph = mdl.predict_proba(Xs)[:, 1]  # P(home)
-                home_probs = {str(gid): float(p) for gid, p in zip(feat['game_id'].tolist(), ph.tolist())}
-
-    except Exception:
-        odds = pd.DataFrame(columns=['game_id','team','sportsbook','odds','timestamp','ao'])
-
-    # model prob via cached power map (uses injuries + form inside)
-    pmap = get_power_map_cached(conn)
-    for abbr, full in ABBR_TO_FULL.items():
-        if full in pmap:
-            pmap[abbr] = pmap[full]
-
-    HFA = 2.5
-    def model_prob(away, home, team):
-        hm = pmap.get(to_full(home), pmap.get(home, 0.0)) + HFA
-        aw = pmap.get(to_full(away), pmap.get(away, 0.0))
-        ph_ = 1.0 / (1.0 + math.exp(-(hm - aw) / 8.0))
-        return ph_ if to_full(team) == to_full(home) else (1.0 - ph_)
-
-    def american_to_prob(od):
-        od = float(od)
-        return 100.0/(od+100.0) if od > 0 else abs(od)/(abs(od) + 100.0)
-
-    def best_line(df_team: pd.DataFrame):
-        if df_team.empty:
-            return None, None
-        t = df_team.dropna(subset=['ao']).copy()
-        if t.empty:
-            return None, None
-        t['ao'] = t['ao'].astype(int)
-        idx = t['ao'].idxmax()
-        return int(t.loc[idx, 'ao']), str(t.loc[idx, 'sportsbook'])
-
+    # --- recompute stake using *current* bankroll ---
+    def _dec(ml):
+        ml = int(ml)
+        return 1 + (ml / 100.0) if ml > 0 else 1 + (100.0 / abs(ml))
 
     opps = []
-    for _, g in games.itertuples(index=False).items() if False else []:  # placeholder to appease linters
-        pass  # (no-op)
+    for r in raw:
+        ml = int(r.get('odds', -110))
+        prob = float(r.get('model_prob', 0.5))
+        dec = _dec(ml)
+        kelly = ((prob * (dec - 1)) - (1 - prob)) / (dec - 1) if dec > 1 else 0.0
+        stake_raw = max(0.0, kelly) * user_bankroll * RISK_FRACTION
+        stake_cap = user_bankroll * MAX_BET_PCT
+        stake = max(MIN_BET, min(stake_cap, stake_raw))
 
-    # real loop
-    for _, g in games.iterrows():
-        gid, away, home = g['game_id'], g['away'], g['home']
-        o_game = odds[odds['game_id'] == gid].copy()
-        o_game['ao'] = o_game['odds'].apply(normalize_american_odds)
+        opps.append({
+            "game": f"{to_full(r['away_team'])} @ {to_full(r['home_team'])}",
+            "date": r.get('date', ''),
+            "time": (r.get('t') or 'TBD'),
+            "team": to_full(r['team']),
+            "bet_type": f"{to_full(r['team'])} ML",
+            "odds": f"+{ml}" if ml > 0 else str(ml),
+            "decimal_odds": round(dec, 2),
+            "sportsbook": r.get('sportsbook', '—'),
+            "model_prob": round(prob, 3),
+            "implied_prob": round(float(r.get('implied_prob', 0.5)), 3),
+            "edge": round(float(r.get('edge', 0.0)), 3),
+            "edge_pct": round(float(r.get('edge', 0.0)) * 100, 1),
+            "recommended_amount": float(stake),
+            "confidence": round(prob * 100, 1),
+            "game_id": str(r.get('game_id')),
+            "user_bankroll": round(user_bankroll, 2)
+        })
 
-        for team in (home, away):
-            if home_probs:
-                ph_home = home_probs.get(str(gid))
-                if ph_home is not None:
-                    prob = ph_home if to_full(team) == to_full(home) else (1.0 - ph_home)
-                else:
-                    prob = model_prob(away, home, team)
-            else:
-                prob = model_prob(away, home, team)
-            team_odds = o_game[o_game['team'] == team]
-            ml, book = best_line(team_odds)
-            if ml is None:
-                ml, book = (100 if prob > 0.5 else -110), 'No Line'
-
-            dec = 1 + (ml / 100.0) if ml > 0 else 1 + (100.0 / abs(ml))
-            implied = american_to_prob(ml)
-            edge = prob - implied
-
-            # filter by requested edge view
-            if not (include_negative or edge >= min_edge):
-                continue
-
-            # Kelly stake (pre-allocator)
-            kelly = ((prob * (dec - 1)) - (1 - prob)) / (dec - 1) if dec > 1 else 0.0
-            stake_raw = max(0.0, kelly) * user_bankroll * RISK_FRACTION
-            stake_cap = user_bankroll * MAX_BET_PCT
-            stake = max(MIN_BET, min(stake_cap, stake_raw))
-
-            opps.append({
-                "game": f"{to_full(away)} @ {to_full(home)}",
-                "date": str(g['game_date']),
-                "time": (str(g['game_time'])[:5] if g['game_time'] else "TBD"),
-                "team": to_full(team),
-                "bet_type": f"{to_full(team)} ML",
-                "odds": f"+{int(ml)}" if ml > 0 else str(int(ml)),
-                "decimal_odds": round(dec, 2),
-                "sportsbook": book,
-                "model_prob": round(prob, 3),
-                "implied_prob": round(implied, 3),
-                "edge": round(edge, 3),
-                "edge_pct": round(edge * 100, 1),
-                "recommended_amount": float(stake),
-                "confidence": round(prob * 100, 1),
-                "game_id": str(gid),
-                "user_bankroll": round(user_bankroll, 2)
-            })
-
-    # ---------- Portfolio allocator (slate + per-game caps) ----------
-    username = session.get('username', '')
+    # --- Portfolio allocator: slate budget + per-game caps (same logic as before) ---
+    # Open risk from pending bets
     user_hist = USERS.get(username, {}).get('bet_history', [])
-
-    open_risk_total = sum(float(b.get('amount', 0.0))
-                          for b in user_hist if (b.get('result', 'Pending') == 'Pending'))
+    open_risk_total = sum(float(b.get('amount', 0.0)) for b in user_hist if (b.get('result', 'Pending') == 'Pending'))
 
     from collections import defaultdict
     open_risk_by_game = defaultdict(float)
     for b in user_hist:
         if b.get('result', 'Pending') == 'Pending':
             gid = str(b.get('game_id'))
-            if gid is not None:
+            if gid:
                 open_risk_by_game[gid] += float(b.get('amount', 0.0))
 
     slate_budget_total = max(0.0, user_bankroll * SLATE_BUDGET_PCT - open_risk_total)
 
+    # scale slate
     gross_recommended = sum(o['recommended_amount'] for o in opps)
     scale_slate = (slate_budget_total / gross_recommended) if gross_recommended > 0 and slate_budget_total < gross_recommended else 1.0
     if scale_slate < 1.0:
@@ -1059,13 +981,25 @@ def api_betting_analysis():
     # floor/round & drop dust
     final_total = 0.0
     kept = []
+    # floor/round & drop dust (but don't hide edges if budget is zero)
+    final_total = 0.0
+    kept = []
     for o in opps:
         amt = round(max(0.0, o['recommended_amount']), 2)
+
+        if slate_budget_total <= 0:
+            # show the edge, but with $0 recommended since user has no budget
+            o['recommended_amount'] = 0.0
+            kept.append(o)
+            continue
+
         if amt >= MIN_BET and final_total + amt <= slate_budget_total + 1e-9:
             o['recommended_amount'] = amt
             kept.append(o)
             final_total += amt
+
     opps = kept
+
 
     # order by edge desc
     opps.sort(key=lambda x: x['edge_pct'], reverse=True)
@@ -1082,10 +1016,8 @@ def api_betting_analysis():
         "total_found": len(opps),
         "week": week,
         "edge_filter": edge_filter,
-        "user_bankroll": round(user_bankroll, 2),  # <- keep comma here
         **summary
     })
-
 
 @app.route('/api/delete-bet', methods=['POST'])
 @login_required
@@ -1256,6 +1188,17 @@ def api_place_bet():
     except Exception as e:
         print("/api/place-bet error:", e)
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/ai/value-bets')
+@login_required
+def api_ai_value_bets():
+    if list_value_bets is None:
+        return jsonify([])  # ai_tools.py not importable
+    edge = float(request.args.get('min_edge', 0.07))  # default 7%
+    out = list_value_bets(edge_min=edge)
+    return jsonify(out)
+
+
 
 @app.route('/api/money-transaction', methods=['POST'])
 @login_required

@@ -2,7 +2,7 @@
   "admin": {
     "password": "scrypt:32768:8:1$7c9K2qRLFjQb0agI$339f3ecad0588a8442c2bc2724b99077cdbd5d0c099ac417ac91d65c7ea9e2aee69bcc327e8b9e4e2d6c70e807f4e27cae167eb178c28df4cdc625009d26a3fc",
     "name": "Admin",
-    "bankroll": 4995.1,
+    "bankroll": 100.0,
     "deposits": 5000.0,
     "withdrawals": 0.0,
     "bet_profit_loss": 0.0,
@@ -61,20 +61,24 @@
   "tyler": {
     "password": "scrypt:32768:8:1$TYGgYnkEXPt2wJIT$5841059f1b9426feb7b6bb00d145c93cb2a688fceac12ce1e765c662cec9654389fed6071104c4ca1dc9f35a6f3ba9112f86f44b5669cf135509fcbc08ffab97",
     "name": "Sarah",
-    "bankroll": 100.0,
+    "bankroll": 25.0,
     "total_deposits": 100.0,
     "total_withdrawals": 0.0,
     "betting_profit_loss": 0.0,
-    "bet_history": [],
-    "money_transactions": [
+    "bet_history": [
       {
-        "date": "2025-08-28 22:04",
-        "type": "deposit",
-        "amount": 100.0,
-        "description": "test",
-        "balance_after": 100.0
+        "date": "2025-08-31 18:27",
+        "game": "Dallas Cowboys @ Philadelphia Eagles",
+        "bet_type": "Dallas Cowboys ML",
+        "amount": 75.0,
+        "odds": "+310",
+        "sportsbook": "",
+        "game_id": "f1bc532dff946d15cb85654b5c4b246e",
+        "result": "Pending",
+        "profit_loss": 0.0
       }
     ],
+    "money_transactions": [],
     "is_admin": false
   }
 }

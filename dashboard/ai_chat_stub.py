@@ -4,6 +4,24 @@ import os, sqlite3, math, datetime as dt, re, pickle
 from typing import Dict, Any, Optional
 import pandas as pd
 from flask import Blueprint, request, jsonify
+from sqlalchemy import create_engine, text
+
+# --- add near the other imports
+import os, sys, re, math, datetime as dt
+from flask import Blueprint, request, jsonify
+
+# Ensure we can import "model.*" when running from /dashboard
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+try:
+    from model.ai_tools import list_value_bets
+except Exception as e:
+    print("ai_tools import error:", e)
+    list_value_bets = None
+
+
 
 def _american_from_decimal(d: float) -> Optional[int]:
     try:
@@ -134,7 +152,8 @@ def _build_features_for_games(conn: sqlite3.Connection, games_df: pd.DataFrame) 
 class BettingAI:
     def __init__(self, db_path: str = None, model_path: Optional[str] = None):
         self.db_path = db_path or os.environ.get("BETTR_DB_PATH", r"E:/Bettr Bot/betting-bot/data/betting.db")
-        model_pkl = model_path or os.environ.get("BETTR_MODEL_PKL", r"E:/Bettr Bot/betting-bot/models/betting_model.pkl")
+        default_pkl = os.path.join(os.path.dirname(__file__), "betting_model.pkl")
+        model_pkl = model_path or os.environ.get("BETTR_MODEL_PKL", default_pkl)
         self.model_pack = _load_model_pack(model_pkl)
         self.context = {
             'user_bankroll': 500.0,
@@ -349,6 +368,33 @@ class BettingAI:
             print(f"Injury summary error: {e}")
             return {"home": {"qb": 0}, "away": {"qb": 0}}
 
+    def _enrich_for_ui(self, bets: list[dict]) -> list[dict]:
+        out = []
+        for b in bets:
+            game = b.get('game') or f"{b.get('away_team','?')} @ {b.get('home_team','?')}"
+            date = str(b.get('date') or '')
+            time = str(b.get('time') or b.get('t') or '')
+            team = b.get('team') or ''
+            ml = b.get('odds')
+            try:
+                ml_int = int(ml) if ml is not None else None
+            except Exception:
+                ml_int = None
+            odds_str = (f"+{ml_int}" if (ml_int is not None and ml_int > 0) else (str(ml_int) if ml_int is not None else ''))
+
+            # add multiple compatible fields so whatever the UI looks for will exist
+            b.setdefault('game', game)
+            b.setdefault('title', game)                                   # many UIs use title
+            b.setdefault('subtitle', f"{date} {time}".strip())            # optional subtitle
+            b.setdefault('summary', f"{game} • {date} {time}".strip())    # some UIs use summary
+            b.setdefault('bet', f"{team} ML")
+            b.setdefault('line', f"{odds_str}{(' @ ' + (b.get('sportsbook') or '—')) if odds_str else ''}")
+            b.setdefault('t', time)                                       # some UIs use 't' for time
+            b.setdefault('odds_str', odds_str)
+            out.append(b)
+        return out
+
+
     def _analyze_game_payload(self, game_id: str) -> dict:
         """Fixed version with better error handling"""
         conn = self._conn()
@@ -406,8 +452,18 @@ class BettingAI:
                 }
 
             # Calculate edge
-            implied = _implied_prob(pick_odds) if pick_odds else 0.5
-            edge_pct = (pick_prob - implied) * 100.0 if math.isfinite(implied) else 0.0
+            ih = _implied_prob(home_odds) if home_odds is not None else None
+            ia = _implied_prob(away_odds) if away_odds is not None else None
+            if ih is not None and ia is not None:
+                tot = max(ih + ia, 1e-9)
+                ih_n, ia_n = ih / tot, ia / tot
+            else:
+                ih_n = ih if ih is not None else 0.5
+                ia_n = ia if ia is not None else 0.5
+
+            pick_implied = ih_n if pick_team == g["home"] else ia_n
+            edge_pct = (pick_prob - pick_implied) * 100.0
+
             
             # Add injury information
             injury_info = self._get_injury_summary(conn, g["home"], g["away"])
@@ -438,97 +494,17 @@ class BettingAI:
         finally:
             conn.close()
 
-    def _is_genuine_edge(self, prob: float, implied_prob: float, min_edge: float = 0.08) -> bool:
-        """
-        More conservative edge detection
-        """
-        edge = prob - implied_prob
-        
-        # Require higher edge for extreme probabilities
-        if prob > 0.7 or prob < 0.3:
-            min_edge *= 1.5  # 50% higher threshold for extreme picks
-        
-        # Additional filters
-        if abs(prob - 0.5) < 0.05:  # Essentially a coin flip
-            return False
-            
-        return edge >= min_edge
-
-    def _scan_value_bets(self, days: int = 21, min_edge: float = 0.07):
-        """Scan for value betting opportunities."""
-        today = dt.date.today()
-        conn = self._conn()
-        opportunities = []
-        try:
-            games = pd.read_sql_query("""
-                SELECT game_id, away_team AS away, home_team AS home,
-                    DATE(game_date) AS game_date,
-                    TIME(start_time_local) AS game_time
-                FROM games
-                WHERE DATE(game_date) BETWEEN DATE(?) AND DATE(?)
-                ORDER BY game_date, start_time_local
-            """, conn, params=[today, today + dt.timedelta(days=days)])
-            if games.empty:
-                return []
-
-            for _, game in games.iterrows():
-                g = {'game_id': game['game_id'], 'home': game['home'], 'away': game['away'], 'date': game['game_date']}
-                ph = self._predict_home_prob_model(conn, g)   # P(home)
-                pa = 1.0 - ph
-
-                lines = self._best_lines_for_game(conn, game['game_id'])
-                for team, prob in [(game['home'], ph), (game['away'], pa)]:
-                    if team not in lines: 
-                        continue
-                    ml_odds = int(lines[team]['odds'])
-                    implied = _implied_prob(ml_odds)
-                    if not math.isfinite(implied):
-                        continue
-                    edge = prob - implied
-                    if edge < min_edge:
-                        continue
-
-                    # Quarter-Kelly with caps off a $500 default (will be resized on the dashboard anyway)
-                    dec = 1 + (ml_odds/100.0) if ml_odds > 0 else 1 + (100.0/abs(ml_odds))
-                    kelly = ((prob*(dec-1)) - (1-prob)) / (dec-1)
-                    stake = max(1.0, min(50.0, max(0.0, kelly) * 500.0 * 0.25))
-
-                    opportunities.append({
-                        'game_id': game['game_id'],
-                        'away_team': game['away'],
-                        'home_team': game['home'],
-                        'game': f"{game['away']} @ {game['home']}",
-                        'date': game['game_date'],
-                        'time': (game['game_time'] or '')[:5],
-                        'team': team,
-                        'odds': ml_odds,
-                        'sportsbook': lines[team]['sportsbook'],
-                        'model_prob': round(float(prob), 3),
-                        'implied_prob': round(float(implied), 3),
-                        'edge': round(float(edge), 3),
-                        'edge_pct': round(float(edge)*100.0, 1),
-                        'recommended_amount': round(stake, 2),
-                    })
-
-            opportunities.sort(key=lambda x: x['edge'], reverse=True)
-            return opportunities
-        except Exception as e:
-            print(f"Value bets scan error: {e}")
-            return []
-        finally:
-            conn.close()
-
     def process_natural_language(self, message: str, game_id: Optional[str] = None, team: Optional[str] = None):
         """Fixed NL processing with better error handling"""
         m = (message or '').strip().lower()
 
         try:
-            if 'value' in m and ('bet' in m or 'edge' in m):
-                import re
-                edge_match = re.search(r'(\d+(\.\d+)?)\s*%', m)
-                min_edge = float(edge_match.group(1))/100 if edge_match else 0.05
-                bets = self._scan_value_bets(days=21, min_edge=min_edge)
+            # inside your NL intent handler
+            if "value" in m and ("bet" in m or "edge" in m):
+                bets = self._scan_value_bets(days=21, min_edge=0.05)
+                bets = self._enrich_for_ui(bets)
                 return (bets, 'value_bets')
+
 
             if 'analy' in m or 'analyze this game' in m or ('analyze' in m and game_id):
                 if not game_id:
@@ -576,6 +552,143 @@ class BettingAI:
             print(f"Error in process_natural_language: {e}")
             return ({'message': f'Analysis error: {str(e)}'}, 'error')
 
+    def _is_genuine_edge(self, prob: float, implied_prob: float, min_edge: float = 0.08) -> bool:
+        """
+        More conservative edge detection
+        """
+        edge = prob - implied_prob
+        
+        # Require higher edge for extreme probabilities
+        if prob > 0.7 or prob < 0.3:
+            min_edge *= 1.5  # 50% higher threshold for extreme picks
+        
+        # Additional filters
+        if abs(prob - 0.5) < 0.05:  # Essentially a coin flip
+            return False
+            
+        return edge >= min_edge
+
+
+
+    def _scan_value_bets(self, days: int = 21, min_edge: float = 0.05):
+        """Scan for value betting opportunities (aligned with dashboard)."""
+        today = dt.date.today()
+        conn = self._conn()
+        opps = []
+        try:
+            games = pd.read_sql_query("""
+                SELECT game_id, away_team AS away, home_team AS home,
+                    DATE(game_date) AS game_date,
+                    TIME(start_time_local) AS game_time
+                FROM games
+                WHERE DATE(game_date) BETWEEN DATE(?) AND DATE(?)
+                ORDER BY game_date, start_time_local
+            """, conn, params=[today, today + dt.timedelta(days=days)])
+            if games.empty:
+                return []
+
+            for _, game in games.iterrows():
+                g = {'game_id': game['game_id'], 'home': game['home'], 'away': game['away'], 'date': game['game_date']}
+                ph = self._predict_home_prob_model(conn, g)  # P(home)
+                pa = 1.0 - ph
+
+                # calibration shrink toward 50%
+                ph = 0.5 + (ph - 0.5) * 0.7
+                pa = 1.0 - ph
+
+                # latest lines per (team,book)
+                odds = pd.read_sql_query("""
+                    SELECT o.team, o.sportsbook, o.odds
+                    FROM odds o
+                    JOIN (
+                        SELECT game_id, team, sportsbook, MAX(timestamp) AS ts
+                        FROM odds
+                        WHERE market='h2h' AND game_id=?
+                        GROUP BY game_id, team, sportsbook
+                    ) x ON x.game_id=o.game_id AND x.team=o.team AND x.sportsbook=o.sportsbook AND x.ts=o.timestamp
+                """, conn, params=[game['game_id']])
+
+                if odds.empty:
+                    continue
+
+                # best line for each team + unique book counts
+                lines = {}
+                for team, grp in odds.groupby("team"):
+                    grp = grp.copy()
+                    grp["american"] = grp["odds"].apply(_normalize_american)
+                    grp = grp[pd.notnull(grp["american"])]
+                    if grp.empty: 
+                        continue
+                    # higher positive is better; less negative is better → max by "score"
+                    grp["score"] = grp["american"].apply(lambda x: x if x > 0 else -abs(x))
+                    best = grp.loc[grp["score"].idxmax()]
+                    lines[team] = {
+                        "odds": int(best["american"]),
+                        "sportsbook": str(best["sportsbook"]),
+                        "books": grp["sportsbook"].nunique()
+                    }
+
+                if game["home"] not in lines or game["away"] not in lines:
+                    continue
+
+                home_ml = lines[game["home"]]["odds"]
+                away_ml = lines[game["away"]]["odds"]
+
+                # normalize implied (remove juice)
+                ih = _implied_prob(home_ml)
+                ia = _implied_prob(away_ml)
+                tot = max(ih + ia, 1e-9)
+                ih_n, ia_n = ih / tot, ia / tot
+
+                for team, prob in [(game['home'], ph), (game['away'], pa)]:
+                    # clamp model probs to avoid goofy 99% vs +400 artifacts
+                    prob = max(0.20, min(0.80, prob))
+
+                    # require ≥2 independent books
+                    if lines[team]["books"] < 2:
+                        continue
+
+                    ml_odds = lines[team]["odds"]
+                    sportsbook = lines[team]["sportsbook"]
+                    implied = ih_n if team == game["home"] else ia_n
+
+                    # guard-rails (match dashboard spirit)
+                    if ml_odds >= 250 and prob < 0.38:
+                        continue
+                    if abs(prob - 0.50) < 0.03 and abs(ml_odds) < 140:
+                        continue
+
+                    # optional: market-efficiency discount
+                    edge = (prob - implied) * 0.93
+
+                    if edge >= float(min_edge):
+                        dec = 1 + (ml_odds / 100.0) if ml_odds > 0 else 1 + (100.0 / abs(ml_odds))
+                        kelly = ((prob * (dec - 1)) - (1 - prob)) / (dec - 1) if dec > 1 else 0.0
+                        stake = max(1.0, min(50.0, max(0.0, kelly) * 500.0 * 0.25))
+
+                        opps.append({
+                            "game_id": game["game_id"],
+                            "game": f"{game['away']} @ {game['home']}",
+                            "date": game["game_date"],
+                            "time": (game["game_time"] or "")[:5],
+                            "team": team,
+                            "odds": int(ml_odds),
+                            "sportsbook": sportsbook,
+                            "model_prob": round(prob, 3),
+                            "implied_prob": round(implied, 3),
+                            "edge": round(edge, 3),
+                            "edge_pct": round(edge * 100.0, 1),
+                            "recommended_amount": round(stake, 2),
+                        })
+
+            opps.sort(key=lambda x: x["edge"], reverse=True)
+            return opps
+        except Exception as e:
+            print(f"Value bets scan error: {e}")
+            return []
+        finally:
+            conn.close()
+
 # Flask routes with better error handling
 ai_bp = Blueprint("ai", __name__)
 betting_ai = BettingAI()
@@ -587,16 +700,19 @@ def ai_chat():
         message = (data.get('message') or '').strip()
         game_id = data.get('game_id')
         team = data.get('team')
-        
+
+        print(f"[AI] /api/ai-chat message='{message[:120]}' game_id={game_id}")
+
         if not message:
             return jsonify({'ok': False, 'error': 'No message provided'})
-            
+
         payload, intent = betting_ai.process_natural_language(message, game_id, team)
         return jsonify({'ok': True, 'result': payload, 'intent': intent})
-        
+
     except Exception as e:
-        print(f"AI chat error: {e}")
+        print(f"[AI] AI chat error: {e}")
         return jsonify({'ok': False, 'error': f'Server error: {str(e)}'}), 500
+
 
 @ai_bp.get("/ai-insights/<game_id>")
 def ai_insights(game_id):

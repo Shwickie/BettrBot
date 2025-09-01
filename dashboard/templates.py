@@ -279,7 +279,8 @@ AI_CHAT_TEMPLATE = r"""
       const payload = { message, game_id: SELECTED && SELECTED.game_id };
       const r = await fetch('/api/ai-chat', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
       const j = await r.json();
-      if(!j.ok){ pushBot('Sorry, something went wrong.'); return; }
+      if(!j.ok){ pushBot(j.error || 'Sorry, something went wrong.'); return; }
+
 
       if(j.intent==='analysis'){
         const b = j.result?.best_bet || {};
@@ -889,19 +890,28 @@ HTML_TEMPLATE = """
             // Display value bets
             let html = '<strong>AI:</strong> I found these value betting opportunities:<br><br>';
             result.forEach(bet => {
-                const edgeClass = bet.edge_pct > 5 ? 'positive' : bet.edge_pct > 2 ? 'neutral' : 'negative';
+                const title =
+                    bet.game ||
+                    (bet.away_team && bet.home_team ? `${bet.away_team} @ ${bet.home_team}` :
+                    (bet.matchup || 'Matchup TBD'));
+
+                const edgePct = (bet.edge_pct != null)
+                    ? Number(bet.edge_pct)
+                    : ((Number(bet.model_prob || 0) - Number(bet.implied_prob || 0)) * 100);
+
+                const oddsTxt = (Number(bet.odds) > 0 ? `+${bet.odds}` : `${bet.odds ?? ''}`);
+                const edgeClass = edgePct > 5 ? 'positive' : edgePct > 2 ? 'neutral' : 'negative';
+
                 html += `
                     <div style="margin: 10px 0; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 5px;">
-                        <strong>${bet.game}</strong> - ${bet.date}<br>
-                        Team: ${bet.team}<br>
-                        Edge: <span class="${edgeClass}">${bet.edge_pct.toFixed(1)}%</span><br>
-                        Odds: ${bet.odds > 0 ? '+' : ''}${bet.odds} @ ${bet.sportsbook}<br>
-                        <button class="btn btn-sm btn-success" onclick="placeBetFromAI('${bet.team}', ${bet.odds}, '${bet.sportsbook}')">
-                            Place Bet
-                        </button>
+                    <strong>${title}</strong> - ${bet.date || ''}<br>
+                    Team: ${bet.team}<br>
+                    Edge: <span class="${edgeClass}">${edgePct.toFixed(1)}%</span><br>
+                    Odds: ${oddsTxt} ${bet.sportsbook ? `@ ${bet.sportsbook}` : ''}
                     </div>
                 `;
             });
+
             
             if (result.length === 0) {
                 html += 'No value bets found with your criteria.';
@@ -968,18 +978,31 @@ HTML_TEMPLATE = """
             if (data.ok && data.result) {
                 let html = '<h4>AI Predictions</h4>';
                 
+                // replace the loop inside getAIPredictions() with this:
                 if (Array.isArray(data.result)) {
                     data.result.forEach(bet => {
+                        const title =
+                        bet.game ||
+                        (bet.away_team && bet.home_team ? `${bet.away_team} @ ${bet.home_team}` :
+                        (bet.matchup || 'Matchup TBD'));
+
+                        const edgePct = (bet.edge_pct != null)
+                        ? Number(bet.edge_pct)
+                        : ((Number(bet.model_prob || 0) - Number(bet.implied_prob || 0)) * 100);
+
+                        const oddsTxt = (Number(bet.odds) > 0 ? `+${bet.odds}` : `${bet.odds ?? ''}`);
+
                         html += `
-                            <div class="alert alert-success" style="margin: 10px 0;">
-                                <strong>${bet.game}</strong><br>
-                                Bet: ${bet.team} ML<br>
-                                Edge: ${bet.edge_pct.toFixed(1)}%<br>
-                                Odds: ${bet.odds}
-                            </div>
+                        <div class="alert alert-success" style="margin: 10px 0;">
+                            <strong>${title}</strong><br>
+                            Bet: ${bet.team} ML<br>
+                            Edge: ${edgePct.toFixed(1)}%<br>
+                            Odds: ${oddsTxt}
+                        </div>
                         `;
                     });
                 }
+
                 
                 resultsDiv.innerHTML = html;
             }

@@ -144,9 +144,12 @@ def _normalize_us(odds):
         return round((v - 1) * 100) if v >= 2 else round(-100/(v-1))
     return int(round(v))
 
-def _implied_prob(us):
-    us = float(us)
-    return 100.0/(us+100.0) if us > 0 else abs(us)/(abs(us)+100.0)
+def _implied_prob(od):
+    if od is None:
+        return None
+    od = int(od)
+    return 100.0 / (od + 100.0) if od > 0 else abs(od) / (abs(od) + 100.0)
+
 
 def _season_now():
     today = dt.date.today()
@@ -207,7 +210,129 @@ def _best(by_book):
     best = max(by_book, key=lambda x: x["odds"])
     return best["odds"], best["sportsbook"]
 
-def list_value_bets(edge_min=0.02):
+def _normalize_american(raw):
+    """
+    Accepts American like '+110'/'-120' or decimal like 1.91/2.35
+    and returns an int American price (e.g., 110, -120). Returns None if unusable.
+    """
+    try:
+        s = str(raw).strip()
+        if s.startswith('+'):
+            s = s[1:]
+        v = float(s)
+    except Exception:
+        return None
+
+    # Decimal odds heuristic
+    if 1.01 <= v <= 10.0:
+        if v >= 2.0:
+            return int(round((v - 1) * 100))
+        else:
+            return int(round(-100 / (v - 1)))
+
+    # Already American
+    return int(round(v))
+
+
+def _book_count(by_book):
+    if not by_book:
+        return 0
+    return len({str(r.get("sportsbook","")) for r in by_book if r.get("sportsbook") is not None})
+
+
+def list_value_bets(edge_min=0.05):
+    conn = _conn()
+    try:
+        import datetime as dt, math
+        today = dt.date.today()
+        end = today + dt.timedelta(days=21)
+
+        games = conn.execute("""
+            SELECT game_id, home_team, away_team,
+                   DATE(game_date) AS d, TIME(start_time_local) AS t
+            FROM games
+            WHERE DATE(game_date) BETWEEN DATE(?) AND DATE(?)
+            ORDER BY DATE(game_date), TIME(start_time_local)
+        """, (today, end)).fetchall()
+
+        pmap = _power_map(conn)
+        out = []
+
+        for g in games:
+            by_team = _latest_moneylines(conn, g["game_id"])  # dict[team] -> [{sportsbook, odds}, ...]
+            pa, ph = _win_probs(pmap, g["away_team"], g["home_team"])
+
+            # calibration shrink
+            ph = 0.5 + (ph - 0.5) * 0.7
+            pa = 1.0 - ph
+
+            # best lines + book counts
+            def _best(by_book):
+                if not by_book:
+                    return None, None
+                rows = []
+                for q in by_book:
+                    ao = _normalize_american(q.get("odds"))
+                    if ao is None:
+                        continue
+                    rows.append({"odds": int(ao), "sportsbook": str(q.get("sportsbook",""))})
+                if not rows:
+                    return None, None
+                # Higher positive is better; for negatives, less negative is better — max by 'odds' works.
+                best = max(rows, key=lambda r: r["odds"])
+                return best["odds"], best["sportsbook"]
+
+
+            home_bb = by_team.get(g["home_team"], [])
+            away_bb = by_team.get(g["away_team"], [])
+
+            home_ml, home_book = _best(home_bb)
+            away_ml, away_book = _best(away_bb)
+            home_n = _book_count(home_bb)
+            away_n = _book_count(away_bb)
+
+            if home_ml is None or away_ml is None:
+                continue
+
+            # normalize implied
+            ih = _implied_prob(home_ml); ia = _implied_prob(away_ml)
+            tot = max(ih + ia, 1e-9); ih_n, ia_n = ih/tot, ia/tot
+
+            for team, prob, ml, book, nbooks, implied in [
+                (g["home_team"], ph, home_ml, home_book, home_n, ih_n),
+                (g["away_team"], pa, away_ml, away_book, away_n, ia_n)
+            ]:
+                # clamp & guard-rails
+                prob = max(0.20, min(0.80, prob))
+                if nbooks < 2: 
+                    continue
+                if ml >= 250 and prob < 0.38:
+                    continue
+                if abs(prob - 0.50) < 0.03 and abs(ml) < 140:
+                    continue
+
+                edge = (prob - implied) * 0.93  # efficiency discount
+                if edge < float(edge_min): 
+                    continue
+
+                dec = 1 + (ml/100.0) if ml > 0 else 1 + (100.0/abs(ml))
+                k = ((prob*(dec-1)) - (1-prob)) / (dec-1) if dec > 1 else 0.0
+                stake = max(1.0, min(0.05*500.0, max(0.0, k)*500.0*0.25))
+
+                out.append({
+                    "away_team": g["away_team"], "home_team": g["home_team"],
+                    "date": g["d"], "t": (g["t"] or "")[:5],
+                    "team": team, "sportsbook": book, "odds": int(ml),
+                    "model_prob": round(prob, 3), "implied_prob": round(implied, 3),
+                    "edge": round(edge, 3), "edge_pct": round(edge*100, 1),
+                    "recommended_amount": round(stake, 2), "game_id": g["game_id"]
+                })
+
+        out.sort(key=lambda x: x["edge"], reverse=True)
+        return out
+    finally:
+        conn.close()
+
     conn = _conn()
     try:
         today = dt.date.today()
@@ -231,7 +356,25 @@ def list_value_bets(edge_min=0.02):
                 else:
                     us, book = _best(bb)
                 implied = _implied_prob(us)
+                prob = max(0.20, min(0.80, prob))
+
+                # Require at least 2 independent quotes to avoid one-off bad feeds
+                if len(bb) < 2:
+                    continue
+                # Sanity guardrails:
+                #  - If a team is a big dog on the board, we still want a non-trivial model belief
+                if us >= 250 and prob < 0.38:
+                    continue
+                #  - Filter near coin-flips unless price is actually meaningful
+                if abs(prob - 0.50) < 0.03 and abs(us) < 140:
+                    continue
+                #  - Skip broken odds
+                if not (0.0 < implied < 1.0) or math.isnan(implied):
+                    continue
+
                 edge = prob - implied
+                if edge < float(edge_min):
+                    continue
                 if edge >= float(edge_min):
                     # quarter-Kelly with 5% cap (same spirit as your UI)
                     dec = 1 + (us/100.0) if us > 0 else 1 + (100.0/abs(us))
