@@ -239,19 +239,20 @@ def _book_count(by_book):
         return 0
     return len({str(r.get("sportsbook","")) for r in by_book if r.get("sportsbook") is not None})
 
-
 def list_value_bets(edge_min=0.05):
+    """More conservative value betting with stricter filters"""
     conn = _conn()
     try:
         import datetime as dt, math
         today = dt.date.today()
-        end = today + dt.timedelta(days=21)
+        end = today + dt.timedelta(days=7)  # Shorter window - only next 7 days
 
         games = conn.execute("""
             SELECT game_id, home_team, away_team,
                    DATE(game_date) AS d, TIME(start_time_local) AS t
             FROM games
             WHERE DATE(game_date) BETWEEN DATE(?) AND DATE(?)
+            AND game_date >= DATE('now')  -- Only future games
             ORDER BY DATE(game_date), TIME(start_time_local)
         """, (today, end)).fetchall()
 
@@ -259,14 +260,13 @@ def list_value_bets(edge_min=0.05):
         out = []
 
         for g in games:
-            by_team = _latest_moneylines(conn, g["game_id"])  # dict[team] -> [{sportsbook, odds}, ...]
+            by_team = _latest_moneylines(conn, g["game_id"])
             pa, ph = _win_probs(pmap, g["away_team"], g["home_team"])
+            
+            # VERY AGGRESSIVE calibration - NFL markets are 90%+ efficient
+            ph_cal = 0.5 + (ph - 0.5) * 0.35  # Only keep 35% of raw edge
+            pa_cal = 1.0 - ph_cal
 
-            # calibration shrink
-            ph = 0.5 + (ph - 0.5) * 0.7
-            pa = 1.0 - ph
-
-            # best lines + book counts
             def _best(by_book):
                 if not by_book:
                     return None, None
@@ -278,10 +278,8 @@ def list_value_bets(edge_min=0.05):
                     rows.append({"odds": int(ao), "sportsbook": str(q.get("sportsbook",""))})
                 if not rows:
                     return None, None
-                # Higher positive is better; for negatives, less negative is better — max by 'odds' works.
-                best = max(rows, key=lambda r: r["odds"])
+                best = max(rows, key=lambda r: r["odds"])  # Best price for bettor
                 return best["odds"], best["sportsbook"]
-
 
             home_bb = by_team.get(g["home_team"], [])
             away_bb = by_team.get(g["away_team"], [])
@@ -294,30 +292,56 @@ def list_value_bets(edge_min=0.05):
             if home_ml is None or away_ml is None:
                 continue
 
-            # normalize implied
-            ih = _implied_prob(home_ml); ia = _implied_prob(away_ml)
-            tot = max(ih + ia, 1e-9); ih_n, ia_n = ih/tot, ia/tot
+            # Remove juice properly
+            ih = _implied_prob(home_ml)
+            ia = _implied_prob(away_ml)
+            tot = max(ih + ia, 1e-9)
+            ih_n, ia_n = ih/tot, ia/tot
 
             for team, prob, ml, book, nbooks, implied in [
-                (g["home_team"], ph, home_ml, home_book, home_n, ih_n),
-                (g["away_team"], pa, away_ml, away_book, away_n, ia_n)
+                (g["home_team"], ph_cal, home_ml, home_book, home_n, ih_n),
+                (g["away_team"], pa_cal, away_ml, away_book, away_n, ia_n)
             ]:
-                # clamp & guard-rails
-                prob = max(0.20, min(0.80, prob))
-                if nbooks < 2: 
+                # MUCH STRICTER FILTERS:
+                
+                # 1. Probability range - avoid extreme picks
+                prob = max(0.28, min(0.72, prob))
+                
+                # 2. Need at least 3 sportsbooks (not 2)
+                if nbooks < 3:
                     continue
-                if ml >= 250 and prob < 0.38:
+                
+                # 3. Skip lines too close to pick'em
+                if abs(ml) < 110:
                     continue
-                if abs(prob - 0.50) < 0.03 and abs(ml) < 140:
+                
+                # 4. Big underdogs need very strong model conviction
+                if ml >= 200 and prob < 0.45:
+                    continue
+                
+                # 5. Skip near coin-flip probabilities
+                if abs(prob - 0.50) < 0.05:
                     continue
 
-                edge = (prob - implied) * 0.93  # efficiency discount
-                if edge < float(edge_min): 
+                # 6. Market efficiency discount (assume market is 88% efficient)
+                raw_edge = prob - implied
+                edge = raw_edge * 0.88
+                
+                # 7. Higher minimum edge threshold
+                min_threshold = max(0.06, float(edge_min))  # At least 6%
+                if edge < min_threshold:
                     continue
 
+                # 8. Conservative Kelly sizing
                 dec = 1 + (ml/100.0) if ml > 0 else 1 + (100.0/abs(ml))
-                k = ((prob*(dec-1)) - (1-prob)) / (dec-1) if dec > 1 else 0.0
-                stake = max(1.0, min(0.05*500.0, max(0.0, k)*500.0*0.25))
+                kelly = ((prob*(dec-1)) - (1-prob)) / (dec-1) if dec > 1 else 0.0
+                
+                # Fractional Kelly with lower cap
+                stake = max(2.0, min(20.0, max(0.0, kelly) * 500.0 * 0.12))
+                
+                # 9. Only include if stake is meaningful
+                if stake < 3.0:
+                    continue
 
                 out.append({
                     "away_team": g["away_team"], "home_team": g["home_team"],
@@ -325,73 +349,17 @@ def list_value_bets(edge_min=0.05):
                     "team": team, "sportsbook": book, "odds": int(ml),
                     "model_prob": round(prob, 3), "implied_prob": round(implied, 3),
                     "edge": round(edge, 3), "edge_pct": round(edge*100, 1),
-                    "recommended_amount": round(stake, 2), "game_id": g["game_id"]
+                    "recommended_amount": round(stake, 2), "game_id": g["game_id"],
+                    "raw_edge": round(raw_edge, 3)  # For debugging
                 })
 
         out.sort(key=lambda x: x["edge"], reverse=True)
-        return out
+        
+        # Limit to top 2-3 opportunities max (realistic for NFL)
+        return out[:3]
+        
     finally:
         conn.close()
-
-    conn = _conn()
-    try:
-        today = dt.date.today()
-        end = today + dt.timedelta(days=21)
-        games = conn.execute("""SELECT game_id, home_team, away_team,
-                                       DATE(game_date) AS d, TIME(start_time_local) AS t
-                                FROM games
-                                WHERE DATE(game_date) BETWEEN DATE(?) AND DATE(?)
-                                ORDER BY DATE(game_date), TIME(start_time_local)""",
-                             (today, end)).fetchall()
-        pmap = _power_map(conn)
-        out = []
-        for g in games:
-            by_team = _latest_moneylines(conn, g["game_id"])
-            pa, ph = _win_probs(pmap, g["away_team"], g["home_team"])
-            for team, prob in ((g["home_team"], ph), (g["away_team"], pa)):
-                bb = by_team.get(team, [])
-                if not bb:
-                    # fallback line if no odds yet
-                    us, book = (100 if prob > 0.5 else -110), "No Line"
-                else:
-                    us, book = _best(bb)
-                implied = _implied_prob(us)
-                prob = max(0.20, min(0.80, prob))
-
-                # Require at least 2 independent quotes to avoid one-off bad feeds
-                if len(bb) < 2:
-                    continue
-                # Sanity guardrails:
-                #  - If a team is a big dog on the board, we still want a non-trivial model belief
-                if us >= 250 and prob < 0.38:
-                    continue
-                #  - Filter near coin-flips unless price is actually meaningful
-                if abs(prob - 0.50) < 0.03 and abs(us) < 140:
-                    continue
-                #  - Skip broken odds
-                if not (0.0 < implied < 1.0) or math.isnan(implied):
-                    continue
-
-                edge = prob - implied
-                if edge < float(edge_min):
-                    continue
-                if edge >= float(edge_min):
-                    # quarter-Kelly with 5% cap (same spirit as your UI)
-                    dec = 1 + (us/100.0) if us > 0 else 1 + (100.0/abs(us))
-                    k = ((prob*(dec-1)) - (1-prob)) / (dec-1) if dec > 1 else 0
-                    stake = max(1.0, min(0.05*500.0, max(0.0, k)*500.0*0.25))  # assume $500 if caller doesn’t pass bankroll
-                    out.append({
-                        "away_team": g["away_team"], "home_team": g["home_team"],
-                        "date": g["d"], "t": (g["t"] or "")[:5],
-                        "team": team, "sportsbook": book, "odds": us,
-                        "edge": round(edge,3), "edge_pct": round(edge*100,1),
-                        "recommended_amount": round(stake,2), "game_id": g["game_id"]
-                    })
-        out.sort(key=lambda x: x["edge"], reverse=True)
-        return out
-    finally:
-        conn.close()
-
 def game_card(game_id: str):
     conn = _conn()
     try:

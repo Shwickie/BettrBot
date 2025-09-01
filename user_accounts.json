@@ -39,12 +39,20 @@
   "cam": {
     "password": "scrypt:32768:8:1$QXQ4HtA3zBF6ZKZ1$709256dcf4e83813214af8933d56fd9f38e5d0564cd44de8947aeb36b4fe7b621e68e2773e15d2748a83c13f2ed41f728f1aab6b97af031be517a196c09ebe51",
     "name": "Camryn",
-    "bankroll": 0.0,
-    "total_deposits": 0.0,
+    "bankroll": 0.45,
+    "total_deposits": 0.45,
     "total_withdrawals": 0.0,
     "betting_profit_loss": 0.0,
     "bet_history": [],
-    "money_transactions": [],
+    "money_transactions": [
+      {
+        "date": "2025-09-01 15:03",
+        "type": "deposit",
+        "amount": 0.45,
+        "description": "",
+        "balance_after": 0.45
+      }
+    ],
     "is_admin": false
   },
   "bailford": {

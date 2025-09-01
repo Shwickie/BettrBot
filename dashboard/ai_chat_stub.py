@@ -1,10 +1,22 @@
-# ai_chat_stub.py — fixed version
+# ai_chat_stub.py – fixed version
 
 import os, sqlite3, math, datetime as dt, re, pickle
 from typing import Dict, Any, Optional
 import pandas as pd
 from flask import Blueprint, request, jsonify
 from sqlalchemy import create_engine, text
+import json
+
+# --- FIXED: Proper OpenAI import and setup ---
+try:
+    from openai import OpenAI
+    import openai as _openai
+    print("openai version:", getattr(_openai, "__version__", "unknown"))
+    OPENAI_AVAILABLE = True
+except ImportError:
+    print("OpenAI library not installed. Run: pip install openai")
+    OPENAI_AVAILABLE = False
+    OpenAI = None
 
 # --- add near the other imports
 import os, sys, re, math, datetime as dt
@@ -21,8 +33,6 @@ except Exception as e:
     print("ai_tools import error:", e)
     list_value_bets = None
 
-
-
 def _american_from_decimal(d: float) -> Optional[int]:
     try:
         d = float(d)
@@ -34,8 +44,6 @@ def _american_from_decimal(d: float) -> Optional[int]:
         return int(round((d - 1.0) * 100.0))
     # 1.01 – 1.99  => negative American
     return int(round(-100.0 / (d - 1.0)))
-
-
 
 def _normalize_american(odds_val) -> Optional[int]:
     """Accepts +120 / -110 / '1.91' / 1.91 / 'EVEN' etc. Returns clean American int or None."""
@@ -151,10 +159,31 @@ def _build_features_for_games(conn: sqlite3.Connection, games_df: pd.DataFrame) 
 
 class BettingAI:
     def __init__(self, db_path: str = None, model_path: Optional[str] = None):
-        self.db_path = db_path or os.environ.get("BETTR_DB_PATH", r"E:/Bettr Bot/betting-bot/data/betting.db")
-        default_pkl = os.path.join(os.path.dirname(__file__), "betting_model.pkl")
+        self.db_path = db_path or os.environ.get(
+            "BETTR_DB_PATH",
+            r"E:/Bettr Bot/betting-bot/data/betting.db"
+        )
+
+        # make sure model_pack always exists
+        self.model_pack = None
+
+        # resolve model path
+        default_pkl = r"E:/Bettr Bot/betting-bot/models/betting_model.pkl"
         model_pkl = model_path or os.environ.get("BETTR_MODEL_PKL", default_pkl)
-        self.model_pack = _load_model_pack(model_pkl)
+        self.model_pack = self._load_model_with_diagnostics(model_pkl)
+
+        # OpenAI client from OPENAI_API_KEY (not the key literal)
+        self.openai_client = None
+        if OPENAI_AVAILABLE:
+            api_key = os.getenv("OPENAI_API_KEY")
+            if api_key:
+                self.openai_client = OpenAI(api_key=api_key)
+                print("✅ OpenAI client initialized successfully")
+            else:
+                print("⚠️ OPENAI_API_KEY environment variable not set")
+        else:
+            print("⚠️ OpenAI library not available")
+
         self.context = {
             'user_bankroll': 500.0,
             'risk_tolerance': 'medium',
@@ -162,6 +191,178 @@ class BettingAI:
             'last_game_id': None,
             'last_team': None,
         }
+
+    def _get_betting_context(self, game_id: str = None) -> str:
+        """Get context for the AI"""
+        context_parts = []
+        conn = self._conn()
+        
+        try:
+            # Current value bets
+            value_bets = self._scan_value_bets(days=7, min_edge=0.05)
+            if value_bets:
+                context_parts.append("CURRENT VALUE BETS:")
+                for bet in value_bets[:3]:
+                    context_parts.append(f"- {bet['team']} ML {bet['odds']} ({bet['edge_pct']:.1f}% edge) vs {bet.get('away_team', '?')} @ {bet.get('home_team', '?')}")
+            
+            # Specific game if requested
+            if game_id:
+                try:
+                    analysis = self._analyze_game_payload(game_id)
+                    if not analysis.get('error'):
+                        context_parts.append(f"\nGAME ANALYSIS: {analysis['game']}")
+                        bb = analysis.get('best_bet')
+                        if bb:
+                            context_parts.append(f"Model Pick: {bb['team']} {bb['odds']} ({bb.get('edge', 0):.1f}% edge, {bb['confidence']:.1f}% confidence)")
+                except Exception as e:
+                    context_parts.append(f"Game analysis error: {e}")
+            
+            # Top teams
+            try:
+                season = dt.date.today().year if dt.date.today().month >= 8 else dt.date.today().year - 1
+                rankings = conn.execute("""
+                    SELECT team, power_score 
+                    FROM team_season_summary 
+                    WHERE season = ? 
+                    ORDER BY power_score DESC 
+                    LIMIT 5
+                """, (season,)).fetchall()
+                
+                if rankings:
+                    context_parts.append("\nTOP TEAMS:")
+                    for i, team_data in enumerate(rankings, 1):
+                        context_parts.append(f"{i}. {team_data['team']} ({team_data['power_score']:.1f})")
+            except Exception as e:
+                context_parts.append(f"Rankings error: {e}")
+                
+        finally:
+            conn.close()
+            
+        return "\n".join(context_parts) if context_parts else "No current betting data available."
+
+    def process_natural_language(self, message: str, game_id: Optional[str] = None, team: Optional[str] = None):
+        """FIXED: Real AI chat using OpenAI with modern API"""
+        
+        # Check if OpenAI is available
+        if not self.openai_client:
+            return self._fallback_to_old_logic(message, game_id, team)
+        
+        # Get betting context for the AI
+        context = self._get_betting_context(game_id)
+        
+        # Build the system prompt
+        system_prompt = f"""You are a professional NFL betting analyst with access to real-time data. You have 4+ years of NFL betting experience.
+
+CURRENT BETTING DATA:
+{context}
+
+YOUR EXPERTISE:
+- Analyze team matchups using power ratings and injury data
+- Identify value betting opportunities with proper edge calculation  
+- Understand betting markets, line movement, and sportsbook behavior
+- Apply proper bankroll management and Kelly criterion for bet sizing
+- Factor in home field advantage, weather, and situational spots
+
+PERSONALITY: 
+- Conversational but analytical - like talking to a sharp bettor friend
+- Give specific, actionable advice when you have strong conviction
+- Be honest about uncertainty and market efficiency
+- Don't hype bad bets or encourage reckless gambling
+- Use football terminology naturally (spread, juice, sharp money, etc.)
+
+USER MESSAGE: {message}
+
+Respond as if you're having a natural conversation about football betting. Be specific about numbers when you can."""
+
+        try:
+            # FIXED: Use modern OpenAI API format
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",  # Use more cost-effective model
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": message}
+                ],
+                max_tokens=600,
+                temperature=0.7
+            )
+            
+            ai_response = response.choices[0].message.content.strip()
+            print(f"[AI] OpenAI response: {ai_response[:100]}...")
+            return ({'message': ai_response}, 'ai_response')
+            
+        except Exception as e:
+            print(f"OpenAI error: {e}")
+            return self._fallback_to_old_logic(message, game_id, team)
+    
+    def _fallback_to_old_logic(self, message: str, game_id: str, team: str):
+        """KEEP as fallback when OpenAI fails"""
+        m = message.lower()
+        
+        if "value" in m and ("bet" in m or "edge" in m):
+            bets = self._scan_value_bets(days=7, min_edge=0.05)
+            bets = self._enrich_for_ui(bets)
+            return (bets, 'value_bets')
+        
+        if 'analy' in m and game_id:
+            analysis = self._analyze_game_payload(game_id)
+            return (analysis, 'analysis')
+            
+        if any(k in m for k in ['explain', 'why', 'reason']) and game_id:
+            analysis = self._analyze_game_payload(game_id)
+            if not analysis.get('error') and analysis.get('best_bet'):
+                bb = analysis['best_bet']
+                return ({
+                    'team': bb['team'],
+                    'factors': ['Model shows edge vs market implied probability'],
+                    'confidence': bb['confidence']
+                }, 'explain_pick')
+        
+        return ({'message': 'AI temporarily unavailable. Try "find value bets" or select a game to analyze.'}, 'info')
+
+    # [Keep all your existing methods unchanged - just paste them here]
+    def _load_model_with_diagnostics(self, path: str) -> Optional[dict]:
+        """Load model and print what we're actually using"""
+        print(f"🔍 Checking model at: {path}")
+        
+        if not os.path.exists(path):
+            print(f"❌ No trained model found at {path}")
+            print("📊 Using simple power ratings as fallback")
+            return None
+        
+        try:
+            with open(path, "rb") as f:
+                model_data = pickle.load(f)
+            
+            model_info = model_data.get('timestamp', 'Unknown')
+            feature_count = len(model_data.get('feature_cols', []))
+            
+            print(f"✅ Using ML model trained on: {model_info}")
+            print(f"📈 Model has {feature_count} features")
+            print(f"🎯 Model type: {type(model_data.get('model', 'Unknown')).__name__}")
+            return model_data
+            
+        except Exception as e:
+            print(f"❌ Error loading model: {e}")
+            print("📊 Falling back to power ratings")
+            return None
+
+    def _compare_predictions(self, conn, game_dict):
+        """Compare ML model vs simple power rating"""
+        # Simple prediction
+        simple_prob = self._prob_power_injury(conn, game_dict['away'], game_dict['home'])
+        
+        # ML prediction (if available)
+        if self.model_pack:
+            try:
+                ml_prob = self._predict_home_prob_model(conn, game_dict)
+                print(f"🤖 ML Model: {ml_prob:.3f} vs 📊 Simple: {simple_prob:.3f}")
+                return ml_prob
+            except Exception as e:
+                print(f"❌ ML model failed: {e}, using simple")
+                return simple_prob
+        else:
+            print(f"📊 Using simple power rating: {simple_prob:.3f}")
+            return simple_prob
 
     def _conn(self) -> sqlite3.Connection:
         c = sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES)
@@ -394,7 +595,6 @@ class BettingAI:
             out.append(b)
         return out
 
-
     def _analyze_game_payload(self, game_id: str) -> dict:
         """Fixed version with better error handling"""
         conn = self._conn()
@@ -494,64 +694,6 @@ class BettingAI:
         finally:
             conn.close()
 
-    def process_natural_language(self, message: str, game_id: Optional[str] = None, team: Optional[str] = None):
-        """Fixed NL processing with better error handling"""
-        m = (message or '').strip().lower()
-
-        try:
-            # inside your NL intent handler
-            if "value" in m and ("bet" in m or "edge" in m):
-                bets = self._scan_value_bets(days=21, min_edge=0.05)
-                bets = self._enrich_for_ui(bets)
-                return (bets, 'value_bets')
-
-
-            if 'analy' in m or 'analyze this game' in m or ('analyze' in m and game_id):
-                if not game_id:
-                    return ({'message': 'Pick a game first (left panel), then hit "Analyze this game".'}, 'info')
-                payload = self._analyze_game_payload(game_id)
-                return (payload, 'analysis')
-
-            if any(k in m for k in ['explain', 'why', 'reason']):
-                gid = game_id or self.context.get('last_game_id')
-                if not gid:
-                    return ({'message': 'Pick a game first.'}, 'info')
-
-                analysis = self._analyze_game_payload(gid)
-                if analysis.get('error'):
-                    return (analysis, 'info')
-
-                bb = analysis.get('best_bet')
-                if not bb:
-                    return ({'message': 'No pick available for this game.'}, 'info')
-
-                home = analysis['teams']['home']
-                away = analysis['teams']['away']
-                prob = analysis['probabilities']['home'] if bb['team'] == home else analysis['probabilities']['away']
-
-                return ({
-                    'team': bb['team'],
-                    'pick': bb['team'],
-                    'odds': bb['odds'],
-                    'factors': ['Power rating edge vs implied odds', 'Injury impact considered'],
-                    'confidence': bb['confidence'],
-                    'model_probability': prob
-                }, 'explain_pick')
-
-
-
-            if m.startswith('bankroll'):
-                amt = re.search(r'(\d+(\.\d+)?)', m)
-                if amt:
-                    self.context['user_bankroll'] = float(amt.group(1))
-                    return ({'message': f"Bankroll updated to ${self.context['user_bankroll']:.2f}"}, 'settings')
-
-            return ({'message': "Try: 'Analyze this game', 'Find value bets with 5% edge', or 'Explain the pick'."}, 'info')
-            
-        except Exception as e:
-            print(f"Error in process_natural_language: {e}")
-            return ({'message': f'Analysis error: {str(e)}'}, 'error')
-
     def _is_genuine_edge(self, prob: float, implied_prob: float, min_edge: float = 0.08) -> bool:
         """
         More conservative edge detection
@@ -567,8 +709,6 @@ class BettingAI:
             return False
             
         return edge >= min_edge
-
-
 
     def _scan_value_bets(self, days: int = 21, min_edge: float = 0.05):
         """Scan for value betting opportunities (aligned with dashboard)."""
