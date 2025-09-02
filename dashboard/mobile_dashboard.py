@@ -39,11 +39,12 @@ except Exception:
 
 
 try:
-    from dashboard.ai_chat_stub import ai_bp
+    from dashboard.ai_chat_stub import comprehensive_ai_bp
+    print("AI chat stub loaded from:", comprehensive_ai_bp.__file__)
 except Exception:
     import os, sys
     sys.path.append(os.path.dirname(__file__))
-    from ai_chat_stub import ai_bp
+    from ai_chat_stub import comprehensive_ai_bp
 
 # -----------------
 # Auth decorators
@@ -160,7 +161,7 @@ _engine = create_engine(f"sqlite:///{DB_PATH}")
 # Flask app
 app = Flask(__name__)
 # register AI blueprint at /api/ai-*
-app.register_blueprint(ai_bp, url_prefix="/api")
+app.register_blueprint(comprehensive_ai_bp, url_prefix='')
 app.secret_key = 'bettr-bot-enhanced-2025'
 # --- ADD: one-time indexes + WAL ---
 def ensure_indexes():
@@ -183,6 +184,19 @@ USER_DATA_FILE = os.environ.get(
     os.path.join(BASE_DIR, "..", "user_accounts.json")  # lives in project root
 )
 app.secret_key = os.environ.get("FLASK_SECRET", "bettr-bot-enhanced-2025")
+
+
+@app.route('/debug/routes')
+def list_routes():
+    import urllib
+    output = []
+    for rule in app.url_map.iter_rules():
+        methods = ','.join(rule.methods)
+        line = urllib.parse.unquote("{:50s} {:20s} {}".format(rule.endpoint, methods, rule))
+        output.append(line)
+    
+    return '<pre>' + '\n'.join(sorted(output)) + '</pre>'
+
 
 @app.route('/ai')
 @login_required

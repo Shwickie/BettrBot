@@ -110,239 +110,1055 @@ AI_CHAT_TEMPLATE = r"""
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Bettr Bot • AI Chat</title>
+  <title>Bettr Bot • AI Assistant</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root{
-      --bg:#0e2339; --panel:#122b45; --panel2:#0f2841; --text:#e6f0ff;
-      --muted:#9db3d1; --accent:#00d4ff; --green:#15d07e; --chip:#183b5e;
+    :root {
+      --bg: #0e2339;
+      --panel: #122b45;
+      --panel2: #0f2841;
+      --text: #e6f0ff;
+      --muted: #9db3d1;
+      --accent: #00d4ff;
+      --green: #15d07e;
+      --yellow: #ffcc33;
+      --red: #ff6b6b;
+      --chip: #183b5e;
+      --loading: #4a9eff;
     }
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Arial,sans-serif}
-    .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(180deg,#0f2a44,#0b2034)}
-    .brand{font-weight:800;letter-spacing:.3px}
-    .back a{color:var(--muted);text-decoration:none;border:1px solid #2b4664;padding:6px 10px;border-radius:10px}
-    .wrap{display:grid;grid-template-columns:320px 1fr;gap:16px;padding:16px}
-    .left{background:var(--panel);border-radius:16px;padding:14px}
-    .right{background:var(--panel);border-radius:16px;display:flex;flex-direction:column;min-height:70vh;overflow:hidden}
-    h2,h3{margin:0 0 10px 0}
-    .game-select{background:var(--panel2);border:1px solid #254664;border-radius:12px;padding:10px;height:52vh;overflow:auto}
-    .game{padding:8px;border-radius:10px;cursor:pointer}
-    .game:hover{background:#123455}
-    .game.active{background:#124c72;border:1px solid #256b92}
-    .muted{color:var(--muted);font-size:12px}
-    .chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0}
-    .chip{background:var(--chip);border:1px solid #2e5378;padding:6px 10px;border-radius:999px;cursor:pointer;font-size:12px}
-    .chip:hover{filter:brightness(1.1)}
-    .thread{flex:1;padding:16px;overflow:auto;background:linear-gradient(180deg,#102a45,#0e243a)}
-    .msg{max-width:820px;margin:10px auto;padding:12px 14px;border-radius:14px;line-height:1.45}
-    .me{background:#103a5f;border:1px solid #2b5b83}
-    .bot{background:#0f334f;border:1px solid #274f72}
-    .pick{padding:8px;border-radius:10px;cursor:pointer;background:#0f2841;border:1px solid #254664;margin-bottom:8px}
-    .pick:hover{background:#123455}
-    .pct{color:var(--green);font-weight:700}
-    .footer{display:flex;gap:8px;padding:12px;border-top:1px solid #1d3f5f;background:var(--panel2)}
-    input[type=text]{flex:1;background:#0e2a45;border:1px solid #2c4f73;border-radius:12px;padding:12px;color:var(--text)}
-    button{background:linear-gradient(180deg,#0db1d6,#089bbd);border:0;color:#05202c;padding:10px 14px;border-radius:12px;font-weight:700;cursor:pointer}
-    .pct{color:var(--green);font-weight:700}
-    @media (max-width:900px){.wrap{grid-template-columns:1fr}.left{order:2}.right{order:1}}
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    
+    .container {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      background: linear-gradient(135deg, #0f2a44, #0b2034);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    
+    .brand {
+      font-weight: 800;
+      font-size: 18px;
+      letter-spacing: 0.5px;
+      color: var(--yellow);
+    }
+    
+    .back-btn {
+      color: var(--muted);
+      text-decoration: none;
+      border: 1px solid #2b4664;
+      padding: 8px 16px;
+      border-radius: 8px;
+      transition: all 0.3s ease;
+      font-size: 14px;
+    }
+    
+    .back-btn:hover {
+      background: rgba(255,255,255,0.1);
+      transform: translateY(-1px);
+    }
+    
+    .main-content {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      gap: 20px;
+      padding: 20px;
+      max-height: calc(100vh - 80px);
+    }
+    
+    .sidebar {
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    }
+    
+    .chat-area {
+      background: var(--panel);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    }
+    
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--yellow);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .section-subtitle {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 16px;
+    }
+    
+    .picks-section {
+      margin-bottom: 24px;
+    }
+    
+    .picks-container, .games-container {
+      background: var(--panel2);
+      border: 1px solid #254664;
+      border-radius: 12px;
+      padding: 12px;
+      max-height: 240px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent) var(--panel2);
+    }
+    
+    .picks-container::-webkit-scrollbar,
+    .games-container::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    .picks-container::-webkit-scrollbar-track,
+    .games-container::-webkit-scrollbar-track {
+      background: var(--panel2);
+    }
+    
+    .picks-container::-webkit-scrollbar-thumb,
+    .games-container::-webkit-scrollbar-thumb {
+      background: var(--accent);
+      border-radius: 3px;
+    }
+    
+    .pick-item, .game-item {
+      padding: 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 8px;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+    
+    .pick-item:hover, .game-item:hover {
+      background: rgba(255,255,255,0.05);
+      transform: translateY(-1px);
+    }
+    
+    .pick-item.loading, .game-item.loading {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+    
+    .game-item.active {
+      background: #124c72;
+      border: 1px solid var(--accent);
+      box-shadow: 0 2px 8px rgba(0,212,255,0.2);
+    }
+    
+    .pick-matchup, .game-matchup {
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+    
+    .pick-details, .game-details {
+      color: var(--muted);
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .confidence {
+      color: var(--green);
+      font-weight: 700;
+    }
+    
+    .confidence.medium { color: var(--yellow); }
+    .confidence.low { color: var(--red); }
+    
+    .quick-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+    
+    .quick-btn {
+      background: var(--chip);
+      border: 1px solid #2e5378;
+      padding: 8px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text);
+      transition: all 0.3s ease;
+      white-space: nowrap;
+    }
+    
+    .quick-btn:hover {
+      background: var(--accent);
+      color: var(--bg);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0,212,255,0.3);
+    }
+    
+    .chat-thread {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      background: linear-gradient(180deg, #102a45, #0e243a);
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent) transparent;
+    }
+    
+    .chat-thread::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    .chat-thread::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    
+    .chat-thread::-webkit-scrollbar-thumb {
+      background: var(--accent);
+      border-radius: 3px;
+    }
+    
+    .message {
+      max-width: 85%;
+      margin: 16px 0;
+      padding: 16px 18px;
+      border-radius: 16px;
+      line-height: 1.6;
+      animation: fadeIn 0.3s ease;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .message.user {
+      background: #1a4a6b;
+      border: 1px solid #2b6b8f;
+      margin-left: auto;
+      border-bottom-right-radius: 4px;
+    }
+    
+    .message.ai {
+      background: #0f334f;
+      border: 1px solid #274f72;
+      border-bottom-left-radius: 4px;
+    }
+    
+    .message.loading {
+      background: var(--panel2);
+      border: 1px solid var(--loading);
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1; }
+    }
+    
+    .loading-dots {
+      display: inline-block;
+    }
+    
+    .loading-dots::after {
+      content: '';
+      animation: dots 1.5s infinite;
+    }
+    
+    @keyframes dots {
+      0%, 20% { content: '.'; }
+      40% { content: '..'; }
+      60%, 100% { content: '...'; }
+    }
+    
+    .bet-recommendation {
+      background: rgba(21, 208, 126, 0.1);
+      border: 1px solid rgba(21, 208, 126, 0.3);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 8px 0;
+    }
+    
+    .bet-recommendation .team {
+      font-weight: 700;
+      color: var(--green);
+    }
+    
+    .bet-recommendation .edge {
+      color: var(--green);
+      font-weight: 600;
+    }
+    
+    .injury-alert {
+      background: rgba(255, 107, 107, 0.1);
+      border: 1px solid rgba(255, 107, 107, 0.3);
+      border-radius: 8px;
+      padding: 8px;
+      margin: 4px 0;
+      font-size: 13px;
+    }
+    
+    .value-bet {
+      background: rgba(255, 204, 51, 0.1);
+      border: 1px solid rgba(255, 204, 51, 0.3);
+      border-radius: 8px;
+      padding: 10px;
+      margin: 4px 0;
+    }
+    
+    .value-bet .edge-pct {
+      color: var(--green);
+      font-weight: 700;
+    }
+    
+    .chat-input-area {
+      border-top: 1px solid rgba(255,255,255,0.1);
+      padding: 16px 20px;
+      background: var(--panel2);
+      border-bottom-left-radius: 16px;
+      border-bottom-right-radius: 16px;
+    }
+    
+    .input-container {
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+    }
+    
+    .chat-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid #2c4f73;
+      border-radius: 12px;
+      padding: 12px 16px;
+      color: var(--text);
+      font-size: 14px;
+      resize: none;
+      min-height: 44px;
+      max-height: 120px;
+      line-height: 1.4;
+      transition: border-color 0.3s ease;
+    }
+    
+    .chat-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(0,212,255,0.2);
+    }
+    
+    .send-btn {
+      background: linear-gradient(135deg, #0db1d6, #089bbd);
+      border: none;
+      color: #05202c;
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-size: 14px;
+    }
+    
+    .send-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(13, 177, 214, 0.4);
+    }
+    
+    .send-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+    
+    .status-dot.loading {
+      background: var(--loading);
+      animation: pulse 1s infinite;
+    }
+    
+    .status-dot.error {
+      background: var(--red);
+    }
+    
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 200px;
+      color: var(--muted);
+      font-size: 14px;
+      text-align: center;
+    }
+    
+    .empty-state .icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+    
+    /* Mobile Responsive */
+    @media (max-width: 900px) {
+      .main-content {
+        grid-template-columns: 1fr;
+        gap: 16px;
+        padding: 16px;
+      }
+      
+      .sidebar {
+        order: 2;
+        max-height: 400px;
+      }
+      
+      .chat-area {
+        order: 1;
+        min-height: 500px;
+      }
+      
+      .message {
+        max-width: 95%;
+      }
+      
+      .quick-actions {
+        flex-direction: column;
+        gap: 6px;
+      }
+      
+      .input-container {
+        flex-direction: column;
+        gap: 8px;
+      }
+      
+      .send-btn {
+        width: 100%;
+      }
+    }
   </style>
 </head>
 <body>
-  <div class="topbar">
-    <div class="brand">🤖– Bettr Bot • AI Chat</div>
-    <div class="back"><a href="/"> ← Back to Dashboard</a></div>
-  </div>
-  <h3>Model Picks</h3>
-  <div class="muted">Click a pick to analyze it immediately.</div>
-  <div id="picks" class="game-select" style="height:28vh;margin-bottom:10px;"></div>
+  <div class="container">
+    <div class="topbar">
+      <div class="brand">🤖 Bettr Bot • AI Assistant</div>
+      <a href="/" class="back-btn">← Back to Dashboard</a>
+    </div>
 
-  <h3 style="margin-top:6px;">Select a game</h3>
-  <div class="muted">Click a matchup, then use quick actions.</div>
-  <div class="wrap">
-    <aside class="left">
-      <h3>Select a game</h3>
-      <div class="muted">Click a matchup, then use quick actions or ask anything.</div>
-      <div id="games" class="game-select"></div>
-      <div class="chips">
-        <div class="chip" onclick="quick('analyze')">Analyze game</div>
-        <div class="chip" onclick="quick('value5')">Find value bets ≥5%</div>
-        <div class="chip" onclick="quick('explain')">Explain the pick</div>
-      </div>
-    </aside>
+    <div class="main-content">
+      <div class="sidebar">
+        <!-- Model Picks Section -->
+        <div class="picks-section">
+          <div class="section-title">
+            📈 Model Picks
+          </div>
+          <div class="section-subtitle">Click a pick to analyze it immediately</div>
+          <div id="picks-container" class="picks-container">
+            <div class="empty-state">
+              <div class="icon">📊</div>
+              <div>Loading model picks...</div>
+            </div>
+          </div>
+        </div>
 
-    <main class="right">
-      <div id="thread" class="thread"></div>
-      <div class="footer">
-        <input id="msg" type="text" placeholder="Ask about a game, value bets, bankroll, etc." />
-        <button id="send">Send</button>
+        <!-- Games Selection Section -->
+        <div class="games-section">
+          <div class="section-title">
+            🏈 Select Game
+          </div>
+          <div class="section-subtitle">Choose a matchup for detailed analysis</div>
+          <div id="games-container" class="games-container">
+            <div class="empty-state">
+              <div class="icon">🏟️</div>
+              <div>Loading games...</div>
+            </div>
+          </div>
+
+          <!-- Quick Actions -->
+          <div class="quick-actions">
+            <div class="quick-btn" onclick="quickAction('analyze')">🎯 Analyze Game</div>
+            <div class="quick-btn" onclick="quickAction('value5')">💰 Find 5%+ Edges</div>
+            <div class="quick-btn" onclick="quickAction('injuries')">🏥 Injury Report</div>
+            <div class="quick-btn" onclick="quickAction('explain')">📝 Explain Pick</div>
+          </div>
+        </div>
       </div>
-    </main>
+
+      <div class="chat-area">
+        <div class="status-indicator">
+          <div id="status-dot" class="status-dot"></div>
+          <span id="status-text">AI Assistant Ready</span>
+        </div>
+        
+        <div id="chat-thread" class="chat-thread">
+          <div class="message ai">
+            <strong>AI Assistant:</strong> Welcome to Bettr Bot's AI analysis system! I can help you:
+            <br><br>
+            • Analyze specific games with ML model predictions
+            <br>• Find value betting opportunities with statistical edges  
+            <br>• Review injury reports and player impacts
+            <br>• Explain betting picks and strategies
+            <br><br>
+            Select a game from the sidebar or ask me anything about NFL betting!
+          </div>
+        </div>
+
+        <div class="chat-input-area">
+          <div class="input-container">
+            <textarea 
+              id="chat-input" 
+              class="chat-input" 
+              placeholder="Ask about games, teams, injuries, or betting strategies..."
+              rows="1"
+            ></textarea>
+            <button id="send-btn" class="send-btn">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
-    let SELECTED = null;
+    let selectedGame = null;
+    let isLoading = false;
+    let allGames = [];
 
-    function row(g){
-        const t = `${g.game}`;
-        return `<div class="game ${SELECTED && SELECTED.game_id===g.game_id ? 'active':''}"
-                    data-id="${g.game_id}"
-                    onclick='pick(${JSON.stringify(g)})'>
-                    <div>${t}</div>
-                    <div class="muted">${g.date} • ${g.time || ''}</div>
-                </div>`;
-    }
-
-
-
-    async function loadGames(){
-      const r = await fetch('/api/games');
-      const data = await r.json();
-      window.__GAMES = data.slice();
-      const box = document.getElementById('games');
-      box.innerHTML = data.map(row).join('') || '<div class="muted">No games found.</div>';
-
-      // Preselect via ?game_id=...
-      const url = new URL(location.href);
-      const gid = new URLSearchParams(window.location.search).get('game_id');
-      if (gid && !SELECTED) {  // <-- guard so it runs only once
-        const found = (data||[]).find(g => String(g.game_id) === String(gid));
-        if (found) { SELECTED = found; pick(found); setTimeout(()=>quick('analyze'),180); }
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      initializeChat();
+      loadModelPicks();
+      loadGames();
+      setupInputHandlers();
+      
+      // Check for game_id in URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const gameId = urlParams.get('game_id');
+      if (gameId) {
+        setTimeout(() => {
+          selectGameById(gameId);
+          quickAction('analyze');
+        }, 500);
       }
+    });
 
-
+    function initializeChat() {
+      updateStatus('ready', 'AI Assistant Ready');
     }
 
-    function pick(g){
-        SELECTED = g;
-        const box = document.getElementById('games');
-        if (box) {
-            box.querySelectorAll('.game').forEach(el => {
-            const isActive = el.getAttribute('data-id') === String(g.game_id);
-            el.classList.toggle('active', isActive);
-            });
+    function updateStatus(type, message) {
+      const dot = document.getElementById('status-dot');
+      const text = document.getElementById('status-text');
+      
+      dot.className = `status-dot ${type}`;
+      text.textContent = message;
+    }
+
+    async function loadModelPicks() {
+      try {
+        updateStatus('loading', 'Loading model picks...');
+        
+        const response = await fetch('/api/predictions');
+        const picks = await response.json();
+        
+        const container = document.getElementById('picks-container');
+        
+        if (!picks || picks.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="icon">📭</div>
+              <div>No upcoming picks available</div>
+            </div>
+          `;
+          return;
         }
-        pushBot(`Selected: <b>${g.game}</b><div class="muted">${g.date} • ${g.time || ''}</div>`);
 
+        container.innerHTML = picks.slice(0, 8).map(pick => {
+          const confidence = pick.confidence * 100;
+          const confClass = confidence > 65 ? 'high' : confidence > 55 ? 'medium' : 'low';
+          
+          return `
+            <div class="pick-item" onclick="selectGameByMatchup('${pick.game_id}', '${pick.matchup}')">
+              <div class="pick-matchup">${pick.matchup}</div>
+              <div class="pick-details">
+                <span>${pick.game_date} • ${(pick.game_time || '').slice(0,5)}</span>
+                <span>
+                  Pick: <strong>${pick.prediction}</strong> 
+                  (<span class="confidence ${confClass}">${confidence.toFixed(1)}%</span>)
+                </span>
+              </div>
+            </div>
+          `;
+        }).join('');
+        
+        updateStatus('ready', 'Model picks loaded');
+        
+      } catch (error) {
+        console.error('Failed to load picks:', error);
+        document.getElementById('picks-container').innerHTML = `
+          <div class="empty-state">
+            <div class="icon">⚠️</div>
+            <div>Failed to load picks</div>
+          </div>
+        `;
+      }
     }
 
-
-
-
-    function pushMe(text){
-      const t = document.getElementById('thread');
-      t.insertAdjacentHTML('beforeend', `<div class="msg me">${text}</div>`);
-      t.scrollTop = t.scrollHeight;
-    }
-    function pushBot(html){
-      const t = document.getElementById('thread');
-      t.insertAdjacentHTML('beforeend', `<div class="msg bot">${html}</div>`);
-      t.scrollTop = t.scrollHeight;
-    }
-    async function loadPicks(){
-    const r = await fetch('/api/predictions');
-    const data = await r.json();
-    const box = document.getElementById('picks');
-    const row = p => `
-      <div class="pick" onclick="goPick('${p.game_id}')">
-        <div><b>${p.matchup}</b></div>
-        <div class="muted">${p.game_date} ${(p.game_time||'').slice(0,5)} • pick <b>${p.prediction}</b> •
-          conf <span class="pct">${(p.confidence*100).toFixed(1)}%</span></div>
-      </div>`;
-    box.innerHTML = (data||[]).map(row).join('') || '<div class="muted">No upcoming picks.</div>';
-  }
-
-  function goPick(gameId){
-    // reflect selection in the URL
-    const url = new URL(location.href);
-    url.searchParams.set('game_id', gameId);
-    history.replaceState(null, '', url);
-
-    // if games are already loaded, select + analyze now
-    if (window.__GAMES){
-      const found = window.__GAMES.find(g => String(g.game_id) === String(gameId));
-      if (found){ pick(found); quick('analyze'); return; }
-    }
-    // else try again after games load
-    setTimeout(() => {
-      const found = (window.__GAMES||[]).find(g => String(g.game_id) === String(gameId));
-      if (found){ pick(found); quick('analyze'); }
-    }, 250);
-  }
-
-
-  // kick everything off
-  loadPicks();
-  loadGames();
-
-    async function callAI(message){
-      const payload = { message, game_id: SELECTED && SELECTED.game_id };
-      const r = await fetch('/api/ai-chat', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-      const j = await r.json();
-      if(!j.ok){ pushBot(j.error || 'Sorry, something went wrong.'); return; }
-
-
-      if(j.intent==='analysis'){
-        const b = j.result?.best_bet || {};
-        const edgeTxt = (typeof b.edge === 'number') ? b.edge.toFixed(1) : '—';
-        const confTxt = (typeof b.confidence === 'number') ? b.confidence.toFixed(1) : '—';
-        const lineTxt = Number.isFinite(b.odds) ? `${b.odds}` : 'n/a';
-        pushBot(`Best bet: <b>${b.team || 'n/a'}</b> <span class="pct">${edgeTxt}%</span> edge • conf <span class="pct">${confTxt}%</span><br>Line: <b>${lineTxt}</b> @ ${b.sportsbook || 'best'}`);
-
-
-        let lines = [];
-        if(j.result.summary) lines.push(j.result.summary);
-        if(j.result.injuries){
-          const i = j.result.injuries;
-          const bits = [];
-          if(i.home && i.home.qb) bits.push(`Home QB risk: ${i.home.qb}`);
-          if(i.away && i.away.qb) bits.push(`Away QB risk: ${i.away.qb}`);
-          if(bits.length) lines.push(`<div class="muted">${bits.join(' • ')}</div>`);
+    async function loadGames() {
+      try {
+        const response = await fetch('/api/games');
+        const games = await response.json();
+        allGames = games || [];
+        
+        const container = document.getElementById('games-container');
+        
+        if (allGames.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="icon">📅</div>
+              <div>No upcoming games</div>
+            </div>
+          `;
+          return;
         }
-        pushBot(lines.join(''));
-      }else if(j.intent==='value_bets'){
-        const rows = (j.result||[]).map(r => `<div>• ${r.team} ML ${r.odds} — edge <span class="pct">${(r.edge_pct).toFixed(1)}%</span> (p=${(r.model_prob*100).toFixed(0)}%)</div>`);
-        pushBot(rows.join('') || 'No edges at that threshold.');
-      }else if (j.intent === 'explain_pick')  {
-        const team = j.result.team || (j.result.pick || '');
-        const list = (j.result.factors || []).map(s => `<li>${s}</li>`).join('');
-        const prob = (j.result.model_probability ?? j.result.probability);
-        const pct  = (prob != null) ? `${(prob*100).toFixed(1)}%` : '—';
-        pushBot(`<div><b>${team}</b> – why the model likes it</div>
-                <ul style="margin:6px 0 0 16px;">${list}</ul>
-                <div class="muted">Model probability ${pct}</div>`);
-      }else if (j.intent === 'explanation') {
-        pushBot(j.result.message || 'OK');
 
-      }else{
-        pushBot(j.result && j.result.message ? j.result.message : 'How can I help?');
+        container.innerHTML = allGames.map(game => {
+        const dateRaw = game.game_date || game.date || "";
+        const timeRaw = game.start_time_local || game.time || "";
+
+        const displayDate = String(dateRaw).slice(0, 10);  // "YYYY-MM-DD"
+        const displayTime = String(timeRaw).slice(0, 5);   // "HH:MM"
+
+        const books =
+            new Set([
+            ...((game.teams?.[0]?.by_book || []).map(b => b.sportsbook)),
+            ...((game.teams?.[1]?.by_book || []).map(b => b.sportsbook)),
+            ]).size;
+
+        return `
+            <div class="game-item" data-game-id="${game.game_id}" onclick="selectGame('${game.game_id}')">
+            <div class="game-matchup">${game.game}</div>
+            <div class="game-details">
+                <span>${displayDate} • ${displayTime}</span>
+                <span>${books} ${books === 1 ? 'book' : 'books'}</span>
+            </div>
+            </div>
+        `;
+        }).join('');
+
+        
+      } catch (error) {
+        console.error('Failed to load games:', error);
+        document.getElementById('games-container').innerHTML = `
+          <div class="empty-state">
+            <div class="icon">❌</div>
+            <div>Error loading games</div>
+          </div>
+        `;
       }
     }
 
-    function quick(kind){
-      if(kind==='analyze'){
-        if(!SELECTED) return pushBot('Pick a game first.');
-        pushMe('Analyze this game');
-        callAI('Analyze this game');
-      }else if(kind==='value5'){
-        pushMe('Find value bets with 5% edge');
-        callAI('Find value bets with 5% edge');
-      }else if(kind==='explain'){
-        if(!SELECTED) return pushBot('Pick a game first.');
-        pushMe('Explain the pick');
-        callAI('Explain the pick');
+    function selectGame(gameId) {
+      // Update visual selection
+      document.querySelectorAll('.game-item').forEach(item => {
+        item.classList.remove('active');
+      });
+      
+      const selectedItem = document.querySelector(`[data-game-id="${gameId}"]`);
+      if (selectedItem) {
+        selectedItem.classList.add('active');
+        selectedGame = allGames.find(g => g.game_id === gameId);
+        
+        if (selectedGame) {
+          addMessage('user', `Selected: ${selectedGame.game}`);
+          updateStatus('ready', `Game selected: ${selectedGame.game}`);
+          
+          // Update URL without refresh
+          const url = new URL(window.location);
+          url.searchParams.set('game_id', gameId);
+          history.replaceState(null, '', url);
+        }
       }
     }
 
-    document.getElementById('send').onclick = () => {
-      const v = document.getElementById('msg').value.trim();
-      if(!v) return;
-      pushMe(v);
-      document.getElementById('msg').value = '';
-      callAI(v);
-    };
+    function selectGameById(gameId) {
+      const game = allGames.find(g => g.game_id === gameId);
+      if (game) {
+        selectGame(gameId);
+      }
+    }
 
-    loadGames();
+    function selectGameByMatchup(gameId, matchup) {
+      selectGame(gameId);
+      setTimeout(() => quickAction('analyze'), 100);
+    }
+
+    function quickAction(action) {
+      if (isLoading) return;
+      
+      let message = '';
+      
+      switch (action) {
+        case 'analyze':
+          if (!selectedGame) {
+            addMessage('ai', 'Please select a game first to analyze.');
+            return;
+          }
+          message = 'Analyze this game';
+          break;
+        case 'value5':
+          message = 'Find value bets with 5% or higher edge';
+          break;
+        case 'injuries':
+          message = 'Show current injury report';
+          break;
+        case 'explain':
+          if (!selectedGame) {
+            addMessage('ai', 'Please select a game first to explain the pick.');
+            return;
+          }
+          message = 'Explain why the model likes this pick';
+          break;
+      }
+      
+      if (message) {
+        addMessage('user', message);
+        sendMessage(message);
+      }
+    }
+
+    function setupInputHandlers() {
+      const input = document.getElementById('chat-input');
+      const button = document.getElementById('send-btn');
+      
+      // Auto-resize textarea
+      input.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+      });
+      
+      // Send on Enter (but allow Shift+Enter for new lines)
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          handleSend();
+        }
+      });
+      
+      button.addEventListener('click', handleSend);
+    }
+
+    function handleSend() {
+      if (isLoading) return;
+      
+      const input = document.getElementById('chat-input');
+      const message = input.value.trim();
+      
+      if (!message) return;
+      
+      addMessage('user', message);
+      input.value = '';
+      input.style.height = 'auto';
+      
+      sendMessage(message);
+    }
+
+    async function sendMessage(message) {
+      if (isLoading) return;
+      
+      setLoading(true);
+      addLoadingMessage();
+      
+      try {
+        const response = await fetch('/api/ai-chat-comprehensive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: message,
+            game_id: selectedGame?.game_id
+          })
+        });
+        
+        const data = await response.json();
+        removeLoadingMessage();
+        
+        if (data.ok) {
+          displayAIResponse(data);
+        } else {
+          addMessage('ai', `Sorry, I encountered an error: ${data.error || 'Unknown error'}`);
+        }
+        
+      } catch (error) {
+        removeLoadingMessage();
+        addMessage('ai', 'Network error. Please check your connection and try again.');
+        console.error('Chat error:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function displayAIResponse(data) {
+      const { intent, result } = data;
+      
+      if (intent === 'analysis' && result) {
+        displayGameAnalysis(result);
+      } else if (intent === 'value_bets' && Array.isArray(result)) {
+        displayValueBets(result);
+      } else if (intent === 'injury_report' && result) {
+        displayInjuryReport(result);
+      } else if (result?.message) {
+        addMessage('ai', result.message);
+      } else {
+        addMessage('ai', 'I processed your request, but I don\'t have specific information to share right now.');
+      }
+    }
+
+    // Enhanced displayGameAnalysis function for templates.py
+    function displayGameAnalysis(analysis) {
+      const homeProb = (analysis.probabilities?.home * 100) || 50;
+      const awayProb = (analysis.probabilities?.away * 100) || 50;
+      const bestBet = analysis.best_bet || {};
+      
+      let html = `<strong>🎯 Game Analysis: ${analysis.game}</strong><br><br>`;
+      
+      // Always show the detailed AI summary first if available
+      if (analysis.summary) {
+        html += `${analysis.summary}<br><br>`;
+      }
+      
+      html += `<strong>📊 Model Probabilities:</strong><br>`;
+      html += `• Home: ${homeProb.toFixed(1)}%<br>`;
+      html += `• Away: ${awayProb.toFixed(1)}%<br>`;
+      html += `• Confidence: ${((analysis.confidence_score || 0.7) * 100).toFixed(0)}%<br><br>`;
+      
+      if (bestBet.team) {
+        html += `<div class="bet-recommendation">`;
+        html += `<strong>💰 Best Betting Value:</strong><br>`;
+        html += `<span class="team">${bestBet.team}</span> at `;
+        html += `<strong>${bestBet.odds > 0 ? '+' : ''}${bestBet.odds}</strong><br>`;
+        html += `Edge: <span class="edge">${(bestBet.edge_pct || bestBet.edge * 100).toFixed(1)}%</span> • `;
+        html += `Model: <span class="confidence">${(bestBet.model_prob * 100).toFixed(1)}%</span><br>`;
+        html += `Sportsbook: ${bestBet.sportsbook || 'Best available'}`;
+        html += `</div><br>`;
+      } else {
+        html += `<div class="value-bet">`;
+        html += `<strong>📈 Market Assessment:</strong><br>`;
+        html += `No significant betting edge detected in current lines.`;
+        html += `</div><br>`;
+      }
+      
+      // Key factors from model
+      if (analysis.key_factors && analysis.key_factors.length > 0) {
+        html += `<strong>🔑 Key Model Factors:</strong><br>`;
+        analysis.key_factors.forEach(factor => {
+          html += `• ${factor}<br>`;
+        });
+        html += `<br>`;
+      }
+      
+      // Show injury alerts for relevant teams only
+      const injuries = analysis.injuries || {};
+      if (injuries.home?.qb > 0 || injuries.away?.qb > 0) {
+        html += `<div class="injury-alert">`;
+        html += `<strong>⚠️ Injury Impact:</strong><br>`;
+        if (injuries.home?.qb > 0) html += `• Home team: QB injury concerns<br>`;
+        if (injuries.away?.qb > 0) html += `• Away team: QB injury concerns<br>`;
+        html += `</div>`;
+      }
+      
+      addMessage('ai', html);
+    }
+
+    function displayValueBets(bets) {
+      if (!bets || bets.length === 0) {
+        addMessage('ai', 'No value bets found with the current criteria.');
+        return;
+      }
+      
+      let html = `<strong>💰 Value Betting Opportunities</strong><br><br>`;
+      html += `Found ${bets.length} opportunities:<br><br>`;
+      
+      bets.slice(0, 8).forEach(bet => {
+        const game = bet.away_team && bet.home_team ? 
+          `${bet.away_team} @ ${bet.home_team}` : 
+          (bet.game || bet.matchup || 'TBD');
+        
+        const edgePct = bet.edge_pct != null ? bet.edge_pct : 
+          ((bet.model_prob - bet.implied_prob) * 100);
+        
+        const odds = bet.odds > 0 ? `+${bet.odds}` : `${bet.odds}`;
+        
+        html += `<div class="value-bet">`;
+        html += `<strong>${game}</strong><br>`;
+        html += `${bet.team} ML ${odds} @ ${bet.sportsbook}<br>`;
+        html += `Edge: <span class="edge-pct">${edgePct.toFixed(1)}%</span> • `;
+        html += `Model: ${(bet.model_prob * 100).toFixed(0)}% • `;
+        html += `Bet: ${(bet.recommended_amount || 0).toFixed(0)}`;
+        html += `</div>`;
+      });
+      
+      addMessage('ai', html);
+    }
+
+    function displayInjuryReport(report) {
+      const injuries = report.injuries || [];
+      
+      if (injuries.length === 0) {
+        const msg = report.filtered_to_game ? 
+          'No active injuries found for the selected game teams.' :
+          'No active injuries found in the current report.';
+        addMessage('ai', msg);
+        return;
+      }
+      
+      let html = `<strong>🏥 Injury Report</strong>`;
+      
+      if (report.filtered_to_game) {
+        html += ` (Selected Game Teams)`;
+      }
+      
+      html += `<br><br>Total active injuries: ${injuries.length}<br><br>`;
+      
+      // Group by team and only show meaningful injuries
+      const byTeam = {};
+      injuries.forEach(injury => {
+        // Only include significant injury designations
+        if (['OUT', 'DOUBTFUL', 'QUESTIONABLE', 'IR', 'INJURED RESERVE'].includes(injury.designation.toUpperCase())) {
+          if (!byTeam[injury.team]) byTeam[injury.team] = [];
+          byTeam[injury.team].push(injury);
+        }
+      });
+      
+      if (Object.keys(byTeam).length === 0) {
+        addMessage('ai', 'No significant injuries found for the selected criteria.');
+        return;
+      }
+      
+      // Sort teams by injury impact
+      const teamImpacts = report.team_impacts || {};
+      const sortedTeams = Object.keys(byTeam).sort((a, b) => 
+        (teamImpacts[b] || 0) - (teamImpacts[a] || 0)
+      );
+      
+      sortedTeams.slice(0, 8).forEach(team => {
+        html += `<div class="injury-alert">`;
+        html += `<strong>${team}:</strong><br>`;
+        byTeam[team].slice(0, 6).forEach(injury => {
+          const severity = injury.designation.toUpperCase();
+          const severityIcon = severity === 'OUT' || severity === 'IR' ? '🚫' : 
+                              severity === 'DOUBTFUL' ? '❓' : '⚠️';
+          html += `${severityIcon} ${injury.player} (${injury.position}) - ${injury.designation}`;
+          if (injury.detail) html += ` - ${injury.detail}`;
+          html += `<br>`;
+        });
+        html += `</div><br>`;
+      });
+      
+      addMessage('ai', html);
+    }
+
+    function addMessage(sender, content) {
+      const thread = document.getElementById('chat-thread');
+      const messageDiv = document.createElement('div');
+      messageDiv.className = `message ${sender}`;
+      
+      if (sender === 'user') {
+        messageDiv.innerHTML = `<strong>You:</strong> ${content}`;
+      } else {
+        messageDiv.innerHTML = content.startsWith('<strong>') ? content : `<strong>AI:</strong> ${content}`;
+      }
+      
+      thread.appendChild(messageDiv);
+      thread.scrollTop = thread.scrollHeight;
+    }
+
+    function addLoadingMessage() {
+      const thread = document.getElementById('chat-thread');
+      const messageDiv = document.createElement('div');
+      messageDiv.className = 'message ai loading';
+      messageDiv.id = 'loading-message';
+      messageDiv.innerHTML = `<strong>AI:</strong> <span class="loading-dots">Analyzing</span>`;
+      
+      thread.appendChild(messageDiv);
+      thread.scrollTop = thread.scrollHeight;
+    }
+
+    function removeLoadingMessage() {
+      const loading = document.getElementById('loading-message');
+      if (loading) {
+        loading.remove();
+      }
+    }
+
+    function setLoading(loading) {
+      isLoading = loading;
+      const button = document.getElementById('send-btn');
+      const input = document.getElementById('chat-input');
+      
+      button.disabled = loading;
+      button.textContent = loading ? 'Thinking...' : 'Send';
+      
+      if (loading) {
+        updateStatus('loading', 'Processing your request...');
+      } else {
+        updateStatus('ready', selectedGame ? `Selected: ${selectedGame.game}` : 'AI Assistant Ready');
+      }
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+      if (e.ctrlKey || e.metaKey) {
+        switch(e.key) {
+          case '1':
+            e.preventDefault();
+            quickAction('analyze');
+            break;
+          case '2':
+            e.preventDefault();
+            quickAction('value5');
+            break;
+          case '3':
+            e.preventDefault();
+            quickAction('injuries');
+            break;
+        }
+      }
+    });
   </script>
 </body>
 </html>
@@ -847,7 +1663,7 @@ HTML_TEMPLATE = """
         addChatMessage('AI', '...thinking...', 'ai-loading');
         
         try {
-            const response = await fetch('/api/ai-chat', {
+            const response = await fetch('/api/ai-chat-comprehensive', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -962,54 +1778,112 @@ HTML_TEMPLATE = """
         sendAIMessage();
     }
 
+    // Add this to your templates.py JavaScript section
+
     async function getAIPredictions() {
         const resultsDiv = document.getElementById('ai-results');
-        resultsDiv.innerHTML = '<div class="loading">Getting AI predictions...</div>';
+        resultsDiv.innerHTML = '<div class="loading">Getting personalized betting recommendations...</div>';
         
         try {
-            const response = await fetch('/api/ai-chat', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({message: 'show me all value bets for today'})
-            });
-            
+            const response = await fetch('/api/ai-betting-recommendations');
             const data = await response.json();
             
             if (data.ok && data.result) {
-                let html = '<h4>AI Predictions</h4>';
+                const { recommendations, bankroll, total_recommended, remaining_budget, risk_level } = data.result;
                 
-                // replace the loop inside getAIPredictions() with this:
-                if (Array.isArray(data.result)) {
-                    data.result.forEach(bet => {
-                        const title =
-                        bet.game ||
-                        (bet.away_team && bet.home_team ? `${bet.away_team} @ ${bet.home_team}` :
-                        (bet.matchup || 'Matchup TBD'));
-
-                        const edgePct = (bet.edge_pct != null)
-                        ? Number(bet.edge_pct)
-                        : ((Number(bet.model_prob || 0) - Number(bet.implied_prob || 0)) * 100);
-
-                        const oddsTxt = (Number(bet.odds) > 0 ? `+${bet.odds}` : `${bet.odds ?? ''}`);
-
+                let html = '<h4>🎯 Personalized Betting Recommendations</h4>';
+                html += `<div class="alert alert-info">
+                    Bankroll: <strong>$${bankroll}</strong> • 
+                    Recommended Today: <strong>$${total_recommended}</strong> • 
+                    Remaining Budget: <strong>$${remaining_budget}</strong> • 
+                    Risk Level: <strong>${risk_level}</strong>
+                </div>`;
+                
+                if (recommendations.length === 0) {
+                    html += '<div class="alert alert-info">No high-confidence betting opportunities found for your bankroll today.</div>';
+                } else {
+                    recommendations.forEach(rec => {
+                        const isValueBet = rec.type === 'value_bet';
+                        const bgClass = isValueBet ? 'alert-success' : 'alert-info';
+                        
                         html += `
-                        <div class="alert alert-success" style="margin: 10px 0;">
-                            <strong>${title}</strong><br>
-                            Bet: ${bet.team} ML<br>
-                            Edge: ${edgePct.toFixed(1)}%<br>
-                            Odds: ${oddsTxt}
-                        </div>
+                            <div class="${bgClass}" style="margin: 10px 0;">
+                                <div style="display: flex; justify-content: space-between; align-items: start;">
+                                    <div>
+                                        <strong>${rec.game}</strong><br>
+                                        <strong>Bet: ${rec.team}</strong><br>
+                                        ${rec.odds !== 'Check sportsbook' ? `Odds: ${rec.odds > 0 ? '+' : ''}${rec.odds} @ ${rec.sportsbook}` : 'Odds: Check sportsbooks'}<br>
+                                        <small>${rec.reason}</small>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        <strong>Stake: $${rec.recommended_stake}</strong><br>
+                                        ${rec.potential_profit ? `Profit: $${rec.potential_profit}<br>` : ''}
+                                        <span class="confidence ${rec.confidence.toLowerCase()}">${rec.confidence} Confidence</span>
+                                        ${isValueBet ? '<br><span style="color: #15d07e;">📈 Value Bet</span>' : '<br><span style="color: #4a9eff;">🎯 Model Pick</span>'}
+                                    </div>
+                                </div>
+                                <button class="btn btn-sm btn-success" onclick="placeBetFromRecommendation('${rec.team}', '${rec.odds}', '${rec.sportsbook}', ${rec.recommended_stake})" 
+                                        style="margin-top: 8px;">
+                                    Place This Bet
+                                </button>
+                            </div>
                         `;
                     });
                 }
-
+                
+                html += `<div class="alert alert-info" style="margin-top: 15px;">
+                    <small><strong>Risk Management:</strong> Recommendations use conservative Kelly criterion (25% of optimal) 
+                    with 5% max per bet and 10% daily budget limits.</small>
+                </div>`;
                 
                 resultsDiv.innerHTML = html;
+            } else {
+                resultsDiv.innerHTML = '<div class="alert alert-error">Failed to get recommendations: ' + (data.error || 'Unknown error') + '</div>';
             }
         } catch (error) {
-            resultsDiv.innerHTML = '<div class="alert alert-error">Failed to get predictions</div>';
+            resultsDiv.innerHTML = '<div class="alert alert-error">Network error getting recommendations</div>';
         }
     }
+
+    // Add this helper function for bet placement integration
+    function placeBetFromRecommendation(team, odds, sportsbook, amount) {
+        openBetModal();
+        
+        // Pre-fill the bet form after a short delay to ensure modal is open
+        setTimeout(() => {
+            const teamSelect = document.getElementById('betTeam');
+            const amountInput = document.getElementById('betAmount');
+            const oddsInput = document.getElementById('betOdds');
+            const bookSelect = document.getElementById('betSportsbook');
+            
+            if (teamSelect) {
+                // Find the option that matches the team name
+                for (let option of teamSelect.options) {
+                    if (option.text.includes(team) || option.value.includes(team)) {
+                        option.selected = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (amountInput) amountInput.value = amount;
+            if (oddsInput && odds !== 'Check sportsbook') oddsInput.value = odds;
+            if (bookSelect && sportsbook !== 'Various') bookSelect.value = sportsbook;
+        }, 200);
+    }
+
+    // Update your existing getAIPredictions call in the dashboard initialization
+    document.addEventListener('DOMContentLoaded', function(){
+        try {
+            initializeWeekTabs();
+            loadAllData();
+            getAIPredictions(); // This now loads personalized recommendations
+            document.getElementById('edge-filter').addEventListener('change', refreshAnalysis);
+            setInterval(loadAllData, 60000);
+        } catch(err){ 
+            console.error('Initialization error:', err); 
+        }
+    });
 
     // in templates.js area of templates.py
     function findValueBets(){
