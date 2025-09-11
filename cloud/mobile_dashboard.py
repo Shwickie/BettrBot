@@ -72,7 +72,6 @@ except Exception:
 
 try:
     from dashboard.ai_chat_stub import comprehensive_ai_bp
-    print("AI chat stub loaded from:", comprehensive_ai_bp.__file__)
 except Exception:
     import os, sys
     sys.path.append(os.path.dirname(__file__))
@@ -211,8 +210,21 @@ app = Flask(__name__)
 # register AI blueprint at /api/ai-*
 app.register_blueprint(comprehensive_ai_bp, url_prefix='')
 app.secret_key = 'bettr-bot-enhanced-2025'
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+USE_CLOUD_DB = DATABASE_URL.startswith(("postgres://", "postgresql://"))
+
+# create engine
+if USE_CLOUD_DB:
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+else:
+    DEFAULT_DB = r"E:/Bettr Bot/betting-bot/data/betting.db"
+    DB_PATH = os.environ.get("BETTR_DB_PATH", DEFAULT_DB)
+    engine = create_engine(f"sqlite:///{DB_PATH}")
+
 # --- ADD: one-time indexes + WAL ---
 def ensure_indexes():
+    if USE_CLOUD_DB:
+        return 
     con = sqlite3.connect(DB_PATH)
     try:
         con.execute("PRAGMA journal_mode=WAL;")

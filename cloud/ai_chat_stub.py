@@ -82,28 +82,31 @@ MODEL_PKL = os.environ.get(
 )
 
 _model_pack = None
-# -------- model pack loader (no hardcoded Windows paths) --------
 def load_model_pack():
-    try:
-        env_path = os.environ.get("BETTR_MODEL_PKL")
-        candidates = [
-            env_path,
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "betting_model_fixed.pkl")),
-            os.path.abspath(os.path.join(os.getcwd(), "models", "betting_model_fixed.pkl")),
-        ]
-        fixed_model_path = next((p for p in candidates if p and os.path.exists(p)), None)
+    """Load and cache packed model. Uses env path first, then repo path. Gracefully falls back."""
+    global _model_pack
+    if _model_pack is not None:
+        return _model_pack
 
-        if not fixed_model_path:
-            logger.warning("AI Chat: FIXED model not found via BETTR_MODEL_PKL or repo; using statistical fallback.")
-            return None  # <-- force graceful fallback
-
-        logger.info(f"AI Chat: Loading FIXED model from {fixed_model_path}")
-        with open(fixed_model_path, "rb") as f:
-            pack = pickle.load(f)
-        return pack
-    except Exception as e:
-        logger.warning(f"AI Chat: FAILED TO LOAD FIXED MODEL - using statistical fallback. Reason: {e}")
+    candidates = [
+        os.environ.get("BETTR_MODEL_PKL"),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "betting_model_fixed.pkl")),
+        os.path.abspath(os.path.join(os.getcwd(), "models", "betting_model_fixed.pkl")),
+    ]
+    path = next((p for p in candidates if p and os.path.exists(p)), None)
+    if not path:
+        logger.warning("AI Chat: model pack not found; using statistical fallback.")
+        _model_pack = None
         return None
+
+    try:
+        with open(path, "rb") as f:
+            _model_pack = pickle.load(f)
+        logger.info(f"AI Chat: loaded model pack from {path}")
+    except Exception as e:
+        logger.warning(f"AI Chat: failed to load model pack ({e}); using fallback.")
+        _model_pack = None
+    return _model_pack
 
 
 
