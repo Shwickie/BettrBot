@@ -73,11 +73,11 @@ except Exception:
 
 try:
     from dashboard.ai_chat_stub import comprehensive_ai_bp
-    print("AI chat stub loaded from:", comprehensive_ai_bp.__file__)
 except Exception:
     import os, sys
     sys.path.append(os.path.dirname(__file__))
     from ai_chat_stub import comprehensive_ai_bp
+
 
 
 _ml_prediction_system = None

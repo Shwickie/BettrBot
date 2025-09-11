@@ -18,15 +18,22 @@ warnings.filterwarnings('ignore')
 
 from sqlalchemy import create_engine
 
-DB_URL = os.getenv("DATABASE_URL") or os.getenv("BETTR_DB_URL")
-if DB_URL:
-    engine = create_engine(DB_URL, pool_pre_ping=True, pool_recycle=300)
-    print("Using PostgreSQL engine for cloud deployment")
-else:
-    local_db = r"E:/Bettr Bot/betting-bot/data/betting.db"
-    engine = create_engine(f"sqlite:///{local_db}")
-    print(f"Using SQLite engine: {local_db}")
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
+# ---------- Paths ----------
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_MODEL = REPO_ROOT / "models" / "betting_model_fixed.pkl"
+MODEL_PATH = Path(os.environ.get("BETTR_MODEL_PKL", str(DEFAULT_MODEL)))
+
+# ---------- Database ----------
+# Prefer cloud DB if provided; otherwise local SQLite
+DATABASE_URL = (
+    os.environ.get("DATABASE_URL")
+    or os.environ.get("BETTR_DB_PATH")  # optional custom local path
+    or f"sqlite:///{(REPO_ROOT / 'data' / 'betting.db')}"
+)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
 
 class FixedNFLSystem:
     """Your complete prediction system with pipeline compatibility added"""
@@ -92,18 +99,25 @@ class FixedNFLSystem:
         print(f"Warning: Could not map team '{team_name}' - using default")
         return team_name[:3].upper()
     
-    def load_model(self):
-        path = Path(MODEL_PATH)
-        if not path.exists():
-            logging.warning(f"Model not found at {path} — continuing without ML model.")
-            self.model = None
-            return
+    def load_model(self) -> None:
         try:
-            with path.open("rb") as f:
-                self.model = pickle.load(f)
+            if not MODEL_PATH.exists():
+                logger.warning(f"Model file not found at {MODEL_PATH} — running with statistical fallback.")
+                self.model_pack = None
+                return
+
+            with MODEL_PATH.open("rb") as f:
+                self.model_pack = pickle.load(f)
+
+            self.model = self.model_pack.get("model")
+            self.scaler = self.model_pack.get("scaler")
+            self.feature_cols = self.model_pack.get("feature_cols", [])
+            self.model_data = self.model_pack.get("model_data", {})
+            logger.info(f"Loaded model pack from {MODEL_PATH}")
         except Exception as e:
-            logging.exception(f"Failed to load model: {e}")
-            self.model = None
+            # If a pandas mismatch ever reappears, your pinned versions in requirements fix it.
+            logger.exception(f"Failed to load model from {MODEL_PATH}: {e}")
+            self.model_pack = None
         
     def load_team_data(self):
         """Your existing team data loading logic"""
