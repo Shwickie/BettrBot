@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: bettr-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: FLASK_ENV
+        value: production
+      - key: BETTR_MODEL_PKL
+        value: ./betting_model_fixed.pkl

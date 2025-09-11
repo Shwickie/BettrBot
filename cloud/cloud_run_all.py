@@ -20,17 +20,15 @@ from datetime import datetime
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-    
+
 PY = sys.executable
 
 TASKS = [
-    ("setup_db",            [PY, "-m", "data.setup_db"]),
-    ("check_scores",        [PY, "-m", "stats.check_scores"]),
-    ("update_scores",       [PY, "-m", "stats.update_scores"]),
-    ("team_season_summary", [PY, "-m", "stats.team_season_summary"]),
-    ("train_betting_model", [PY, "-m", "model.train_betting_model"]),
-    ("prediction",          [PY, "-m", "model.prediction"]),
-    ("get_odds",            [PY, "-m", "odds.get_odds_fixed"]),
+    ("check_scores",        "check_scores"),
+    ("update_scores",       "update_scores"),
+    ("team_season_summary", "team_season_summary"),
+    ("prediction",          "prediction"),
+    ("get_odds",            "get_odds_fixed"),
 ]
 
 

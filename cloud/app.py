@@ -1,62 +1,134 @@
-# app.py - Fixed import paths for cloud deployment
+# app.py - FIXED for cloud deployment
 """
-Main Flask application for cloud deployment - uses your existing dashboard code
+Main Flask application for cloud deployment - FIXED version
 """
 
 import os
 import sys
+import logging
 
-# Set environment variables BEFORE importing anything
-os.environ['DATABASE_URL'] = os.environ.get('DATABASE_URL', 
-    'postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres')
-os.environ['FLASK_ENV'] = 'production'
+# Set up logging first
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Environment setup for cloud
+os.environ.setdefault('FLASK_ENV', 'production')
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
+if DATABASE_URL:
+    if DATABASE_URL.startswith('postgres://'):
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    os.environ['DATABASE_URL'] = DATABASE_URL
+    print(f"Using cloud database: {DATABASE_URL[:50]}...")
+else:
+    print("Using local SQLite database")
 
 # Add paths for proper imports
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
-PARENT_DIR = os.path.dirname(PROJECT_ROOT)
-sys.path.insert(0, PARENT_DIR)
 sys.path.insert(0, PROJECT_ROOT)
 
-# Add dashboard directory specifically
-DASHBOARD_DIR = os.path.join(PARENT_DIR, 'dashboard')
-sys.path.insert(0, DASHBOARD_DIR)
-
 try:
-    # Import the app from mobile_dashboard
-    from dashboard.mobile_dashboard import app
-    print("Successfully imported dashboard app")
-except ImportError as e:
-    print(f"Import error: {e}")
-    print("Available paths:")
-    for path in sys.path:
-        print(f"  {path}")
-    
-    # Fallback: try direct import
-    sys.path.append(os.path.join(PARENT_DIR, 'dashboard'))
+    # Import dashboard app
     from mobile_dashboard import app
+    print("✅ Successfully imported dashboard app")
+    
+    # Verify model is available
+    try:
+        from mobile_dashboard import load_model_pack
+        model_pack = load_model_pack()
+        if model_pack and 'feature_cols' in model_pack:
+            print(f"✅ Model validated: {len(model_pack['feature_cols'])} features")
+        else:
+            print("⚠️ Model validation failed - will use fallback predictions")
+    except Exception as e:
+        print(f"⚠️ Model check failed: {e}")
+    
+except ImportError as e:
+    print(f"❌ Critical import error: {e}")
+    sys.exit(1)
 
-# Add cloud-specific health check
+# Health check for cloud platforms
 @app.route('/health')
 def health_check():
-    """Health check for cloud platforms"""
+    """Enhanced health check for cloud deployment"""
     try:
         # Test database connection
-        from sqlalchemy import create_engine, text
-        engine = create_engine(os.environ['DATABASE_URL'], pool_pre_ping=True)
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
+        status = {'status': 'healthy', 'checks': {}}
         
-        return {
-            'status': 'healthy',
-            'environment': 'cloud',
-            'database': 'connected'
-        }
+        # Database check
+        try:
+            if DATABASE_URL:
+                from sqlalchemy import create_engine, text
+                engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                status['checks']['database'] = 'connected'
+            else:
+                import sqlite3
+                conn = sqlite3.connect("data/betting.db")
+                conn.execute("SELECT 1")
+                conn.close()
+                status['checks']['database'] = 'connected'
+        except Exception as e:
+            status['checks']['database'] = f'error: {str(e)[:100]}'
+            status['status'] = 'degraded'
+        
+        # Model check
+        try:
+            from mobile_dashboard import load_model_pack
+            model = load_model_pack()
+            if model and 'feature_cols' in model:
+                status['checks']['model'] = f'loaded ({len(model["feature_cols"])} features)'
+            else:
+                status['checks']['model'] = 'missing or invalid'
+                status['status'] = 'degraded'
+        except Exception as e:
+            status['checks']['model'] = f'error: {str(e)[:100]}'
+            status['status'] = 'degraded'
+        
+        # Environment check
+        status['checks']['environment'] = 'cloud' if DATABASE_URL else 'local'
+        status['checks']['python_version'] = sys.version.split()[0]
+        
+        return status, 200 if status['status'] == 'healthy' else 503
+        
     except Exception as e:
+        logger.error(f"Health check failed: {e}")
         return {
-            'status': 'unhealthy', 
-            'database': 'error',
+            'status': 'unhealthy',
             'error': str(e)
         }, 500
+
+# Liveness probe (simpler) - check if route already exists
+if '/healthz' not in [rule.rule for rule in app.url_map.iter_rules()]:
+    @app.route('/healthz')
+    def healthz():
+        return {'status': 'alive'}, 200
+
+# Version info
+@app.route('/version')
+def version():
+    return {
+        'version': '1.0.0',
+        'environment': 'cloud' if DATABASE_URL else 'local',
+        'python': sys.version.split()[0]
+    }
+
+# Error handlers
+@app.errorhandler(500)
+def internal_error(error):
+    logger.error(f"Internal server error: {error}")
+    return {
+        'error': 'Internal server error',
+        'message': 'The application encountered an unexpected error'
+    }, 500
+
+@app.errorhandler(404)
+def not_found(error):
+    return {
+        'error': 'Not found',
+        'message': 'The requested resource was not found'
+    }, 404
 
 # For cloud platforms that expect 'application' variable
 application = app
@@ -65,6 +137,13 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     host = os.environ.get('HOST', '0.0.0.0')
     
-    print(f"Starting Bettr Bot on {host}:{port}")
-    print(f"Database: {os.environ['DATABASE_URL'][:50]}...")
-    app.run(host=host, port=port, debug=False)
+    print(f"🚀 Starting Bettr Bot on {host}:{port}")
+    print(f"Database: {'Cloud PostgreSQL' if DATABASE_URL else 'Local SQLite'}")
+    
+    # Run with gunicorn-compatible settings
+    app.run(
+        host=host, 
+        port=port, 
+        debug=False,
+        threaded=True
+    )

@@ -20,7 +20,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime, timedelta
-
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from flask import Blueprint, request, jsonify, session
@@ -47,12 +47,19 @@ try:
 except Exception:
     OPENAI_AVAILABLE = False
     OpenAI = None  # type: ignore
+sys.path.insert(0, os.path.dirname(__file__))
+
 try:
     from model.prediction import FixedNFLSystem
     FIXED_NFL_SYSTEM_AVAILABLE = True
 except ImportError:
     FIXED_NFL_SYSTEM_AVAILABLE = False
     FixedNFLSystem = None
+
+try:
+    from model.ai_tools import list_value_bets
+except ImportError:
+    list_value_bets = None
 # ---------------------------
 # Logging
 # ---------------------------
@@ -76,39 +83,61 @@ except Exception as e:
 import os, pickle
 
 # use env var first, then a local file next to this module
-MODEL_PKL = os.environ.get(
-    "BETTR_MODEL_PKL",
-    os.path.join(os.path.dirname(__file__), "betting_model_fixed.pkl")
-)
+def get_model_path():
+    candidates = [
+        os.environ.get("BETTR_MODEL_PKL"),
+        os.path.join(os.getcwd(), "betting_model_fixed.pkl"),  # Cloud deployment
+        os.path.join(os.path.dirname(__file__), "betting_model_fixed.pkl"),
+        os.path.join(os.path.dirname(__file__), "..", "models", "betting_model_fixed.pkl"),
+    ]
+    
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    
+    return None
 
 _model_pack = None
 def load_model_pack():
-    """Load and cache packed model. Uses env path first, then repo path. Gracefully falls back."""
+    """Load and cache packed model with proper validation."""
     global _model_pack
     if _model_pack is not None:
         return _model_pack
 
-    candidates = [
-        os.environ.get("BETTR_MODEL_PKL"),
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "betting_model_fixed.pkl")),
-        os.path.abspath(os.path.join(os.getcwd(), "models", "betting_model_fixed.pkl")),
-    ]
-    path = next((p for p in candidates if p and os.path.exists(p)), None)
+    path = get_model_path()
     if not path:
-        logger.warning("AI Chat: model pack not found; using statistical fallback.")
+        print("CRITICAL: Model pack not found in any location!")
         _model_pack = None
         return None
 
     try:
         with open(path, "rb") as f:
             _model_pack = pickle.load(f)
-        logger.info(f"AI Chat: loaded model pack from {path}")
+        
+        # VALIDATE the model pack has required keys
+        required_keys = ['model', 'feature_cols']
+        missing_keys = [key for key in required_keys if key not in _model_pack]
+        
+        if missing_keys:
+            print(f"CRITICAL: Model pack missing required keys: {missing_keys}")
+            _model_pack = None
+            return None
+        
+        # Add scaler if missing (for backward compatibility)
+        if 'scaler' not in _model_pack:
+            _model_pack['scaler'] = None
+        
+        print(f"SUCCESS: Loaded model pack from {path}")
+        print(f"  Features: {len(_model_pack.get('feature_cols', []))}")
+        print(f"  Model type: {type(_model_pack.get('model', 'Unknown'))}")
+        return _model_pack
+        
     except Exception as e:
-        logger.warning(f"AI Chat: failed to load model pack ({e}); using fallback.")
+        print(f"CRITICAL: Failed to load model pack from {path}: {e}")
+        import traceback
+        traceback.print_exc()
         _model_pack = None
-    return _model_pack
-
-
+        return None
 
 def verify_model_consistency():
     """Check if AI chat and dashboard use the same model"""
@@ -584,12 +613,18 @@ class AdvancedBettingAnalyzer:
         methods = []
         game_id = str(game.get("game_id", "unknown"))
 
+        
         # 1) Try FixedNFLSystem FIRST (same as dashboard)
         used_ml = False
         model_confidence = 0.6
 
         if self.prediction_system:  # ← Use FixedNFLSystem first
             try:
+                # Check if prediction system is actually functional
+                if not hasattr(self.prediction_system, 'model_data') or not self.prediction_system.model_data:
+                    print(f"Prediction system model not loaded - using fallback")
+                    raise RuntimeError("Model not loaded")
+                    
                 prediction_result = self.prediction_system.predict_game(
                     home_team=game["home_team"],
                     away_team=game["away_team"],
@@ -676,15 +711,22 @@ class AdvancedBettingAnalyzer:
     def _predict_with_model(self, conn, game) -> float:
         """Enhanced model prediction with better confidence tracking."""
         # Build features
+        if not self.model_pack:
+            raise RuntimeError("Model pack not loaded - cannot make predictions")
+        
+        # Build features
         feat = self._build_game_features(conn, game)
 
         model = self.model_pack.get("model")
         scaler = self.model_pack.get("scaler")
-        feature_cols = list(getattr(model, "feature_names_in_", []))
+        feature_cols = self.model_pack.get("feature_cols", [])
+        
+        if not model:
+            raise RuntimeError("Model not found in model pack")
         if not feature_cols:
-            feature_cols = self.model_pack.get("feature_cols", [])
-        if not feature_cols:
-            feature_cols = list(feat.keys())
+            raise RuntimeError("feature_cols not found in model pack")
+        
+        print(f"AI Chat: Using {len(feature_cols)} features for prediction")
 
         # Guarantee every expected feature exists
         for col in feature_cols:

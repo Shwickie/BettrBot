@@ -1,11 +1,12 @@
-# render.yaml (repo root)
+# render.yaml - FIXED
 services:
   - type: web
     name: bettr-bot-web
     runtime: python
-    rootDir: cloud
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:application --workers 2 --threads 8 --timeout 120
+    buildCommand: |
+      pip install -r requirements.txt
+      python fix_model_training.py
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 300 --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
@@ -13,16 +14,21 @@ services:
         sync: false
       - key: FLASK_ENV
         value: production
+      - key: BETTR_MODEL_PKL
+        value: ./betting_model_fixed.pkl
+      - key: BETTR_PIPELINE_MODE
+        value: "false"
 
   - type: cron
     name: bettr-bot-refresh
     runtime: python
-    rootDir: cloud
     buildCommand: pip install -r requirements.txt
     startCommand: python cloud_run_all.py
-    schedule: "*/30 * * * *"  # every 30 minutes
+    schedule: "0 */2 * * *"  # every 6 hours (reduced frequency)
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: DATABASE_URL
         sync: false
+      - key: BETTR_PIPELINE_MODE
+        value: "true"

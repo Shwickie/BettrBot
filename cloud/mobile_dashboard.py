@@ -38,15 +38,24 @@ else:
     DB_PATH = os.environ.get("BETTR_DB_PATH", DEFAULT_DB)
 # Update the SQLAlchemy engine creation
 try:
-    if DB_PATH.startswith('postgresql://'):
-        # PostgreSQL for cloud
-        from sqlalchemy import create_engine
-        _engine = create_engine(DB_PATH, pool_pre_ping=True, pool_recycle=300)
-        print("Using PostgreSQL engine for cloud deployment")
+    # Single database configuration
+    DATABASE_URL = os.environ.get("DATABASE_URL", "")
+    USE_CLOUD_DB = DATABASE_URL.startswith(("postgres://", "postgresql://"))
+
+    if USE_CLOUD_DB:
+        # Fix postgres:// URL if needed
+        if DATABASE_URL.startswith('postgres://'):
+            DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+        engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
+        _engine = engine  # Keep compatibility
+        print(f"Using cloud PostgreSQL: {DATABASE_URL[:50]}...")
     else:
-        # SQLite for local (your existing code)
-        _engine = create_engine(f"sqlite:///{DB_PATH}")
-        print(f"Using SQLite engine: {DB_PATH}")
+        # Local SQLite fallback
+        DEFAULT_DB = r"E:/Bettr Bot/betting-bot/data/betting.db"
+        DB_PATH = os.environ.get("BETTR_DB_PATH", DEFAULT_DB)
+        engine = create_engine(f"sqlite:///{DB_PATH}")
+        _engine = engine
+        print(f"Using local SQLite: {DB_PATH}")
 except Exception as e:
     print(f"Database engine creation error: {e}")
     # Fallback to SQLite
@@ -78,20 +87,78 @@ except Exception:
     from ai_chat_stub import comprehensive_ai_bp
 
 
+def _normalize_model_pack(sysobj):
+    """Ensure sysobj.model exists and sysobj.model_data['model'] is set."""
+    md = sysobj.model_data if isinstance(getattr(sysobj, "model_data", None), dict) else {}
+    model = None
+
+    # 1) Try common keys inside the dict
+    if isinstance(md, dict):
+        for key in (
+            "model", "best_model", "calibrated_model", "cal_model",
+            "final_model", "rf_model", "clf", "estimator", "pipeline", "sk_model"
+        ):
+            m = md.get(key)
+            if m is not None and (hasattr(m, "predict_proba") or hasattr(m, "predict")):
+                model = m
+                # Standardize the key expected by the rest of the app:
+                md["model"] = m
+                break
+
+    # 2) Fall back to attribute on the system itself
+    if model is None and hasattr(sysobj, "model") and (
+        hasattr(sysobj.model, "predict_proba") or hasattr(sysobj.model, "predict")
+    ):
+        model = sysobj.model
+        if isinstance(md, dict):
+            md.setdefault("model", model)
+
+    # 3) If the entire model_data is actually the estimator (rare)
+    if model is None and md and (hasattr(md, "predict_proba") or hasattr(md, "predict")):
+        model = md
+        sysobj.model_data = {"model": model}
+
+    # 4) Last resort: nothing found – keep it None but avoid KeyErrors later
+    if model is None:
+        if not isinstance(sysobj.model_data, dict):
+            sysobj.model_data = {}
+        sysobj.model_data.setdefault("model", None)
+
+    # Standardize feature_cols too
+    if isinstance(sysobj.model_data, dict):
+        if not sysobj.model_data.get("feature_cols"):
+            # best-effort from sklearn
+            fe = getattr(model, "feature_names_in_", None)
+            if fe is not None:
+                sysobj.model_data["feature_cols"] = list(fe)
+            else:
+                sysobj.model_data.setdefault("feature_cols", [])
+
+    # also mirror onto sysobj.model for direct use
+    sysobj.model = model
+
+
+_model_pack = None
 _ml_prediction_system = None
 
 def get_ml_prediction_system():
-    """Get or initialize the ML prediction system"""
     global _ml_prediction_system
     if _ml_prediction_system is None and FixedNFLSystem is not None:
         try:
             _ml_prediction_system = FixedNFLSystem()
+            # Harden the pack so downstream code can always use ['model'] safely
+            _normalize_model_pack(_ml_prediction_system)
+
+            # keep your existing prints
             print("ML Prediction System initialized successfully")
-            print(f"  Model AUC: {_ml_prediction_system.model_data.get('model_metrics', {}).get('RandomForest', {}).get('auc', 'Unknown')}")
+            md = _ml_prediction_system.model_data or {}
+            auc = md.get("model_metrics", {}).get("RandomForest", {}).get("auc", "Unknown")
+            print(f"  Model AUC: {auc}")
         except Exception as e:
             print(f"Failed to initialize ML prediction system: {e}")
             _ml_prediction_system = None
     return _ml_prediction_system
+
 
 # -----------------
 # Auth decorators
@@ -118,42 +185,62 @@ def admin_required(f):
 # ====== Trained Model loader (cached) ======
 import pickle
 
-MODEL_PKL = os.environ.get(
-    "BETTR_MODEL_PKL",
-    os.path.join(os.path.dirname(__file__), "betting_model_fixed.pkl")
-)
 # near the imports
 import os, pickle, logging
 logger = logging.getLogger(__name__)
 
-# 1) Use env var first, 2) then /models in repo, 3) then CWD/models
-_model_pack = None
+def get_dashboard_model_path():
+    candidates = [
+        os.environ.get("BETTR_MODEL_PKL"),
+        os.path.join(os.getcwd(), "betting_model_fixed.pkl"),  # Cloud deployment
+        os.path.join(os.path.dirname(__file__), "betting_model_fixed.pkl"),
+        os.path.join(os.path.dirname(__file__), "..", "models", "betting_model_fixed.pkl"),
+    ]
+    
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    
+    return None
+
 def load_model_pack():
     global _model_pack
     if _model_pack is not None:
         return _model_pack
 
-    candidates = [
-        os.environ.get("BETTR_MODEL_PKL"),
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "betting_model_fixed.pkl")),
-        os.path.abspath(os.path.join(os.getcwd(), "models", "betting_model_fixed.pkl")),
-    ]
-    path = next((p for p in candidates if p and os.path.exists(p)), None)
+    path = get_dashboard_model_path()
     if not path:
-        logger.warning("AI Chat: model pack not found; using statistical fallback.")
+        logger.error("CRITICAL: Model pack not found!")
         _model_pack = None
         return None
 
     try:
         with open(path, "rb") as f:
             _model_pack = pickle.load(f)
-        logger.info(f"AI Chat: loaded model pack from {path}")
+        
+        # VALIDATE the model pack
+        required_keys = ['model', 'feature_cols']
+        missing_keys = [key for key in required_keys if key not in _model_pack]
+        
+        if missing_keys:
+            logger.error(f"CRITICAL: Model pack missing keys: {missing_keys}")
+            _model_pack = None
+            return None
+        
+        # Add scaler if missing
+        if 'scaler' not in _model_pack:
+            _model_pack['scaler'] = None
+            
+        logger.info(f"SUCCESS: Loaded model pack from {path}")
+        logger.info(f"  Features: {len(_model_pack.get('feature_cols', []))}")
         return _model_pack
+        
     except Exception as e:
-        logger.warning(f"AI Chat: failed to load model pack ({e}); using fallback.")
+        logger.error(f"CRITICAL: Failed to load model pack from {path}: {e}")
+        import traceback
+        traceback.print_exc()
         _model_pack = None
         return None
-
 
 def build_features_for_games(conn, games_df: pd.DataFrame) -> pd.DataFrame:
     """Build the same feature columns the trainer used, for each game (home-team perspective)."""
@@ -866,175 +953,131 @@ def api_rankings():
 # ======================
 # API: /api/predictions
 # ======================
+# ======================
+# API: /api/predictions
+# ======================
 @app.route('/api/predictions')
 def api_predictions():
-    """Enhanced predictions using the trained ML model with better data alignment"""
+    """Predictions using ML when possible, otherwise power-based fallback (no crashes)."""
     conn = get_db()
-    season, _phase = current_phase_and_season()
     today = datetime.utcnow().date()
     horizon = today + timedelta(days=21)
 
+    # Load games
     try:
         games = pd.read_sql_query("""
             SELECT
                 game_id, away_team AS away, home_team AS home,
                 STRFTIME('%Y-%m-%d', game_date) AS game_date,
                 STRFTIME('%H:%M', start_time_local) AS game_time
-            FROM games WHERE date(game_date) BETWEEN date(?) AND date(?)
+            FROM games
+            WHERE date(game_date) BETWEEN date(?) AND date(?)
             ORDER BY date(game_date), time(start_time_local)
         """, conn, params=[today, horizon])
     except Exception:
         return jsonify([])
 
-    # Get ML prediction system
+    # --- build power fallback once ---
+    # (matches your existing logic)
+    try:
+        pmap = get_power_map_cached(conn)  # your helper
+    except Exception:
+        pmap = {}
+
+    HFA = 2.5
+    def to_full(name: str | None) -> str:
+        return TEAM_TO_FULL.get(name, name or "Unknown")
+
+    def win_prob_fallback(away_abbr, home_abbr):
+        aw = pmap.get(to_full(away_abbr), pmap.get(away_abbr, 0.0))
+        hm = pmap.get(to_full(home_abbr), pmap.get(home_abbr, 0.0)) + HFA
+        ph = 1.0 / (1.0 + math.exp(-(hm - aw) / 8.0))
+        return 1.0 - ph, ph  # away, home
+
     ml_system = get_ml_prediction_system()
-    
     rows = []
+
     for _, g in games.iterrows():
-        try:
-            if ml_system:
-                # Use ML model predictions - this should match your FixedNFLSystem output
+        used_ml = False
+        prediction_result = None
+
+        # 1) Try ML path
+        if ml_system:
+            try:
                 prediction_result = ml_system.predict_game(
-                    home_team=g['home'],
-                    away_team=g['away'],
-                    game_date=g['game_date']
+                    home_team=to_full(g['home']),
+                    away_team=to_full(g['away']),
+                    game_date=str(g['game_date'])
                 )
-                
-                # Extract values to match your model's exact output format
-                home_win_prob = prediction_result['home_win_probability']
-                away_win_prob = prediction_result['away_win_probability']
-                predicted_winner = prediction_result['predicted_winner']
-                confidence = prediction_result['confidence']
-                power_difference = prediction_result.get('power_difference', 0)
-                key_factors = prediction_result.get('key_factors', {})
-                
-                # Get team abbreviations for consistent display
-                home_abbrev = ml_system.normalize_team_name(g['home'])
-                away_abbrev = ml_system.normalize_team_name(g['away'])
-                
-                # Convert full team names to match your display format
-                home_full = to_full(g['home'])
-                away_full = to_full(g['away'])
-                predicted_winner_full = to_full(predicted_winner)
-                
-                # Enhanced confidence level calculation based on your model's criteria
-                if confidence >= 0.65:
-                    confidence_level = 'high'
-                elif confidence >= 0.58:
-                    confidence_level = 'medium'
-                elif confidence >= 0.52:
-                    confidence_level = 'low'
-                else:
-                    confidence_level = 'very-low'
-                
-                # Determine betting recommendation based on multiple factors
-                betting_grade = 'avoid'  # default
-                if confidence >= 0.65 and abs(power_difference) >= 4:
-                    betting_grade = 'strong'
-                elif confidence >= 0.60 and abs(power_difference) >= 2:
-                    betting_grade = 'good'
-                elif confidence >= 0.55:
-                    betting_grade = 'consider'
-                elif confidence >= 0.52:
-                    betting_grade = 'weak'
-                
-                rows.append({
-                    # Basic game info
-                    'game_id': g['game_id'],
-                    'matchup': f"{away_full} @ {home_full}",
-                    'game_date': str(g['game_date']),
-                    'game_time': g['game_time'] if g['game_time'] else 'TBD',
-                    
-                    # Prediction results (matching your FixedNFLSystem output)
-                    'prediction': predicted_winner_full,
-                    'confidence': float(confidence),
-                    'confidence_level': confidence_level,
-                    'betting_grade': betting_grade,
-                    
-                    # Probabilities (using consistent naming)
-                    'home_win_probability': float(home_win_prob),
-                    'away_win_probability': float(away_win_prob),
-                    'home_win_prob': float(home_win_prob),  # Alternative naming for compatibility
-                    'away_win_prob': float(away_win_prob),
-                    
-                    # Model-specific data
-                    'model_prediction': True,
-                    'power_difference': float(power_difference),
-                    'key_factors': {
-                        'power_diff': key_factors.get('power_diff', power_difference),
-                        'win_pct_diff': key_factors.get('win_pct_diff', 0),
-                        'offense_diff': key_factors.get('offense_diff', 0),
-                        'form_diff': key_factors.get('form_diff', 0)
-                    },
-                    
-                    # Team info for display consistency
-                    'home_team': home_full,
-                    'away_team': away_full,
-                    'home_team_abbrev': home_abbrev,
-                    'away_team_abbrev': away_abbrev,
-                    
-                    # Model metadata
-                    'model_auc': ml_system.model_data.get('model_metrics', {}).get('RandomForest', {}).get('auc', 0.768),
-                    'feature_count': len(ml_system.model_data.get('feature_cols', []))
-                })
-                
-            else:
-                # Fallback to power-based prediction if ML model unavailable
-                pmap = get_power_map_cached(conn)
-                HFA = 2.5  # Home field advantage
-
-                def win_prob_simple(away, home):
-                    aw = pmap.get(to_full(away), pmap.get(away, 0.0))
-                    hm = pmap.get(to_full(home), pmap.get(home, 0.0)) + HFA
-                    ph = 1.0 / (1.0 + math.exp(-(hm - aw) / 8.0))
-                    return 1.0 - ph, ph
-
-                pa, ph = win_prob_simple(g['away'], g['home'])
-                pick_abbr = g['home'] if ph >= pa else g['away']
-                confidence = max(pa, ph)
-                
-                # More conservative confidence levels for fallback method
-                if confidence >= 0.70:
-                    confidence_level = 'medium'
-                    betting_grade = 'consider'
-                elif confidence >= 0.60:
-                    confidence_level = 'low'
-                    betting_grade = 'weak'
-                else:
-                    confidence_level = 'very-low'
-                    betting_grade = 'avoid'
+                home_win_prob = float(prediction_result.get('home_win_probability', 0.5))
+                away_win_prob = 1.0 - home_win_prob
+                pick_abbr = g['home'] if home_win_prob >= away_win_prob else g['away']
+                confidence = max(home_win_prob, away_win_prob)
 
                 rows.append({
                     'game_id': g['game_id'],
                     'matchup': f"{to_full(g['away'])} @ {to_full(g['home'])}",
                     'prediction': to_full(pick_abbr),
-                    'confidence': float(confidence),
-                    'confidence_level': confidence_level,
-                    'betting_grade': betting_grade,
-                    'home_win_probability': float(ph),
-                    'away_win_probability': float(pa),
-                    'home_win_prob': float(ph),
-                    'away_win_prob': float(pa),
+                    'confidence': confidence,
+                    'confidence_level': 'high' if confidence >= 0.70 else ('medium' if confidence >= 0.60 else 'low'),
+                    'betting_grade': 'strong' if confidence >= 0.70 else ('consider' if confidence >= 0.60 else 'weak'),
+                    'home_win_probability': home_win_prob,
+                    'away_win_probability': away_win_prob,
+                    'home_win_prob': home_win_prob,
+                    'away_win_prob': away_win_prob,
                     'game_date': str(g['game_date']),
                     'game_time': g['game_time'] if g['game_time'] else 'TBD',
-                    'model_prediction': False,
+                    'model_prediction': True,
                     'power_difference': 0,
-                    'key_factors': {},
+                    'key_factors': prediction_result.get('key_factors', {}),
                     'home_team': to_full(g['home']),
-                    'away_team': to_full(g['away'])
+                    'away_team': to_full(g['away']),
+                    'feature_count': len((ml_system.model_data or {}).get('feature_cols', []))
                 })
-                
+                continue  # success → next game
+            except Exception as e:
+                print(f"FixedNFLSystem failed: {e}")
+
+        # 2) Fallback path (NO ML FIELDS TOUCHED)
+        try:
+            pa, ph = win_prob_fallback(g['away'], g['home'])
+            pick_abbr = g['home'] if ph >= pa else g['away']
+            confidence = max(pa, ph)
+
+            if confidence >= 0.70:
+                confidence_level = 'medium'; betting_grade = 'consider'
+            elif confidence >= 0.60:
+                confidence_level = 'low'; betting_grade = 'weak'
+            else:
+                confidence_level = 'very-low'; betting_grade = 'avoid'
+
+            rows.append({
+                'game_id': g['game_id'],
+                'matchup': f"{to_full(g['away'])} @ {to_full(g['home'])}",
+                'prediction': to_full(pick_abbr),
+                'confidence': float(confidence),
+                'confidence_level': confidence_level,
+                'betting_grade': betting_grade,
+                'home_win_probability': float(ph),
+                'away_win_probability': float(pa),
+                'home_win_prob': float(ph),
+                'away_win_prob': float(pa),
+                'game_date': str(g['game_date']),
+                'game_time': g['game_time'] if g['game_time'] else 'TBD',
+                'model_prediction': False,
+                'power_difference': 0,
+                'key_factors': {},
+                'home_team': to_full(g['home']),
+                'away_team': to_full(g['away'])
+            })
         except Exception as e:
             print(f"Error predicting game {g['away']} @ {g['home']}: {e}")
             continue
 
-    # Sort by game date
-    rows.sort(key=lambda r: (
-        r['game_date'],
-        (r.get('game_time') or '99:99')[:5]
-    ))
-    
+    # Sort by date/time (keep your existing sort)
+    rows.sort(key=lambda r: (r['game_date'], (r.get('game_time') or '99:99')[:5]))
     return jsonify(rows)
+
 
 
 def to_full(name: str | None) -> str:
