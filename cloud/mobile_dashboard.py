@@ -122,23 +122,38 @@ MODEL_PKL = os.environ.get(
     "BETTR_MODEL_PKL",
     os.path.join(os.path.dirname(__file__), "betting_model_fixed.pkl")
 )
-_model_pack = None
+# near the imports
+import os, pickle, logging
+logger = logging.getLogger(__name__)
 
+# 1) Use env var first, 2) then /models in repo, 3) then CWD/models
+_model_pack = None
 def load_model_pack():
-    """Load and cache packed model: {'model','scaler','feature_cols',...}"""
     global _model_pack
     if _model_pack is not None:
         return _model_pack
-    if not os.path.exists(MODEL_PKL):
+
+    candidates = [
+        os.environ.get("BETTR_MODEL_PKL"),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "betting_model_fixed.pkl")),
+        os.path.abspath(os.path.join(os.getcwd(), "models", "betting_model_fixed.pkl")),
+    ]
+    path = next((p for p in candidates if p and os.path.exists(p)), None)
+    if not path:
+        logger.warning("AI Chat: model pack not found; using statistical fallback.")
         _model_pack = None
         return None
+
     try:
-        with open(MODEL_PKL, "rb") as f:
+        with open(path, "rb") as f:
             _model_pack = pickle.load(f)
+        logger.info(f"AI Chat: loaded model pack from {path}")
         return _model_pack
-    except Exception:
+    except Exception as e:
+        logger.warning(f"AI Chat: failed to load model pack ({e}); using fallback.")
         _model_pack = None
         return None
+
 
 def build_features_for_games(conn, games_df: pd.DataFrame) -> pd.DataFrame:
     """Build the same feature columns the trainer used, for each game (home-team perspective)."""

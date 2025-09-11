@@ -16,13 +16,17 @@ from pathlib import Path
 import os, pickle, logging
 warnings.filterwarnings('ignore')
 
-# Config - using your exact paths and structure
-DB_PATH = "sqlite:///E:/Bettr Bot/betting-bot/data/betting.db"
-MODEL_PATH = os.environ.get(
-    "BETTR_MODEL_PKL",
-    str(Path(__file__).resolve().parent.parent / "models" / "betting_model_fixed.pkl")
-)
-engine = create_engine(DB_PATH)
+from sqlalchemy import create_engine
+
+DB_URL = os.getenv("DATABASE_URL") or os.getenv("BETTR_DB_URL")
+if DB_URL:
+    engine = create_engine(DB_URL, pool_pre_ping=True, pool_recycle=300)
+    print("Using PostgreSQL engine for cloud deployment")
+else:
+    local_db = r"E:/Bettr Bot/betting-bot/data/betting.db"
+    engine = create_engine(f"sqlite:///{local_db}")
+    print(f"Using SQLite engine: {local_db}")
+
 
 class FixedNFLSystem:
     """Your complete prediction system with pipeline compatibility added"""

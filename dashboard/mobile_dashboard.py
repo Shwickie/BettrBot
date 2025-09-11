@@ -41,6 +41,7 @@ try:
     if DB_PATH.startswith('postgresql://'):
         # PostgreSQL for cloud
         from sqlalchemy import create_engine
+        USE_CLOUD_DB = os.getenv("DATABASE_URL", "").startswith("postgresql://")
         _engine = create_engine(DB_PATH, pool_pre_ping=True, pool_recycle=300)
         print("Using PostgreSQL engine for cloud deployment")
     else:
@@ -123,23 +124,33 @@ MODEL_PKL = os.environ.get(
     "BETTR_MODEL_PKL",
     os.path.join(os.path.dirname(__file__), "betting_model_fixed.pkl")
 )
-_model_pack = None
 
+_model_pack = None
 def load_model_pack():
-    """Load and cache packed model: {'model','scaler','feature_cols',...}"""
+    """Load and cache packed model. Uses env path first, then repo path. Gracefully falls back."""
     global _model_pack
     if _model_pack is not None:
         return _model_pack
-    if not os.path.exists(MODEL_PKL):
+
+    candidates = [
+        os.environ.get("BETTR_MODEL_PKL"),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "betting_model_fixed.pkl")),
+        os.path.abspath(os.path.join(os.getcwd(), "models", "betting_model_fixed.pkl")),
+    ]
+    path = next((p for p in candidates if p and os.path.exists(p)), None)
+    if not path:
+        logger.warning("AI Chat: model pack not found; using statistical fallback.")
         _model_pack = None
         return None
+
     try:
-        with open(MODEL_PKL, "rb") as f:
+        with open(path, "rb") as f:
             _model_pack = pickle.load(f)
-        return _model_pack
-    except Exception:
+        logger.info(f"AI Chat: loaded model pack from {path}")
+    except Exception as e:
+        logger.warning(f"AI Chat: failed to load model pack ({e}); using fallback.")
         _model_pack = None
-        return None
+    return _model_pack
 
 def build_features_for_games(conn, games_df: pd.DataFrame) -> pd.DataFrame:
     """Build the same feature columns the trainer used, for each game (home-team perspective)."""
@@ -213,6 +224,8 @@ app.register_blueprint(comprehensive_ai_bp, url_prefix='')
 app.secret_key = 'bettr-bot-enhanced-2025'
 # --- ADD: one-time indexes + WAL ---
 def ensure_indexes():
+    if USE_CLOUD_DB:
+        return
     con = sqlite3.connect(DB_PATH)
     try:
         con.execute("PRAGMA journal_mode=WAL;")
@@ -255,7 +268,8 @@ def ai_page():
 def _init_once():
     global _initialized
     if not _initialized:
-        ensure_indexes()
+        if not USE_CLOUD_DB:
+            ensure_indexes()
         get_ml_prediction_system()
         _initialized = True
 
