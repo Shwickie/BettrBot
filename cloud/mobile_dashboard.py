@@ -22,45 +22,46 @@ from templates import LOGIN_TEMPLATE, HTML_TEMPLATE, AI_CHAT_TEMPLATE
 import sys
 import os
 from flask import Blueprint
-
 import os, sys
+from sqlalchemy import create_engine, text
+import sqlite3
+
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 # robust import so Windows path works when running from /dashboard
-if os.environ.get('DATABASE_URL'):
-    # We're in cloud - use PostgreSQL
-    DB_PATH = os.environ.get('DATABASE_URL')
-    print(f"Using cloud database: {DB_PATH[:50]}...")
-else:
-    # We're local - use SQLite (your existing path)
-    DEFAULT_DB = r"E:/Bettr Bot/betting-bot/data/betting.db"
-    DB_PATH = os.environ.get("BETTR_DB_PATH", DEFAULT_DB)
-# Update the SQLAlchemy engine creation
-try:
-    # Single database configuration
-    DATABASE_URL = os.environ.get("DATABASE_URL", "")
-    USE_CLOUD_DB = DATABASE_URL.startswith(("postgres://", "postgresql://"))
+RAW_DB_URL = os.getenv("DATABASE_URL", "").strip()
+if RAW_DB_URL.startswith("postgres://"):
+    RAW_DB_URL = RAW_DB_URL.replace("postgres://", "postgresql+psycopg2://", 1)
 
-    if USE_CLOUD_DB:
-        # Fix postgres:// URL if needed
-        if DATABASE_URL.startswith('postgres://'):
-            DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-        engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
-        _engine = engine  # Keep compatibility
-        print(f"Using cloud PostgreSQL: {DATABASE_URL[:50]}...")
-    else:
-        # Local SQLite fallback
-        DEFAULT_DB = r"E:/Bettr Bot/betting-bot/data/betting.db"
-        DB_PATH = os.environ.get("BETTR_DB_PATH", DEFAULT_DB)
-        engine = create_engine(f"sqlite:///{DB_PATH}")
-        _engine = engine
-        print(f"Using local SQLite: {DB_PATH}")
-except Exception as e:
-    print(f"Database engine creation error: {e}")
-    # Fallback to SQLite
-    DEFAULT_DB = r"E:/Bettr Bot/betting-bot/data/betting.db"
-    _engine = create_engine(f"sqlite:///{DEFAULT_DB}")
+USE_PG = RAW_DB_URL.startswith(("postgresql://", "postgresql+psycopg2://"))
+
+if USE_PG:
+    # Supabase/managed PG needs SSL
+    PG_CONNECT_ARGS = {"sslmode": os.getenv("PGSSLMODE", "require")}
+    ENGINE = create_engine(
+        RAW_DB_URL,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        connect_args=PG_CONNECT_ARGS,
+    )
+    DB_KIND = "pg"
+    DB_INFO = RAW_DB_URL  # for health output
+    print("Using cloud PostgreSQL")
+else:
+    # Safe, writable SQLite path for containers (Render) or Windows dev
+    DB_FILE = os.getenv("BETTR_DB_PATH")
+    if not DB_FILE:
+        DB_FILE = r"E:/Bettr Bot/betting-bot/data/betting.db" if os.name == "nt" else "/tmp/betting.db"
+    os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
+    ENGINE = create_engine(
+        f"sqlite:///{DB_FILE}",
+        connect_args={"check_same_thread": False},
+        pool_pre_ping=True,
+    )
+    DB_KIND = "sqlite"
+    DB_INFO = DB_FILE
+    print(f"Using local SQLite: {DB_FILE}")
 
 try:
     from model.prediction import FixedNFLSystem
@@ -343,8 +344,9 @@ _initialized = False
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_DATA_FILE = os.environ.get(
     "BETTR_USERS_PATH",
-    os.path.join(BASE_DIR, "..", "user_accounts.json")  # lives in project root
+    "/tmp/user_accounts.json"  # writable on Render
 )
+
 app.secret_key = os.environ.get("FLASK_SECRET", "bettr-bot-enhanced-2025")
 
 
@@ -667,15 +669,22 @@ def load_injury_impact_from_detail(conn):
 # Per-request sqlite3 connection (same DB as SQLAlchemy)
 
 def get_db():
-    if not hasattr(g, '_db'):
-        if DB_PATH.startswith('postgresql://'):
-            # For PostgreSQL, we'll use SQLAlchemy connection
-            g._db = _engine.connect()
+    """Return a per-request connection. Falls back to SQLite if PG connect fails."""
+    if not hasattr(g, "_db"):
+        if DB_KIND == "pg":
+            try:
+                g._db = ENGINE.connect()
+            except Exception as _e:
+                # fallback to SQLite in /tmp so the app still runs
+                fallback = "/tmp/betting.db"
+                os.makedirs(os.path.dirname(fallback), exist_ok=True)
+                g._db = sqlite3.connect(fallback, detect_types=sqlite3.PARSE_DECLTYPES)
+                g._db.row_factory = sqlite3.Row
         else:
-            # For SQLite, use your existing sqlite3 connection
-            g._db = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
+            g._db = sqlite3.connect(DB_INFO, detect_types=sqlite3.PARSE_DECLTYPES)
             g._db.row_factory = sqlite3.Row
     return g._db
+
 
 @app.teardown_appcontext
 def _close_db(_exc):
@@ -689,7 +698,6 @@ def _close_db(_exc):
 # -----------------
 # User management
 # -----------------
-USER_DATA_FILE = 'user_accounts.json'
 
 def save_user_accounts(users):
     try:
@@ -759,9 +767,11 @@ def logout():
 # -----------------
 # Dashboard page
 # -----------------
-@app.route('/')
+@app.route('/', methods=['GET', 'HEAD'])
 @login_required
 def dashboard():
+    if request.method == 'HEAD':
+        return '', 204
     username = session['username']
     user = USERS[username]
     conn = get_db()  # use sqlite3 connection everywhere here
@@ -2419,18 +2429,42 @@ def healthz():
 @app.route('/api/health')
 def api_health():
     try:
-        with _engine.connect() as conn:
-            has_tss = pd.read_sql(text("SELECT name FROM sqlite_master WHERE type='table' AND name='team_season_summary'"), conn)
-            has_games = pd.read_sql(text("SELECT name FROM sqlite_master WHERE type='table' AND name='games'"), conn)
-            has_odds  = pd.read_sql(text("SELECT name FROM sqlite_master WHERE type='table' AND name='odds'"), conn)
-        return jsonify({
-            'db_path': DB_PATH,
-            'team_season_summary': not has_tss.empty,
-            'games': not has_games.empty,
-            'odds': not has_odds.empty
-        })
+        if DB_KIND == "pg":
+            with ENGINE.connect() as conn:
+                has_tss = conn.execute(text("SELECT to_regclass('public.team_season_summary')")).scalar()
+                has_games = conn.execute(text("SELECT to_regclass('public.games')")).scalar()
+                has_odds  = conn.execute(text("SELECT to_regclass('public.odds')")).scalar()
+                return jsonify({
+                    'backend': 'postgres',
+                    'db_url_or_path': DB_INFO,
+                    'team_season_summary': bool(has_tss),
+                    'games': bool(has_games),
+                    'odds': bool(has_odds),
+                })
+        else:
+            # SQLite
+            con = sqlite3.connect(DB_INFO)
+            con.row_factory = sqlite3.Row
+            try:
+                cur = con.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='team_season_summary'")
+                has_tss = cur.fetchone() is not None
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='games'")
+                has_games = cur.fetchone() is not None
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='odds'")
+                has_odds = cur.fetchone() is not None
+            finally:
+                con.close()
+            return jsonify({
+                'backend': 'sqlite',
+                'db_url_or_path': DB_INFO,
+                'team_season_summary': has_tss,
+                'games': has_games,
+                'odds': has_odds,
+            })
     except Exception as e:
-        return jsonify({'error': str(e), 'db_path': DB_PATH}), 500
+        return jsonify({'error': str(e), 'db_url_or_path': DB_INFO, 'backend': DB_KIND}), 500
+
 
 # Entrypoint
 
