@@ -75,41 +75,32 @@ except Exception as e:
 
 _model_pack = None
 def load_model_pack():
-    """Load and cache packed model - FORCES the fixed model"""
+    """Load and cache packed model. Uses env path first, then repo paths. Graceful fallback."""
     global _model_pack
     if _model_pack is not None:
         return _model_pack
-    
-    # FORCE the fixed model path - ignore everything else
-    fixed_model_path = r"E:/Bettr Bot/betting-bot/models/betting_model_fixed.pkl"
-    
-    # Try the fixed model ONLY
-    if os.path.exists(fixed_model_path):
-        try:
-            with open(fixed_model_path, "rb") as f:
-                _model_pack = pickle.load(f)
-            
-            # Verify it's the right model
-            feature_count = len(_model_pack.get('feature_cols', []))
-            auc = _model_pack.get('model_metrics', {}).get('auc', 'Unknown')
-            
-            logger.info(f"AI Chat: FIXED model loaded from {fixed_model_path}")
-            logger.info(f"AI Chat: Model has {feature_count} features, AUC: {auc}")
-            
-            if feature_count == 35:  # Should have exactly 35 features
-                logger.info("✓ AI Chat: Using the CORRECT new model with 35 features!")
-                return _model_pack
-            else:
-                logger.error(f"✗ AI Chat: Wrong model! Expected 35 features, got {feature_count}")
-                
-        except Exception as e:
-            logger.error(f"Failed to load FIXED model from {fixed_model_path}: {e}")
-    else:
-        logger.error(f"FIXED model file not found at: {fixed_model_path}")
-    
-    logger.error("AI Chat: FAILED TO LOAD FIXED MODEL - using statistical fallback.")
-    return None
 
+    candidates = [
+        os.getenv("BETTR_MODEL_PKL"),
+        Path(__file__).resolve().parent.parent / "models" / "betting_model_fixed.pkl",
+        Path.cwd() / "models" / "betting_model_fixed.pkl",
+    ]
+    for p in candidates:
+        if not p:
+            continue
+        p = Path(p)
+        if p.exists():
+            try:
+                with p.open("rb") as f:
+                    _model_pack = pickle.load(f)
+                logger.info(f"AI Chat: loaded model pack from {p}")
+                return _model_pack
+            except Exception as e:
+                logger.warning(f"AI Chat: failed to load model pack from {p}: {e}")
+
+    logger.warning("AI Chat: model pack not found; using statistical fallback.")
+    _model_pack = None
+    return None
 
 def verify_model_consistency():
     """Check if AI chat and dashboard use the same model"""
@@ -191,11 +182,14 @@ class DatabaseManager:
                 return url
 
         # Shared sqlite path (Windows-friendly)
-        default_db = r"E:/Bettr Bot/betting-bot/data/betting.db"
-        path = os.getenv("BETTR_DB_PATH", default_db).replace("\\", "/")
+        # repo-relative sqlite fallback
+        base_dir = Path(__file__).resolve().parent
+        default_db = str((base_dir / "data" / "betting.db").as_posix())
+        path = os.getenv("BETTR_DB_PATH", default_db)
         if "://" in path:
             return path
         return f"sqlite:///{path}"
+
 
     def get_connection(self):
         """Return a connection that pandas can read from."""
@@ -419,7 +413,11 @@ class AdvancedBettingAnalyzer:
                 try:
                     # Get model prediction
                     probs = self._calculate_win_probabilities(conn, game)
-                    
+                    MIN_BOOKS_REQUIRED = 1
+                    MAX_DEC_ODDS = 3.2
+                    MIN_CONF = 0.52
+                    p_home = float(probs["home"])
+                    p_away = float(probs["away"])
                     # DIAGNOSTIC: Log what the model actually predicted
                     # print(f"Game: {game['away_team']} @ {game['home_team']}")
                     # print(f"  Model: Home {probs['home']:.1%}, Away {probs['away']:.1%}")
@@ -434,90 +432,54 @@ class AdvancedBettingAnalyzer:
                     # Check each team for value
                     # Process odds by team with name normalization
                     for team_name in [game['home_team'], game['away_team']]:
-                        # Try exact match first
-                        # Find odds for this team (exact or partial match)
                         team_odds = game_odds[
                             (game_odds['team'].str.casefold() == team_name.casefold()) |
-                            (game_odds['team'].str.contains(team_name, case=False, na=False))
+                            (game_odds['team'].str.contains(team_name.split()[-1], case=False, na=False))
                         ]
-
                         if team_odds.empty:
-                            print(f"    No odds found for {team_name}")
                             continue
 
-                        # Normalize to decimal and pick the best price by decimal payout
                         team_odds = team_odds.copy()
                         team_odds['dec'] = team_odds['odds'].apply(self._to_decimal_odds)
+                        team_odds = team_odds.dropna(subset=['dec'])
+
+                        if team_odds.empty:
+                            continue
 
                         best_idx = team_odds['dec'].idxmax()
-                        best_odds_row = team_odds.loc[best_idx]
-                        odds_val = float(best_odds_row['odds'])
-                        decimal_odds = float(best_odds_row['dec'])
-                        books_count = team_odds['sportsbook'].nunique()
-
-                        print(f"    Best decimal: {decimal_odds}, Books: {books_count}")
-
-                        if books_count < MIN_BOOKS_REQUIRED:
-                            print(f"    Only {books_count} books, need {MIN_BOOKS_REQUIRED}")
+                        best_row = team_odds.loc[best_idx]
+                        dec = float(best_row['dec'])
+                        if dec > MAX_DEC_ODDS:
                             continue
 
-                        # Skip if odds too long (decimal)
-                        if decimal_odds > MAX_DEC_ODDS:
-                            print(f"    Odds too long: {decimal_odds}")
-                            continue
-
-                        # Model probability for this team
                         model_prob = p_home if team_name == game['home_team'] else p_away
-
-                        # Confidence floor
                         if model_prob < MIN_CONF:
-                            print(f"    Model prob {model_prob:.1%} below min {MIN_CONF:.1%}")
                             continue
 
-                        # ✅ Implied probability from DECIMAL odds (always correct)
-                        implied_prob = 1.0 / decimal_odds
+                        implied = 1.0 / dec
+                        edge = model_prob - implied
+                        edge_pct = edge * 100.0
+                        if edge < float(min_edge):
+                            continue
 
-                        # Edge (model - market)
-                        edge = model_prob - implied_prob
+                        # Kelly on decimal odds
+                        kelly = (model_prob * dec - 1) / (dec - 1)
+                        stake = max(5.0, min(100.0, kelly * 100.0 * 0.25))
 
+                        value_bets.append(ValueBet(
+                            game_id=game['game_id'],
+                            team=team_name,
+                            odds=int(float(best_row['odds'])),
+                            sportsbook=str(best_row['sportsbook']),
+                            model_probability=float(model_prob),
+                            implied_probability=float(implied),
+                            edge_percentage=float(edge_pct),
+                            recommended_stake=float(stake),
+                            confidence_level=("High" if edge >= 0.08 else "Medium" if edge >= 0.05 else "Low"),
+                            risk_assessment=("Low" if abs(float(best_row['odds'])) < 200 else "Medium"),
+                        ))
 
-                        print(f"  {team_name}: Model {model_prob:.1%}, Implied {implied_prob:.1%}, Edge {edge_pct:.1f}%")
-
-                        # LOWERED THRESHOLD: Look for 2%+ edges instead of 5%+
-                        if edge >= float(min_edge):  # 2% minimum edge
-                            # Calculate Kelly stake
-                            if odds_val > 0:
-                                decimal_odds = 1 + (odds_val / 100)
-                            else:
-                                decimal_odds = 1 + (100 / abs(odds_val))
-
-                            kelly = (model_prob * decimal_odds - 1) / (decimal_odds - 1)
-                            
-                            # Conservative Kelly (25% of full Kelly)
-                            stake = max(5, min(100, kelly * 100 * 0.25))
-
-                            # Confidence based on edge size
-                            if edge > 0.08:
-                                confidence = "High"
-                            elif edge > 0.05:
-                                confidence = "Medium"  
-                            else:
-                                confidence = "Low"
-
-                            value_bets.append(ValueBet(
-                                game_id=game['game_id'],
-                                team=team_name,
-                                odds=int(odds_val),
-                                sportsbook=best_odds_row['sportsbook'],
-                                model_probability=model_prob,
-                                implied_probability=implied_prob,
-                                edge_percentage=edge_pct,
-                                recommended_stake=float(stake),
-                                confidence_level=confidence,
-                                risk_assessment="Low" if abs(odds_val) < 200 else "Medium"
-                            ))
-
-                            print(f"    *** VALUE BET FOUND: {edge_pct:.1f}% edge ***")
+                        print(f"    *** VALUE BET FOUND: {edge_pct:.1f}% edge ***")
 
                 except Exception as e:
                     logger.warning(f"Error analyzing game {game['game_id']}: {e}")
