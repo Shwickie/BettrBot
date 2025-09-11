@@ -72,43 +72,27 @@ except Exception as e:
     logger.warning(f"ai_tools import error (ignored): {e}")
     list_value_bets = None  # noqa: F401
 
+# near the top of ai_chat_stub.py with other imports
+import os, pickle
+
+# use env var first, then a local file next to this module
+MODEL_PKL = os.environ.get(
+    "BETTR_MODEL_PKL",
+    os.path.join(os.path.dirname(__file__), "betting_model_fixed.pkl")
+)
 
 _model_pack = None
 def load_model_pack():
-    """Load and cache packed model - FORCES the fixed model"""
     global _model_pack
     if _model_pack is not None:
         return _model_pack
-    
-    # FORCE the fixed model path - ignore everything else
-    fixed_model_path = r"E:/Bettr Bot/betting-bot/models/betting_model_fixed.pkl"
-    
-    # Try the fixed model ONLY
-    if os.path.exists(fixed_model_path):
-        try:
-            with open(fixed_model_path, "rb") as f:
-                _model_pack = pickle.load(f)
-            
-            # Verify it's the right model
-            feature_count = len(_model_pack.get('feature_cols', []))
-            auc = _model_pack.get('model_metrics', {}).get('auc', 'Unknown')
-            
-            logger.info(f"AI Chat: FIXED model loaded from {fixed_model_path}")
-            logger.info(f"AI Chat: Model has {feature_count} features, AUC: {auc}")
-            
-            if feature_count == 35:  # Should have exactly 35 features
-                logger.info("✓ AI Chat: Using the CORRECT new model with 35 features!")
-                return _model_pack
-            else:
-                logger.error(f"✗ AI Chat: Wrong model! Expected 35 features, got {feature_count}")
-                
-        except Exception as e:
-            logger.error(f"Failed to load FIXED model from {fixed_model_path}: {e}")
-    else:
-        logger.error(f"FIXED model file not found at: {fixed_model_path}")
-    
-    logger.error("AI Chat: FAILED TO LOAD FIXED MODEL - using statistical fallback.")
-    return None
+    if not os.path.exists(MODEL_PKL):
+        logger.warning(f"AI Chat: model pack not found at {MODEL_PKL}; using fallback heuristics")
+        _model_pack = None
+        return None
+    with open(MODEL_PKL, "rb") as f:
+        _model_pack = pickle.load(f)
+    return _model_pack
 
 
 def verify_model_consistency():
@@ -256,12 +240,14 @@ class AdvancedBettingAnalyzer:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
         self.model_pack = load_model_pack()
+        self.prediction_system = None
         if FIXED_NFL_SYSTEM_AVAILABLE:
-            self.prediction_system = FixedNFLSystem()
-            logger.info("AI Chat: Using FixedNFLSystem (same as dashboard)")
-        else:
-            self.prediction_system = None
-            logger.warning("AI Chat: FixedNFLSystem not available")
+            try:
+                self.prediction_system = FixedNFLSystem()
+                logger.info("AI Chat: Using FixedNFLSystem (dashboard model)")
+            except Exception as e:
+                logger.warning(f"AI Chat: FixedNFLSystem unavailable, falling back. Reason: {e}")
+                self.prediction_system = None
         self.cache: Dict[str, Tuple[Any, float]] = {}
         self.cache_ttl = 300  # seconds
         # cache feature vectors for narrative "drivers"
