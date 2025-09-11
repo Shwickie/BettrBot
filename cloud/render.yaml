@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: bettr-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: DATABASE_URL
+        value: postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres
+      - key: FLASK_ENV
+        value: production

@@ -1,0 +1,52 @@
+# requirements.txt - Python dependencies for cloud deployment
+Flask==3.0.0
+sqlalchemy==2.0.23
+pandas==2.1.4
+psycopg2-binary==2.9.9
+numpy==1.26.2
+requests==2.31.0
+python-dateutil==2.8.2
+pytz==2023.3
+scikit-learn==1.3.2
+beautifulsoup4==4.12.2
+lxml==4.9.4
+gunicorn==21.2.0
+
+---
+# Procfile - For Heroku deployment
+web: gunicorn app:app
+worker: python cloud_run_all.py
+
+---
+# render.yaml - For Render deployment
+services:
+  - type: web
+    name: bettr-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: DATABASE_URL
+        value: postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      
+  - type: cron
+    name: bettr-bot-pipeline
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python cloud_run_all.py
+    schedule: "0 */3 * * *"  # Every 3 hours
+
+---
+# .env - Environment variables for local testing
+DATABASE_URL=postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres
+FLASK_ENV=production
+SECRET_KEY=bettr-bot-enhanced-2025-production
+PORT=5000
+
+# Optional API Keys
+ODDS_API_KEY=your-odds-api-key
+ESPN_API_KEY=your-espn-api-key

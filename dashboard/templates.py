@@ -16,16 +16,8 @@ LOGIN_TEMPLATE = """
             align-items: center;
             justify-content: center;
         }
-        .login-container {
-            background: rgba(8, 15, 35, 0.9);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 20px;
-            padding: 40px;
-            max-width: 400px;
-            width: 100%;
-            backdrop-filter: blur(10px);
-            text-align: center;
-        }
+
+
         .logo { font-size: 3em; margin-bottom: 10px; }
         .subtitle { color: #bdd1ff; margin-bottom: 30px; }
         .form-group { margin-bottom: 20px; text-align: left; }
@@ -77,6 +69,86 @@ LOGIN_TEMPLATE = """
             background: rgba(255, 193, 7, 0.1);
             border-left: 3px solid #ffc107;
             font-style: italic;
+        }
+
+        .prediction-row {
+            transition: all 0.2s ease;
+        }
+
+        .prediction-row:hover {
+            background: rgba(255,255,255,0.08) !important;
+            transform: translateY(-1px);
+        }
+
+        .high-confidence {
+            color: #15d07e;
+        }
+
+        .medium-confidence {
+            color: #ffcc33;
+        }
+
+        .low-confidence {
+            color: #ff9c7a;
+        }
+
+        .no-confidence {
+            color: #ff6b6b;
+        }
+
+        .favored-team {
+            font-weight: 600;
+        }
+
+        .underdog-team {
+            opacity: 0.8;
+        }
+
+        .model-badge {
+            font-size: 9px !important;
+            padding: 1px 4px !important;
+            border-radius: 3px !important;
+            background: #2c86ff !important;
+            color: white !important;
+            margin-left: 4px;
+        }
+
+        .matchup-main {
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .team-probabilities {
+            font-size: 11px;
+            color: #a8b5d3;
+            margin-top: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .confidence-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 12px;
+            text-align: center;
+            min-width: 45px;
+        }
+
+        .prediction-cell {
+            text-align: left;
+        }
+
+        .datetime-cell {
+            font-size: 11px;
+            line-height: 1.3;
+        }
+
+        .confidence-cell {
+            text-align: right;
+            padding-right: 12px;
         }
     </style>
 </head>
@@ -679,6 +751,33 @@ AI_CHAT_TEMPLATE = r"""
 
     function initializeChat() {
       updateStatus('ready', 'AI Assistant Ready');
+    }
+
+    function autofillOdds(){
+        const teamName = teamSelect.value; 
+        const book = bookSelect.value;
+        const team = selectedGameData.teams.find(x=>x.team===teamName);
+        if(!team){ 
+            oddsInput.value=''; 
+            return; 
+        }
+        
+        const byBook = team.by_book||[]; 
+        const match = byBook.find(b=>b.sportsbook===book);
+        const line = match ? match.odds : team.odds;
+        
+        if(line !== undefined && line !== null && line !== 100 && line !== -100){ 
+            // FIXED: Better odds formatting
+            const oddsNum = Number(line);
+            if (oddsNum > 0) {
+                oddsInput.value = `+${oddsNum}`;
+            } else {
+                oddsInput.value = `${oddsNum}`;
+            }
+        } else {
+            // Default to standard -110 if no real odds available
+            oddsInput.value = '-110';
+        }
     }
 
     function updateStatus(type, message) {
@@ -1578,6 +1677,27 @@ HTML_TEMPLATE = """
             <div style=\"display:flex;gap:10px;justify-content:flex-end;\"><button type=\"submit\" class=\"btn btn-warning\">Adjust Balance</button></div>
         </form>
     </div>
+    <div style="margin: 15px 0;">
+      <button class="btn btn-warning" onclick="wipeDepositsWithdrawals()" style="margin-right: 10px;">
+        Clear Deposits/Withdrawals (All Users)
+      </button>
+    </div>
+
+    <!-- Reset Individual User -->
+    <div style="margin: 15px 0;">
+      <label style="font-weight: 600; display:block; margin-bottom:6px;">Reset One User</label>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <select id="resetUserSelect" style="background:#fff; color:#000; padding:5px; border-radius:3px;">
+          <option value="">Select user...</option>
+        </select>
+        <input type="number" id="resetUserBankroll" value="100" step="0.01" min="0"
+              style="width: 100px; padding:5px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius:3px;">
+        <button class="btn btn-warning" onclick="resetUserMoney()" style="font-size:11px; padding:4px 8px;">
+          Reset User
+        </button>
+      </div>
+    </div>
+    
 </div></div>
 {% endif %}
 
@@ -1587,6 +1707,95 @@ HTML_TEMPLATE = """
     let selectedGameData = null; // <- fixed name
     let availableGamesData = [];
     let isAdmin = {{ 'true' if user.is_admin else 'false' }};
+
+
+    async function resetAllUserMoney() {
+        const bankroll = parseFloat(document.getElementById('resetAllBankroll').value);
+        
+        if (!bankroll || bankroll <= 0) {
+            alert('Please enter a valid bankroll amount');
+            return;
+        }
+        
+        if (!confirm(`Reset ALL users to $${bankroll.toFixed(2)} bankroll and clear all money history?`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/admin/reset-money', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({new_bankroll: bankroll})
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                alert(`Success: ${data.message}\nUsers updated: ${data.users_updated}`);
+                loadAdminData(); // Refresh the admin panel
+                
+                // Update all bankroll displays on the page
+                document.querySelectorAll('.bankroll').forEach(el => {
+                    el.textContent = `$${bankroll.toFixed(2)}`;
+                });
+                
+                // Refresh activity
+                loadRecentActivity();
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+            }
+            
+        } catch (error) {
+            alert('Network error: ' + error.message);
+        }
+    }
+
+    async function resetUserMoney() {
+        const username = document.getElementById('resetUserSelect').value;
+        const bankroll = parseFloat(document.getElementById('resetUserBankroll').value);
+        
+        if (!username) {
+            alert('Please select a user');
+            return;
+        }
+        
+        if (!bankroll || bankroll <= 0) {
+            alert('Please enter a valid bankroll amount');
+            return;
+        }
+        
+        if (!confirm(`Reset ${username} to $${bankroll.toFixed(2)} bankroll and clear their money history?`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/admin/reset-user-money', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: username, bankroll: bankroll})
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                alert(data.message);
+                loadAdminData(); // Refresh the admin panel
+                
+                // If it's the current user, update their display
+                if (username === currentUser) {
+                    document.querySelectorAll('.bankroll').forEach(el => {
+                        el.textContent = `$${bankroll.toFixed(2)}`;
+                    });
+                    loadRecentActivity();
+                }
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+            }
+            
+        } catch (error) {
+            alert('Network error: ' + error.message);
+        }
+    }
 
     async function loadAllData() {
         await Promise.allSettled([ loadPredictions(), loadRankings(), loadBettingAnalysis(), loadRecentActivity() ]);
@@ -1615,21 +1824,110 @@ HTML_TEMPLATE = """
     }
     async function loadRecentActivity(){ try{ const r=await fetch('/api/recent-activity'); displayRecentActivity(await r.json()); }catch(e){ document.getElementById('recent-activity').innerHTML='<div class="loading">Error loading activity</div>'; } }
 
+    // Replace the displayPredictions function in templates.py
+
     function displayPredictions(data){
         const body = document.getElementById('predictions-body');
         if (!Array.isArray(data) || data.length === 0){
             body.innerHTML = '<tr><td colspan="4" class="loading">No upcoming games.</td></tr>';
             return;
         }
-        body.innerHTML = data.map(p => `
-            <tr>
-            <td>${p.matchup}</td>
-            <td>${p.game_date} ${(p.game_time || '').slice(0,5)}</td>
-            <td>${p.prediction}</td>
-            <td class="right">${(p.confidence*100).toFixed(1)}%</td>
-            </tr>
-        `).join('');
+        
+        body.innerHTML = data.map(p => {
+            // Parse team names from matchup string
+            const matchupParts = p.matchup.split(' @ ');
+            const awayTeam = matchupParts[0];
+            const homeTeam = matchupParts[1];
+            
+            // Determine which team is predicted to win
+            const isHomePick = p.prediction === homeTeam || p.prediction.includes(homeTeam);
+            const isAwayPick = p.prediction === awayTeam || p.prediction.includes(awayTeam);
+            
+            // Get probabilities - handle both formats from your model
+            const homeProb = (p.home_win_probability || p.home_win_prob || 0) * 100;
+            const awayProb = (p.away_win_probability || p.away_win_prob || 0) * 100;
+            
+            // Format confidence percentage
+            const confidencePercent = (p.confidence * 100).toFixed(1);
+            const confidenceValue = parseFloat(confidencePercent);
+            
+            // Enhanced confidence classification and betting recommendation
+            let confidenceClass, bettingRecommendation, confidenceColor;
+            
+            if (confidenceValue >= 65) {
+                confidenceClass = 'high-confidence';
+                bettingRecommendation = 'Strong Bet';
+                confidenceColor = '#15d07e'; // Green - good to bet
+            } else if (confidenceValue >= 58) {
+                confidenceClass = 'medium-confidence';
+                bettingRecommendation = 'Consider';
+                confidenceColor = '#ffcc33'; // Yellow - proceed with caution
+            } else if (confidenceValue >= 52) {
+                confidenceClass = 'low-confidence';
+                bettingRecommendation = 'Weak Edge';
+                confidenceColor = '#ff9c7a'; // Orange - weak edge
+            } else {
+                confidenceClass = 'no-confidence';
+                bettingRecommendation = 'Avoid';
+                confidenceColor = '#ff6b6b'; // Red - don't bet
+            }
+            
+            // Style the prediction display
+            let predictionDisplay = p.prediction;
+            if (p.model_prediction) {
+                predictionDisplay += ` <span class="model-badge" style="background: #2c86ff; color: white; padding: 1px 4px; border-radius: 3px; font-size: 9px;">ML</span>`;
+            }
+            
+            // Power difference indicator (if available from your model)
+            const powerDiff = p.power_difference || p.key_factors?.power_diff || 0;
+            let powerIndicator = '';
+            if (Math.abs(powerDiff) > 4) {
+                powerIndicator = `<span style="color: #86f093; font-size: 10px;">⚡ Power Edge: ${powerDiff.toFixed(1)}</span>`;
+            }
+            
+            return `
+                <tr class="prediction-row" style="border-left: 3px solid ${confidenceColor};">
+                    <td class="matchup-cell">
+                        <div class="matchup-main" style="font-weight: 600;">${p.matchup}</div>
+                        <div class="team-probabilities" style="font-size: 11px; color: #a8b5d3; margin-top: 2px;">
+                            <span class="${isHomePick ? 'favored-team' : 'underdog-team'}" style="color: ${isHomePick ? '#86f093' : '#bdd1ff'};">
+                                ${homeTeam}: ${homeProb.toFixed(1)}%
+                            </span>
+                            <span style="color: #666; margin: 0 6px;">•</span>
+                            <span class="${isAwayPick ? 'favored-team' : 'underdog-team'}" style="color: ${isAwayPick ? '#86f093' : '#bdd1ff'};">
+                                ${awayTeam}: ${awayProb.toFixed(1)}%
+                            </span>
+                        </div>
+                        ${powerIndicator ? `<div style="margin-top: 2px;">${powerIndicator}</div>` : ''}
+                    </td>
+                    <td class="datetime-cell" style="font-size: 11px;">
+                        ${p.game_date}<br>
+                        <small style="color: #a8b5d3;">${(p.game_time || 'TBD').slice(0,5)}</small>
+                    </td>
+                    <td class="prediction-cell">
+                        <div class="prediction-team ${confidenceClass}" style="font-weight: 600;">
+                            ${predictionDisplay}
+                        </div>
+                        <div style="font-size: 10px; color: ${confidenceColor}; margin-top: 2px;">
+                            ${bettingRecommendation}
+                        </div>
+                    </td>
+                    <td class="confidence-cell right">
+                        <div class="confidence-badge ${confidenceClass}" 
+                            style="background: ${confidenceColor}; color: ${confidenceValue >= 52 ? '#000' : '#fff'}; 
+                                    padding: 4px 8px; border-radius: 4px; font-weight: 700;">
+                            ${confidencePercent}%
+                        </div>
+                        <div style="font-size: 9px; color: #a8b5d3; margin-top: 2px; text-align: center;">
+                            ${p.model_prediction ? 'ML Model' : 'Power Based'}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
     }
+
+
 
 
 
@@ -1778,7 +2076,8 @@ HTML_TEMPLATE = """
         sendAIMessage();
     }
 
-    // Add this to your templates.py JavaScript section
+
+    // In templates.py, update the getAIPredictions function to fix HTML formatting:
 
     async function getAIPredictions() {
         const resultsDiv = document.getElementById('ai-results');
@@ -1786,9 +2085,14 @@ HTML_TEMPLATE = """
         
         try {
             const response = await fetch('/api/ai-betting-recommendations');
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
             const data = await response.json();
             
-            if (data.ok && data.result) {
+            if (data.ok && data.result && data.result.recommendations) {
                 const { recommendations, bankroll, total_recommended, remaining_budget, risk_level } = data.result;
                 
                 let html = '<h4>🎯 Personalized Betting Recommendations</h4>';
@@ -1803,28 +2107,50 @@ HTML_TEMPLATE = """
                     html += '<div class="alert alert-info">No high-confidence betting opportunities found for your bankroll today.</div>';
                 } else {
                     recommendations.forEach(rec => {
-                        const isValueBet = rec.type === 'value_bet';
-                        const bgClass = isValueBet ? 'alert-success' : 'alert-info';
+                        // Fix odds display - convert decimal back to proper American odds
+                        let oddsDisplay;
+                        const decimalOdds = rec.decimal_odds || 2.0;
+                        
+                        if (decimalOdds >= 2.0) {
+                            oddsDisplay = `+${Math.round((decimalOdds - 1) * 100)}`;
+                        } else {
+                            oddsDisplay = `${Math.round(-100 / (decimalOdds - 1))}`;
+                        }
+                        
+                        const confidenceColor = rec.confidence_level === 'High' ? '#15d07e' : 
+                                              rec.confidence_level === 'Medium' ? '#ffcc33' : '#ff9c7a';
                         
                         html += `
-                            <div class="${bgClass}" style="margin: 10px 0;">
-                                <div style="display: flex; justify-content: space-between; align-items: start;">
-                                    <div>
-                                        <strong>${rec.game}</strong><br>
-                                        <strong>Bet: ${rec.team}</strong><br>
-                                        ${rec.odds !== 'Check sportsbook' ? `Odds: ${rec.odds > 0 ? '+' : ''}${rec.odds} @ ${rec.sportsbook}` : 'Odds: Check sportsbooks'}<br>
-                                        <small>${rec.reason}</small>
+                            <div class="alert alert-success" style="margin: 10px 0; border-left: 3px solid ${confidenceColor};">
+                                <div style="display: flex; justify-content: space-between; align-items: start; gap: 15px;">
+                                    <div style="flex: 1;">
+                                        <div style="font-weight: 600; margin-bottom: 4px;">${rec.game}</div>
+                                        <div style="color: #86f093; font-weight: 600;">Bet: ${rec.team}</div>
+                                        <div style="font-size: 13px; margin: 2px 0;">
+                                            Odds: <strong>${oddsDisplay}</strong> @ ${rec.sportsbook}
+                                        </div>
+                                        <div style="font-size: 12px; color: #a8b5d3;">
+                                            ${rec.reason}
+                                        </div>
                                     </div>
-                                    <div style="text-align: right;">
-                                        <strong>Stake: $${rec.recommended_stake}</strong><br>
-                                        ${rec.potential_profit ? `Profit: $${rec.potential_profit}<br>` : ''}
-                                        <span class="confidence ${rec.confidence.toLowerCase()}">${rec.confidence} Confidence</span>
-                                        ${isValueBet ? '<br><span style="color: #15d07e;">📈 Value Bet</span>' : '<br><span style="color: #4a9eff;">🎯 Model Pick</span>'}
+                                    <div style="text-align: right; min-width: 120px;">
+                                        <div style="font-weight: 600; color: #86f093;">
+                                            Stake: $${rec.recommended_stake}
+                                        </div>
+                                        <div style="font-size: 13px; margin: 2px 0;">
+                                            Profit: $${rec.potential_profit}
+                                        </div>
+                                        <div style="font-size: 12px; padding: 2px 6px; border-radius: 3px; background: ${confidenceColor}; color: #000; display: inline-block;">
+                                            ${rec.confidence_level} Confidence
+                                        </div>
+                                        <div style="font-size: 11px; margin-top: 2px; color: #4a9eff;">
+                                            🎯 Model Pick
+                                        </div>
                                     </div>
                                 </div>
-                                <button class="btn btn-sm btn-success" onclick="placeBetFromRecommendation('${rec.team}', '${rec.odds}', '${rec.sportsbook}', ${rec.recommended_stake})" 
-                                        style="margin-top: 8px;">
-                                    Place This Bet
+                                <button class="btn btn-success" onclick="placeBetFromRecommendation('${rec.team.replace(/'/g, "\\'")}', '${oddsDisplay}', '${rec.sportsbook}', ${rec.recommended_stake})" 
+                                        style="margin-top: 8px; width: 100%; font-size: 12px;">
+                                    Place This Bet ($${rec.recommended_stake})
                                 </button>
                             </div>
                         `;
@@ -1833,18 +2159,20 @@ HTML_TEMPLATE = """
                 
                 html += `<div class="alert alert-info" style="margin-top: 15px;">
                     <small><strong>Risk Management:</strong> Recommendations use conservative Kelly criterion (25% of optimal) 
-                    with 5% max per bet and 10% daily budget limits.</small>
+                    with 5% max per bet and 10% daily budget limits. Total: $${total_recommended} of $${bankroll} bankroll.</small>
                 </div>`;
                 
                 resultsDiv.innerHTML = html;
+                
             } else {
-                resultsDiv.innerHTML = '<div class="alert alert-error">Failed to get recommendations: ' + (data.error || 'Unknown error') + '</div>';
+                resultsDiv.innerHTML = '<div class="alert alert-error">Failed to get recommendations: ' + (data.error || 'Unexpected response format') + '</div>';
             }
+            
         } catch (error) {
-            resultsDiv.innerHTML = '<div class="alert alert-error">Network error getting recommendations</div>';
+            console.error('Error in getAIPredictions:', error);
+            resultsDiv.innerHTML = '<div class="alert alert-error">Network error getting recommendations: ' + error.message + '</div>';
         }
     }
-
     // Add this helper function for bet placement integration
     function placeBetFromRecommendation(team, odds, sportsbook, amount) {
         openBetModal();
@@ -2188,7 +2516,69 @@ HTML_TEMPLATE = """
 
     function openAdminModal(){ if(!isAdmin) return; document.getElementById('adminModal').style.display='block'; loadAdminData(); }
     function closeAdminModal(){ document.getElementById('adminModal').style.display='none'; }
-    async function loadAdminData(){ if(!isAdmin) return; try{ const r=await fetch('/api/admin/users'); const users=await r.json(); let html='<table style="width:100%;font-size:11px;"><thead><tr><th>User</th><th>Balance</th><th>Betting P&L</th><th>Bets</th></tr></thead><tbody>'; users.forEach(u=>{ const pl=u.betting_profit_loss>=0?'positive':'negative'; html+=`<tr><td>${u.name} (${u.username})</td><td class="bankroll">${Number(u.bankroll).toFixed(2)}</td><td class="${pl}">${Number(u.betting_profit_loss).toFixed(2)}</td><td>${u.bet_count}</td></tr>`; }); html+='</tbody></table>'; document.getElementById('usersList').innerHTML=html; const dd=document.getElementById('adminUsername'); dd.innerHTML='<option value="">Select user...</option>'; users.forEach(u=>{ const opt=document.createElement('option'); opt.value=u.username; opt.textContent=u.name; dd.appendChild(opt); }); }catch(e){ document.getElementById('usersList').innerHTML='Error loading users'; } }
+    
+    async function loadAdminData() {
+      if (!isAdmin) return;
+
+      try {
+        const r = await fetch('/api/admin/users');
+        const users = await r.json();
+
+        // Render the users table
+        let html = `
+          <table style="width:100%; font-size:11px; border-collapse: collapse;">
+            <thead>
+              <tr style="background: rgba(255,255,255,0.1);">
+                <th style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1);">User</th>
+                <th style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1);">Balance</th>
+                <th style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1);">Betting P&L</th>
+                <th style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1);">Bets</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+        users.forEach(u => {
+          const pl = u.betting_profit_loss >= 0 ? 'positive' : 'negative';
+          html += `
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+              <td style="padding: 6px;">${u.name} (${u.username})</td>
+              <td style="padding: 6px;" class="bankroll">$${Number(u.bankroll).toFixed(2)}</td>
+              <td style="padding: 6px;" class="${pl}">$${Number(u.betting_profit_loss).toFixed(2)}</td>
+              <td style="padding: 6px;">${u.bet_count}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+
+        const usersList = document.getElementById('usersList');
+        if (usersList) usersList.innerHTML = html;
+
+        // Fill BOTH dropdowns
+        const adminDD = document.getElementById('adminUsername');
+        const resetDD = document.getElementById('resetUserSelect');
+
+        if (adminDD) adminDD.innerHTML = '<option value="">Select user...</option>';
+        if (resetDD) resetDD.innerHTML = '<option value="">Select user...</option>';
+
+        users.forEach(u => {
+          if (adminDD) {
+            const o1 = document.createElement('option');
+            o1.value = u.username;
+            o1.textContent = u.name;
+            adminDD.appendChild(o1);
+          }
+          if (resetDD) {
+            const o2 = document.createElement('option');
+            o2.value = u.username;
+            o2.textContent = u.name;
+            resetDD.appendChild(o2);
+          }
+        });
+      } catch (e) {
+        const usersList = document.getElementById('usersList');
+        if (usersList) usersList.innerHTML = 'Error loading users: ' + e.message;
+      }
+    }
+    
     document.getElementById('adminAdjustForm') && document.getElementById('adminAdjustForm').addEventListener('submit', async function(e){ e.preventDefault(); const username=document.getElementById('adminUsername').value; const adjustment=parseFloat(document.getElementById('adminAdjustment').value); const reason=document.getElementById('adminReason').value; try{ const r=await fetch('/api/admin/adjust-balance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,adjustment,reason})}); if(r.ok){ const res=await r.json(); alert(`Balance adjusted! ${username}: ${Number(res.old_balance).toFixed(2)} → ${Number(res.new_balance).toFixed(2)}`); loadAdminData(); e.target.reset(); } else { const err=await r.json(); alert('Error: '+err.error); } }catch(err){ alert('Error adjusting balance: '+err.message); } });
 
     // ------- WEEK TABS / PRED MODAL / COMMON -------

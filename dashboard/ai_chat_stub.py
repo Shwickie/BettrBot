@@ -19,6 +19,7 @@ import logging
 from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
+from datetime import datetime, timedelta
 
 import pandas as pd
 import numpy as np
@@ -46,11 +47,16 @@ try:
 except Exception:
     OPENAI_AVAILABLE = False
     OpenAI = None  # type: ignore
-
+try:
+    from model.prediction import FixedNFLSystem
+    FIXED_NFL_SYSTEM_AVAILABLE = True
+except ImportError:
+    FIXED_NFL_SYSTEM_AVAILABLE = False
+    FixedNFLSystem = None
 # ---------------------------
 # Logging
 # ---------------------------
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ---------------------------
@@ -66,6 +72,61 @@ except Exception as e:
     logger.warning(f"ai_tools import error (ignored): {e}")
     list_value_bets = None  # noqa: F401
 
+
+_model_pack = None
+def load_model_pack():
+    """Load and cache packed model - FORCES the fixed model"""
+    global _model_pack
+    if _model_pack is not None:
+        return _model_pack
+    
+    # FORCE the fixed model path - ignore everything else
+    fixed_model_path = r"E:/Bettr Bot/betting-bot/models/betting_model_fixed.pkl"
+    
+    # Try the fixed model ONLY
+    if os.path.exists(fixed_model_path):
+        try:
+            with open(fixed_model_path, "rb") as f:
+                _model_pack = pickle.load(f)
+            
+            # Verify it's the right model
+            feature_count = len(_model_pack.get('feature_cols', []))
+            auc = _model_pack.get('model_metrics', {}).get('auc', 'Unknown')
+            
+            logger.info(f"AI Chat: FIXED model loaded from {fixed_model_path}")
+            logger.info(f"AI Chat: Model has {feature_count} features, AUC: {auc}")
+            
+            if feature_count == 35:  # Should have exactly 35 features
+                logger.info("✓ AI Chat: Using the CORRECT new model with 35 features!")
+                return _model_pack
+            else:
+                logger.error(f"✗ AI Chat: Wrong model! Expected 35 features, got {feature_count}")
+                
+        except Exception as e:
+            logger.error(f"Failed to load FIXED model from {fixed_model_path}: {e}")
+    else:
+        logger.error(f"FIXED model file not found at: {fixed_model_path}")
+    
+    logger.error("AI Chat: FAILED TO LOAD FIXED MODEL - using statistical fallback.")
+    return None
+
+
+def verify_model_consistency():
+    """Check if AI chat and dashboard use the same model"""
+    try:
+        import mobile_dashboard
+        ai_model = load_model_pack()
+        dashboard_model = mobile_dashboard.load_model_pack()
+        
+        if ai_model and dashboard_model:
+            ai_features = len(ai_model.get('feature_cols', []))
+            dash_features = len(dashboard_model.get('feature_cols', []))
+            logger.info(f"AI model features: {ai_features}, Dashboard features: {dash_features}")
+            return ai_features == dash_features
+        return False
+    except Exception as e:
+        logger.error(f"Model consistency check failed: {e}")
+        return False
 # ---------------------------
 # Data classes & enums
 # ---------------------------
@@ -194,7 +255,13 @@ class AdvancedBettingAnalyzer:
 
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
-        self.model_pack = self._load_model()
+        self.model_pack = load_model_pack()
+        if FIXED_NFL_SYSTEM_AVAILABLE:
+            self.prediction_system = FixedNFLSystem()
+            logger.info("AI Chat: Using FixedNFLSystem (same as dashboard)")
+        else:
+            self.prediction_system = None
+            logger.warning("AI Chat: FixedNFLSystem not available")
         self.cache: Dict[str, Tuple[Any, float]] = {}
         self.cache_ttl = 300  # seconds
         # cache feature vectors for narrative "drivers"
@@ -209,6 +276,25 @@ class AdvancedBettingAnalyzer:
         if time.time() - ts < self.cache_ttl:
             return data
         return None
+    
+    def _normalize_team_name(self, name: str) -> str:
+        """Return a canonical full team name for matching odds rows."""
+        mapping = {
+            'ARI':'Arizona Cardinals','ATL':'Atlanta Falcons','BAL':'Baltimore Ravens','BUF':'Buffalo Bills',
+            'CAR':'Carolina Panthers','CHI':'Chicago Bears','CIN':'Cincinnati Bengals','CLE':'Cleveland Browns',
+            'DAL':'Dallas Cowboys','DEN':'Denver Broncos','DET':'Detroit Lions','GB':'Green Bay Packers',
+            'HOU':'Houston Texans','IND':'Indianapolis Colts','JAX':'Jacksonville Jaguars','KC':'Kansas City Chiefs',
+            'LV':'Las Vegas Raiders','LAC':'Los Angeles Chargers','LAR':'Los Angeles Rams','LA':'Los Angeles Rams',
+            'MIA':'Miami Dolphins','MIN':'Minnesota Vikings','NE':'New England Patriots','NO':'New Orleans Saints',
+            'NYG':'New York Giants','NYJ':'New York Jets','PHI':'Philadelphia Eagles','PIT':'Pittsburgh Steelers',
+            'SF':'San Francisco 49ers','SEA':'Seattle Seahawks','TB':'Tampa Bay Buccaneers','TEN':'Tennessee Titans',
+            'WAS':'Washington Commanders','WSH':'Washington Commanders'
+        }
+        if not name:
+            return ''
+        key = name.strip()
+        return mapping.get(key.upper(), key)
+
 
     def method_breakdown(self, game_id: str) -> List[Tuple[str, float, Optional[float]]]:
         """Public accessor to recompute method details for a given game id."""
@@ -228,43 +314,6 @@ class AdvancedBettingAnalyzer:
 
     def _cache_result(self, key: str, data):
         self.cache[key] = (data, time.time())
-
-    # ---------- Model ----------
-    def _load_model(self) -> Optional[Dict]:
-        paths = [
-            os.getenv("BETTR_MODEL_PKL"),
-            r"E:/Bettr Bot/betting-bot/models/betting_model.pkl",
-            "/app/models/betting_model.pkl",
-            "./models/betting_model.pkl",
-        ]
-        for p in paths:
-            if not p:
-                continue
-            if os.path.exists(p):
-                try:
-                    with open(p, "rb") as f:
-                        obj = pickle.load(f)
-
-                    # Support both dict packs and bare estimators
-                    if isinstance(obj, dict) and "model" in obj:
-                        model_data = obj
-                    else:
-                        # bare estimator – synthesize a pack
-                        feature_cols = []
-                        if hasattr(obj, "feature_names_in_"):
-                            feature_cols = list(obj.feature_names_in_)  # scikit saves this on some pipelines/estimators
-                        model_data = {
-                            "model": obj,
-                            "scaler": None,          # unknown
-                            "feature_cols": feature_cols
-                        }
-
-                    logger.info(f"Model loaded from {p}")
-                    return model_data
-                except Exception as e:
-                    logger.warning(f"Failed to load model from {p}: {e}")
-        logger.warning("No model found, using statistical fallback.")
-        return None
 
     # ---------- Public API ----------
     def analyze_game_comprehensive(self, game_id: str) -> GameAnalysis:
@@ -319,85 +368,173 @@ class AdvancedBettingAnalyzer:
             except Exception:
                 pass
 
-    def find_value_bets_advanced(self, min_edge: float = 0.05, max_odds: int = 400) -> List[ValueBet]:
+    
+    def find_value_bets_advanced(self, min_edge=0.05, max_odds=400):
+        """FIXED: Actually find betting opportunities with realistic thresholds"""
         cache_key = f"value_bets_{min_edge}_{max_odds}"
         cached = self._get_cached(cache_key)
         if cached:
             return cached
 
         conn = self.db_manager.get_connection()
-        value_bets: List[ValueBet] = []
+        value_bets = []
+        
         try:
+            # Get upcoming games with odds
             games_sql = """
                 SELECT DISTINCT g.game_id, g.home_team, g.away_team, g.game_date
                 FROM games g
                 JOIN odds o ON g.game_id = o.game_id
                 WHERE g.game_date BETWEEN date('now') AND date('now', '+14 days')
-                  AND o.market = 'h2h'
+                AND o.market = 'h2h'
                 ORDER BY g.game_date
                 LIMIT 50
             """
             games = query_df(conn, games_sql)
 
+            if games.empty:
+                print("No upcoming games with odds found")
+                return []
+
+            # Get latest odds for each team/sportsbook
             odds_sql = """
-                SELECT o.team, o.sportsbook, o.odds
+                SELECT o.game_id, o.team, o.sportsbook, o.odds
                 FROM odds o
                 JOIN (
-                    SELECT team, sportsbook, MAX(timestamp) AS max_ts
+                    SELECT game_id, team, sportsbook, MAX(timestamp) AS max_ts
                     FROM odds 
-                    WHERE game_id = :gid AND market = 'h2h'
-                    GROUP BY team, sportsbook
+                    WHERE market = 'h2h'
+                    GROUP BY game_id, team, sportsbook
                 ) latest
-                  ON o.team = latest.team 
-                 AND o.sportsbook = latest.sportsbook 
-                 AND o.timestamp = latest.max_ts
-                WHERE o.game_id = :gid
+                ON o.game_id = latest.game_id
+                AND o.team = latest.team 
+                AND o.sportsbook = latest.sportsbook 
+                AND o.timestamp = latest.max_ts
             """
+            all_odds = query_df(conn, odds_sql)
+
+            print(f"Analyzing {len(games)} games for value bets...")
 
             for _, game in games.iterrows():
                 try:
+                    # Get model prediction
                     probs = self._calculate_win_probabilities(conn, game)
-                    odds_df = query_df(conn, odds_sql, {"gid": game["game_id"]})
+                    
+                    # DIAGNOSTIC: Log what the model actually predicted
+                    # print(f"Game: {game['away_team']} @ {game['home_team']}")
+                    # print(f"  Model: Home {probs['home']:.1%}, Away {probs['away']:.1%}")
+                    
+                    # Get odds for this game
+                    game_odds = all_odds[all_odds['game_id'] == game['game_id']]
+                    
+                    if game_odds.empty:
+                        print("  No odds found")
+                        continue
 
-                    for team in [game["home_team"], game["away_team"]]:
-                        tdf = odds_df.loc[odds_df["team"] == team]
-                        if tdf.empty:
-                            continue
-                        row = tdf.loc[tdf["odds"].idxmax()]
-                        odds_val = float(row["odds"])
-                        if abs(odds_val) > max_odds:
+                    # Check each team for value
+                    # Process odds by team with name normalization
+                    for team_name in [game['home_team'], game['away_team']]:
+                        # Try exact match first
+                        # Find odds for this team (exact or partial match)
+                        team_odds = game_odds[
+                            (game_odds['team'].str.casefold() == team_name.casefold()) |
+                            (game_odds['team'].str.contains(team_name, case=False, na=False))
+                        ]
+
+                        if team_odds.empty:
+                            print(f"    No odds found for {team_name}")
                             continue
 
-                        model_p = probs["home"] if team == game["home_team"] else probs["away"]
-                        implied = 100 / (odds_val + 100) if odds_val > 0 else abs(odds_val) / (abs(odds_val) + 100)
-                        edge = model_p - implied
-                        if edge >= min_edge:
-                            dec = (1 + (odds_val / 100)) if odds_val > 0 else (1 + (100 / abs(odds_val)))
-                            kelly = (model_p * dec - 1) / (dec - 1)
-                            stake = max(1, min(50, kelly * 100 * 0.25))
+                        # Normalize to decimal and pick the best price by decimal payout
+                        team_odds = team_odds.copy()
+                        team_odds['dec'] = team_odds['odds'].apply(self._to_decimal_odds)
+
+                        best_idx = team_odds['dec'].idxmax()
+                        best_odds_row = team_odds.loc[best_idx]
+                        odds_val = float(best_odds_row['odds'])
+                        decimal_odds = float(best_odds_row['dec'])
+                        books_count = team_odds['sportsbook'].nunique()
+
+                        print(f"    Best decimal: {decimal_odds}, Books: {books_count}")
+
+                        if books_count < MIN_BOOKS_REQUIRED:
+                            print(f"    Only {books_count} books, need {MIN_BOOKS_REQUIRED}")
+                            continue
+
+                        # Skip if odds too long (decimal)
+                        if decimal_odds > MAX_DEC_ODDS:
+                            print(f"    Odds too long: {decimal_odds}")
+                            continue
+
+                        # Model probability for this team
+                        model_prob = p_home if team_name == game['home_team'] else p_away
+
+                        # Confidence floor
+                        if model_prob < MIN_CONF:
+                            print(f"    Model prob {model_prob:.1%} below min {MIN_CONF:.1%}")
+                            continue
+
+                        # ✅ Implied probability from DECIMAL odds (always correct)
+                        implied_prob = 1.0 / decimal_odds
+
+                        # Edge (model - market)
+                        edge = model_prob - implied_prob
+
+
+                        print(f"  {team_name}: Model {model_prob:.1%}, Implied {implied_prob:.1%}, Edge {edge_pct:.1f}%")
+
+                        # LOWERED THRESHOLD: Look for 2%+ edges instead of 5%+
+                        if edge >= float(min_edge):  # 2% minimum edge
+                            # Calculate Kelly stake
+                            if odds_val > 0:
+                                decimal_odds = 1 + (odds_val / 100)
+                            else:
+                                decimal_odds = 1 + (100 / abs(odds_val))
+
+                            kelly = (model_prob * decimal_odds - 1) / (decimal_odds - 1)
+                            
+                            # Conservative Kelly (25% of full Kelly)
+                            stake = max(5, min(100, kelly * 100 * 0.25))
+
+                            # Confidence based on edge size
+                            if edge > 0.08:
+                                confidence = "High"
+                            elif edge > 0.05:
+                                confidence = "Medium"  
+                            else:
+                                confidence = "Low"
+
                             value_bets.append(ValueBet(
-                                game_id=game["game_id"],
-                                team=team,
+                                game_id=game['game_id'],
+                                team=team_name,
                                 odds=int(odds_val),
-                                sportsbook=row["sportsbook"],
-                                model_probability=model_p,
-                                implied_probability=implied,
-                                edge_percentage=edge * 100,
+                                sportsbook=best_odds_row['sportsbook'],
+                                model_probability=model_prob,
+                                implied_probability=implied_prob,
+                                edge_percentage=edge_pct,
                                 recommended_stake=float(stake),
-                                confidence_level=("High" if edge > 0.08 else "Medium" if edge > 0.05 else "Low"),
-                                risk_assessment=("Low" if abs(odds_val) < 150 else "Medium" if abs(odds_val) < 250 else "High"),
+                                confidence_level=confidence,
+                                risk_assessment="Low" if abs(odds_val) < 200 else "Medium"
                             ))
+
+                            print(f"    *** VALUE BET FOUND: {edge_pct:.1f}% edge ***")
+
                 except Exception as e:
                     logger.warning(f"Error analyzing game {game['game_id']}: {e}")
                     continue
 
+            print(f"Found {len(value_bets)} value bets")
+            
+            # Sort by edge percentage
             value_bets.sort(key=lambda x: x.edge_percentage, reverse=True)
-            top = value_bets[:20]
-            self._cache_result(cache_key, top)
-            return top
-        except Exception:
+            top_bets = value_bets[:20]
+            
+            self._cache_result(cache_key, top_bets)
+            return top_bets
+
+        except Exception as e:
             logger.exception("find_value_bets_advanced failed")
-            raise
+            return []
         finally:
             try:
                 conn.close()
@@ -442,59 +579,109 @@ class AdvancedBettingAnalyzer:
 
     # ---------- Internals ----------
     def _calculate_win_probabilities(self, conn, game) -> Dict[str, float]:
+        """Enhanced probability calculation with proper confidence."""
         methods = []
+        game_id = str(game.get("game_id", "unknown"))
 
-        # 1) ML model (soft-fail to keep app running)
+        # 1) Try FixedNFLSystem FIRST (same as dashboard)
         used_ml = False
-        if self.model_pack:
+        model_confidence = 0.6
+
+        if self.prediction_system:  # ← Use FixedNFLSystem first
+            try:
+                prediction_result = self.prediction_system.predict_game(
+                    home_team=game["home_team"],
+                    away_team=game["away_team"],
+                    game_date=str(game["game_date"])
+                )
+                
+                ml_prob = prediction_result['home_win_probability']
+                methods.append(("fixed_nfl_system", ml_prob, 1 - ml_prob))
+                used_ml = True
+                model_confidence = prediction_result['confidence']
+                
+                logger.info(f"AI Chat using FixedNFLSystem: Home {ml_prob:.1%}")
+                
+            except Exception as e:
+                logger.warning(f"FixedNFLSystem failed: {e}")
+        
+        # 2) Fallback to old model only if FixedNFLSystem fails
+        if not used_ml and self.model_pack:
             try:
                 ml_prob = self._predict_with_model(conn, game)
                 methods.append(("ml_model", ml_prob, 1 - ml_prob))
-                used_ml = True
+                used_ml = True  # ← FIXED: Use consistent variable name
+                logger.warning("AI Chat falling back to old model system")
             except Exception as e:
-                logger.warning(f"ML model prediction failed: {e}")
+                logger.warning(f"Fallback ML model prediction failed: {e}")
+
+        # Later in the same method:
+        if used_ml:  # ← FIXED
+            weights = {"fixed_nfl_system": 0.85, "ml_model": 0.70, "power_ratings": 0.10, "recent_form": 0.05}
+
+        prediction_confidence = model_confidence if used_ml else 0.55  # (not used_fixed_nfl)
+
+        
+                        
+        if game_id in self.feature_cache:
+                    model_confidence = self.feature_cache[game_id].get('_model_confidence', 0.6)
 
         # 2) Power ratings
-        methods.append(("power_ratings", self._predict_with_power_ratings(conn, game), None))
+        power_prob = self._predict_with_power_ratings(conn, game)
+        methods.append(("power_ratings", power_prob, None))
 
-        # 3) Recent form
-        methods.append(("recent_form", self._predict_with_recent_form(conn, game), None))
+        # 3) Recent form  
+        form_prob = self._predict_with_recent_form(conn, game)
+        methods.append(("recent_form", form_prob, None))
 
         # 4) Head-to-head
-        methods.append(("h2h_history", self._predict_with_h2h_history(conn, game), None))
+        h2h_prob = self._predict_with_h2h_history(conn, game)
+        methods.append(("h2h_history", h2h_prob, None))
 
-        # Weighted ensemble — if ML available, let it dominate
-        weights = {"ml_model": 1.0 if used_ml else 0.0, "power_ratings": 0.15, "recent_form": 0.10, "h2h_history": 0.05}
-
+        
+        # Weighted ensemble - prioritize FixedNFLSystem
+        if used_ml:
+            weights = {"fixed_nfl_system": 0.85, "ml_model": 0.70, "power_ratings": 0.10, "recent_form": 0.05}
+        else:
+            weights = {"power_ratings": 0.50, "recent_form": 0.30, "h2h_history": 0.20}
         home_prob_weighted = 0.0
         total_weight = 0.0
-        for m, home_prob, _ in methods:
+        
+        for method, home_prob, _ in methods:
             if home_prob is None:
                 continue
-            w = weights.get(m, 0.0)
+            w = weights.get(method, 0.0)
             home_prob_weighted += home_prob * w
             total_weight += w
+            
         final_home = (home_prob_weighted / total_weight) if total_weight > 0 else 0.5
 
         # Light calibration toward 50/50
         calibrated = 0.85 * final_home + 0.15 * 0.5
 
+        # Store confidence based on model quality and prediction spread  
+        prediction_confidence = model_confidence if used_ml else 0.55
+        prob_spread = abs(calibrated - 0.5) * 2  # How far from 50/50
+        final_confidence = prediction_confidence * (0.6 + 0.4 * prob_spread)
+
         return {
             "home": max(0.10, min(0.90, calibrated)),
-            "away": max(0.10, min(0.90, 1 - calibrated)),
+            "away": max(0.10, min(0.90, 1 - calibrated)), 
             "method_details": methods,
-            "source": "ml_model" if used_ml else "heuristics",
+            "source": "fixed_nfl_system" if used_ml else "heuristics",
+            "model_confidence": final_confidence
         }
 
     def _predict_with_model(self, conn, game) -> float:
+        """Enhanced model prediction with better confidence tracking."""
         # Build features
         feat = self._build_game_features(conn, game)
 
         model = self.model_pack.get("model")
         scaler = self.model_pack.get("scaler")
-        feature_cols: List[str] = self.model_pack.get("feature_cols", [])
-
-        # If the pack didn’t carry names, use whatever we built
+        feature_cols = list(getattr(model, "feature_names_in_", []))
+        if not feature_cols:
+            feature_cols = self.model_pack.get("feature_cols", [])
         if not feature_cols:
             feature_cols = list(feat.keys())
 
@@ -503,11 +690,11 @@ class AdvancedBettingAnalyzer:
             if col not in feat:
                 feat[col] = 0.0
 
-        X = pd.DataFrame([feat])[feature_cols].fillna(0.0)
+        X = pd.DataFrame([feat])[feature_cols]
         if scaler is not None and hasattr(scaler, "transform"):
             X = scaler.transform(X)
 
-        # Some scikit pipelines expose predict_proba on .named_steps[-1] only.
+        # Get model
         estimator = model
         if not hasattr(estimator, "predict_proba") and hasattr(estimator, "steps"):
             try:
@@ -518,22 +705,35 @@ class AdvancedBettingAnalyzer:
         if not hasattr(estimator, "predict_proba"):
             raise RuntimeError("Loaded model has no predict_proba(...)")
 
-        prob_home = float(estimator.predict_proba(X)[0, 1])
-
-        # store features for narrative drivers
+        # Get prediction probabilities
+        probabilities = estimator.predict_proba(X)[0]
+        prob_home = float(probabilities[1])  # Class 1 = home win
+        
+        # Calculate model confidence based on probability distribution
+        entropy = -sum(p * np.log(p + 1e-10) for p in probabilities if p > 0)
+        max_entropy = np.log(len(probabilities))
+        uncertainty = entropy / max_entropy
+        model_confidence = 1 - uncertainty
+        
+        # Store both prediction and confidence for later use
         try:
-            self.feature_cache[str(game["game_id"])] = feat
+            game_id = str(game.get("game_id", "unknown"))
+            self.feature_cache[game_id] = {
+                **feat,
+                '_model_confidence': max(0.4, min(0.95, model_confidence)),
+                '_prob_spread': abs(prob_home - 0.5) * 2  # 0-1 scale
+            }
         except Exception:
             pass
 
         logger.info(
-            "ML prob (home) %s vs %s = %.3f (features nonzero=%d/%d)",
+            "ML prediction: %s vs %s = %.3f (confidence=%.3f)",
             game["home_team"], game["away_team"],
-            prob_home,
-            sum(1 for k, v in feat.items() if v not in (0, 0.0, 0.5)),
-            len(feat),
+            prob_home, model_confidence
         )
+        
         return prob_home
+
 
     def _predict_with_power_ratings(self, conn, game) -> float:
         try:
@@ -659,112 +859,227 @@ class AdvancedBettingAnalyzer:
         except Exception:
             return 0.0
 
+    # Replace the debug_database_content and _build_game_features methods with these corrected versions:
+
+    # def debug_database_content(self, conn):
+    #     """Debug what's actually in the database - FIXED SQL"""
+    #     try:
+    #         # Check what tables exist
+    #         tables = query_df(conn, "SELECT name FROM sqlite_master WHERE type='table'")
+    #         logger.info(f"Available tables: {tables['name'].tolist()}")
+            
+    #         # Check team_season_summary content
+    #         if 'team_season_summary' in tables['name'].values:
+    #             tss = query_df(conn, "SELECT COUNT(*) as count FROM team_season_summary")
+    #             logger.info(f"team_season_summary has {tss.iloc[0]['count']} rows")
+                
+    #             # Show sample data - FIXED SQL
+    #             sample = query_df(conn, "SELECT season, team, power_score, win_pct FROM team_season_summary LIMIT 10")
+    #             logger.info(f"Sample team data:\n{sample}")
+                
+    #             # Check current season data - FIXED parameter binding
+    #             current_season = 2024
+    #             current_data = query_df(conn, 
+    #                 "SELECT COUNT(*) as count FROM team_season_summary WHERE season = :season", 
+    #                 {"season": current_season})
+    #             logger.info(f"Season {current_season} has {current_data.iloc[0]['count']} team records")
+            
+    #     except Exception as e:
+    #         logger.error(f"Database debug failed: {e}")
+
     def _build_game_features(self, conn, game) -> Dict[str, float]:
-        """Build feature vector for ML prediction. Includes all fields your model has logged in errors."""
-        features: Dict[str, float] = {}
-        season = int(pd.to_datetime(game["game_date"]).year)
-
-        # defaults in case DB is sparse
-        defaults = {
-            'home_power': 0.0, 'away_power': 0.0, 'power_diff': 0.0,
-            'home_win_pct': 0.5, 'away_win_pct': 0.5, 'win_pct_diff': 0.0,
-            'home_offense': 20.0, 'away_offense': 20.0, 'offense_diff': 0.0,
-            'home_defense': 20.0, 'away_defense': 20.0, 'defense_diff': 0.0,
-            'home_recent_form': 0.5, 'away_recent_form': 0.5, 'form_diff': 0.0,
-            'h2h_games': 0.0, 'home_h2h_win_rate': 0.5,
-            'home_qb_injury': 0.0, 'away_qb_injury': 0.0,
-            'month': 9.0, 'day_of_week': 0.0, 'home_field_advantage': 3.0,
-            'home_injury_impact': 0.0, 'away_injury_impact': 0.0,
+        """Build feature vector with FIXED SQL queries"""
+        
+        # Debug database first
+        #self.debug_database_content(conn)
+        
+        features = {}
+        
+        # Get season and teams
+        try:
+            season = int(pd.to_datetime(game["game_date"]).year)
+            home_team = str(game["home_team"]).strip()
+            away_team = str(game["away_team"]).strip()
+            
+            logger.info(f"Building features for {away_team} @ {home_team} (season {season})")
+        except Exception as e:
+            logger.error(f"Error parsing game info: {e}")
+            season = 2024
+            home_team = str(game.get("home_team", "UNK"))
+            away_team = str(game.get("away_team", "UNK"))
+        
+        # Initialize with your model's exact feature set (from training output)
+        feature_defaults = {
+            'home_wpct_pre': 0.5, 'away_wpct_pre': 0.5, 'home_pf_pre': 20.0, 'away_pf_pre': 20.0,
+            'home_pa_pre': 20.0, 'away_pa_pre': 20.0, 'home_pd_pre': 0.0, 'away_pd_pre': 0.0,
+            'home_form': 0.5, 'home_streak': 0, 'away_form': 0.5, 'away_streak': 0,
+            'same_division': 0, 'same_conference': 0, 'home_rest_days': 7, 'away_rest_days': 7,
+            'month': 9, 'day_of_week': 0, 'home_power_pre': 0.0, 'away_power_pre': 0.0,
+            'power_diff': 0.0, 'win_pct_diff': 0.0, 'offense_diff': 0.0, 'home_def_str': -20.0,
+            'away_def_str': -20.0, 'defense_diff': 0.0, 'form_diff': 0.0, 'streak_diff': 0,
+            'home_field_advantage': 2.5, 'late_season': 0, 'prime_time': 0, 'both_good': 0,
+            'mismatch_game': 0, 'power_x_form': 0.0, 'strength_disparity': 0.0, 'rest_diff': 0
         }
-        features.update(defaults)
-
+        features.update(feature_defaults)
+        
+        # Try to get real team data - FIXED SQL queries
         try:
-            # Team season summary (power, win pct, offense/defense)
-            q = """
-                SELECT team, power_score, win_pct, avg_points_for, avg_points_against
+            # Your games are 2025 but data is in 2024 - force use 2024 data
+            data_season = 2024  # Force this since your 2025 games need 2024 team stats
+            
+            logger.info(f"Looking for team data in season {data_season} (game season was {season})")
+            
+            # Strategy 1: Try exact team names first
+            team_query = """
+                SELECT season, team, power_score, win_pct, avg_points_for, avg_points_against
                 FROM team_season_summary 
-                WHERE season = :season AND team IN (:t1, :t2)
+                WHERE season = :season AND (team = :home_team OR team = :away_team)
             """
-            ts = query_df(conn, q, {"season": season, "t1": game["home_team"], "t2": game["away_team"]})
-            if len(ts) >= 2:
-                hs = ts[ts["team"] == game["home_team"]].iloc[0]
-                as_ = ts[ts["team"] == game["away_team"]].iloc[0]
-                features['home_power'] = float(hs.get("power_score", defaults['home_power']) or 0.0)
-                features['away_power'] = float(as_.get("power_score", defaults['away_power']) or 0.0)
-                features['power_diff'] = features['home_power'] - features['away_power']
+            team_data = query_df(conn, team_query, {
+                "season": data_season, 
+                "home_team": home_team, 
+                "away_team": away_team
+            })
+            
+            if team_data.empty:
+                logger.warning(f"No exact match, trying abbreviations...")
+                
+                # Strategy 2: Try with team abbreviations (your DB likely uses abbreviations)
+                team_abbr_map = {
+                    'Tennessee Titans': 'TEN', 'Los Angeles Rams': 'LAR', 'Los Angeles': 'LAR',
+                    'Miami Dolphins': 'MIA', 'New England Patriots': 'NE', 'New England': 'NE',
+                    'New Orleans Saints': 'NO', 'New Orleans': 'NO', 'San Francisco 49ers': 'SF',
+                    'San Francisco': 'SF', 'Dallas Cowboys': 'DAL', 'Philadelphia Eagles': 'PHI',
+                    'Kansas City Chiefs': 'KC', 'Kansas City': 'KC', 'Buffalo Bills': 'BUF',
+                    'Tampa Bay Buccaneers': 'TB', 'Tampa Bay': 'TB', 'Green Bay Packers': 'GB',
+                    'Green Bay': 'GB', 'Pittsburgh Steelers': 'PIT', 'Baltimore Ravens': 'BAL',
+                    'Seattle Seahawks': 'SEA', 'Atlanta Falcons': 'ATL', 'Carolina Panthers': 'CAR',
+                    'Cincinnati Bengals': 'CIN', 'Cleveland Browns': 'CLE', 'Denver Broncos': 'DEN',
+                    'Detroit Lions': 'DET', 'Houston Texans': 'HOU', 'Indianapolis Colts': 'IND',
+                    'Jacksonville Jaguars': 'JAX', 'Las Vegas Raiders': 'LV', 'Las Vegas': 'LV',
+                    'Los Angeles Chargers': 'LAC', 'Minnesota Vikings': 'MIN', 'New York Giants': 'NYG',
+                    'New York Jets': 'NYJ', 'Arizona Cardinals': 'ARI', 'Chicago Bears': 'CHI',
+                    'Washington Commanders': 'WAS', 'Washington': 'WAS'
+                }
+                
+                home_abbr = team_abbr_map.get(home_team, home_team[:3].upper())
+                away_abbr = team_abbr_map.get(away_team, away_team[:3].upper())
+                
+                logger.info(f"Trying abbreviations: {home_team} -> {home_abbr}, {away_team} -> {away_abbr}")
+                
+                team_data = query_df(conn, team_query, {
+                    "season": data_season, 
+                    "home_team": home_abbr, 
+                    "away_team": away_abbr
+                })
+            
+            if team_data.empty:
+                logger.warning(f"Still no match, trying LIKE patterns...")
+                
+                # Strategy 3: Try LIKE patterns as last resort
+                like_query = """
+                    SELECT season, team, power_score, win_pct, avg_points_for, avg_points_against
+                    FROM team_season_summary 
+                    WHERE season = :season AND (
+                        team LIKE :home_pattern OR 
+                        team LIKE :away_pattern
+                    )
+                """
+                
+                team_data = query_df(conn, like_query, {
+                    "season": data_season,
+                    "home_pattern": f"%{home_team.split()[-1]}%",  # Use last word (like "Titans")
+                    "away_pattern": f"%{away_team.split()[-1]}%"   # Use last word (like "Rams")
+                })
+            
+            if not team_data.empty:
+                logger.info(f"✅ Found team data: {len(team_data)} records from season {data_season}")
+                logger.info(f"Teams found: {team_data['team'].tolist()}")
+                
+                # Process each team found
+                home_processed = away_processed = False
+                
+                for _, row in team_data.iterrows():
+                    team_name = str(row['team'])
+                    
+                    # Determine if this is home or away team
+                    is_home = False
+                    is_away = False
+                    
+                    # Check multiple matching criteria
+                    if any([
+                        team_name == home_team,
+                        home_team in team_name or team_name in home_team,
+                        team_name == team_abbr_map.get(home_team, ''),
+                        home_team.split()[-1] in team_name  # Match last word like "Titans"
+                    ]):
+                        is_home = True
+                        home_processed = True
+                    elif any([
+                        team_name == away_team,
+                        away_team in team_name or team_name in away_team, 
+                        team_name == team_abbr_map.get(away_team, ''),
+                        away_team.split()[-1] in team_name  # Match last word like "Rams"
+                    ]):
+                        is_away = True
+                        away_processed = True
+                    
+                    if is_home or is_away:
+                        prefix = 'home_' if is_home else 'away_'
+                        
+                        # Extract actual stats (not defaults!)
+                        power_score = float(row.get('power_score', 0.0) or 0.0)
+                        win_pct = float(row.get('win_pct', 0.5) or 0.5)
+                        avg_pf = float(row.get('avg_points_for', 20.0) or 20.0)
+                        avg_pa = float(row.get('avg_points_against', 20.0) or 20.0)
+                        
+                        features[f'{prefix}wpct_pre'] = win_pct
+                        features[f'{prefix}pf_pre'] = avg_pf
+                        features[f'{prefix}pa_pre'] = avg_pa
+                        features[f'{prefix}pd_pre'] = avg_pf - avg_pa
+                        features[f'{prefix}power_pre'] = power_score  # Use actual power score, not point diff
+                        
+                        logger.info(f"✅ {prefix}team ({team_name}): "
+                                f"power={power_score:.1f}, "
+                                f"win%={win_pct:.3f}, "
+                                f"ppg={avg_pf:.1f}, "
+                                f"papg={avg_pa:.1f}")
+                
+                if home_processed and away_processed:
+                    # Calculate differences (this is what makes predictions different!)
+                    features['power_diff'] = features['home_power_pre'] - features['away_power_pre']
+                    features['win_pct_diff'] = features['home_wpct_pre'] - features['away_wpct_pre']
+                    features['offense_diff'] = features['home_pf_pre'] - features['away_pf_pre']
+                    features['home_def_str'] = -features['home_pa_pre']
+                    features['away_def_str'] = -features['away_pa_pre']
+                    features['defense_diff'] = features['home_def_str'] - features['away_def_str']
+                    features['strength_disparity'] = abs(features['home_power_pre'] - features['away_power_pre'])
+                    features['power_x_form'] = features['power_diff'] * features['form_diff']
+                    
+                    # Your model's specific flags
+                    features['both_good'] = 1 if (features['home_power_pre'] > 2 and features['away_power_pre'] > 2) else 0
+                    features['mismatch_game'] = 1 if abs(features['power_diff']) > 5 else 0
+                    
+                    logger.info(f"🎯 CALCULATED DIFFERENCES: "
+                            f"power_diff={features['power_diff']:.1f}, "
+                            f"win_pct_diff={features['win_pct_diff']:.3f}, "
+                            f"offense_diff={features['offense_diff']:.1f}")
+                    
+                    if abs(features['power_diff']) > 0.1 or abs(features['win_pct_diff']) > 0.01:
+                        logger.info("🎉 SUCCESS: Model will now get different predictions!")
+                    else:
+                        logger.warning("⚠️ Teams appear very evenly matched")
+                else:
+                    logger.warning(f"⚠️ Only found data for {1 if home_processed else 0 + 1 if away_processed else 0} team(s)")
+            
+            else:
+                logger.error(f"❌ NO TEAM DATA FOUND in season {data_season} for {home_team} vs {away_team}")
+                logger.error("Database has data but team name matching failed completely")
 
-                features['home_win_pct'] = float(hs.get("win_pct", defaults['home_win_pct']) or 0.5)
-                features['away_win_pct'] = float(as_.get("win_pct", defaults['away_win_pct']) or 0.5)
-                features['win_pct_diff'] = features['home_win_pct'] - features['away_win_pct']
-
-                features['home_offense'] = float(hs.get("avg_points_for", defaults['home_offense']) or 0.0)
-                features['away_offense'] = float(as_.get("avg_points_for", defaults['away_offense']) or 0.0)
-                features['offense_diff'] = features['home_offense'] - features['away_offense']
-
-                features['home_defense'] = float(hs.get("avg_points_against", defaults['home_defense']) or 0.0)
-                features['away_defense'] = float(as_.get("avg_points_against", defaults['away_defense']) or 0.0)
-                features['defense_diff'] = features['home_defense'] - features['away_defense']
-        except Exception:
-            logger.warning("Team season summary features fell back to defaults.")
-
-        # Temporal features
-        try:
-            game_date = pd.to_datetime(game["game_date"])
-            features['month'] = float(int(game_date.month))
-            features['day_of_week'] = float(int(game_date.weekday()))
-        except Exception:
-            pass
-
-        # Recent form
-        try:
-            home_form = self._recent_form_pct(conn, game["home_team"], game["game_date"])
-            away_form = self._recent_form_pct(conn, game["away_team"], game["game_date"])
-            features['home_recent_form'] = float(home_form)
-            features['away_recent_form'] = float(away_form)
-            features['form_diff'] = float(home_form - away_form)
-        except Exception:
-            pass
-
-        # Head-to-head extended features
-        try:
-            q = """
-                SELECT 
-                    CASE WHEN home_team = :home AND home_score > away_score THEN 1
-                         WHEN away_team = :home AND away_score > home_score THEN 1
-                         ELSE 0 END as home_team_won
-                FROM games 
-                WHERE ((home_team = :home AND away_team = :away) OR 
-                       (home_team = :away AND away_team = :home))
-                  AND home_score IS NOT NULL
-                  AND game_date > date('now', '-3 years')
-            """
-            h2h = query_df(conn, q, {"home": game["home_team"], "away": game["away_team"]})
-            features['h2h_games'] = float(len(h2h))
-            features['home_h2h_win_rate'] = float(h2h["home_team_won"].mean()) if len(h2h) else 0.5
-        except Exception:
-            pass
-
-        # Basic team injury impact (totals)
-        try:
-            ii = self._get_basic_injury_impact(conn, game["home_team"], game["away_team"])
-            features['home_injury_impact'] = float(ii.get("home", 0.0) or 0.0)
-            features['away_injury_impact'] = float(ii.get("away", 0.0) or 0.0)
-        except Exception:
-            pass
-
-        # Specific QB injury flags
-        try:
-            features['home_qb_injury'] = self._qb_injury_flag(conn, game["home_team"])
-            features['away_qb_injury'] = self._qb_injury_flag(conn, game["away_team"])
-        except Exception:
-            pass
-
-        # Fill any NaNs
-        for k, v in list(features.items()):
-            if pd.isna(v):
-                features[k] = float(defaults.get(k, 0.0))
-
-        return features
+        except Exception as e:
+            logger.error(f"Error getting team data: {e}")
+            import traceback
+    
 
     def _analyze_injury_impact(self, conn, home_team: str, away_team: str) -> Dict[str, Dict[str, float]]:
         """Summarized injury impact by team/position; tolerant to schema differences."""
@@ -951,21 +1266,38 @@ class AdvancedBettingAnalyzer:
             return None
 
     def _calculate_confidence_score(self, probabilities: Dict, injury_impact: Dict, key_factors: List[str]) -> float:
-        base = 0.7
-        maxp = max(probabilities["home"], probabilities["away"])
-        if maxp > 0.65:
-            base += 0.1
-        elif maxp < 0.55:
-            base -= 0.1
+        """Calculate confidence based on model uncertainty and game factors."""
+        home_prob = probabilities["home"]
+        away_prob = probabilities["away"]
+        
+        # Base confidence from probability spread (how decisive the model is)
+        prob_spread = abs(home_prob - away_prob)
+        base_confidence = 0.5 + (prob_spread * 0.8)  # Scale 0.5-1.3, then cap below
+        
+        # Adjust for injury uncertainty
+        total_injury_impact = float(injury_impact.get("home", {}).get("total", 0.0)) + \
+                            float(injury_impact.get("away", {}).get("total", 0.0))
+        
+        if total_injury_impact > 5.0:
+            base_confidence -= 0.15  # High injury impact reduces confidence
+        elif total_injury_impact > 2.0:
+            base_confidence -= 0.08
+        
+        # Adjust for number of key factors (more factors = more confidence)
+        if len(key_factors) >= 3:
+            base_confidence += 0.05
+        elif len(key_factors) <= 1:
+            base_confidence -= 0.10
+        
+        # Model source adjustment
+        if probabilities.get("source") == "ml_model":
+            base_confidence += 0.10  # ML model is more reliable
+        else:
+            base_confidence -= 0.05  # Heuristics are less certain
+        
+        # Final bounds - realistic confidence range
+        return max(0.35, min(0.92, base_confidence))
 
-        tot_inj = float(injury_impact.get("home", {}).get("total", 0.0)) + float(injury_impact.get("away", {}).get("total", 0.0))
-        if tot_inj > 5.0:
-            base -= 0.1
-
-        if len(key_factors) < 2:
-            base -= 0.05
-
-        return max(0.3, min(0.95, base))
 
     def _generate_recommendation(self, probabilities: Dict, best_bet: Optional[Dict], confidence_score: float) -> str:
         home_prob = probabilities["home"]
@@ -989,6 +1321,28 @@ class ComprehensiveAI:
         self.context_history: List[str] = []
         self.current_game_context = None 
 
+    def _abbr_to_full_name(self, abbr):
+        """Convert team abbreviation to full name"""
+        mapping = {
+            'TB': 'Tampa Bay Buccaneers', 'DAL': 'Dallas Cowboys',
+            'ATL': 'Atlanta Falcons', 'PHI': 'Philadelphia Eagles',
+            'BUF': 'Buffalo Bills', 'PIT': 'Pittsburgh Steelers',
+            'CAR': 'Carolina Panthers', 'NYJ': 'New York Jets',
+            'CIN': 'Cincinnati Bengals', 'MIN': 'Minnesota Vikings',
+            'ARI': 'Arizona Cardinals', 'BAL': 'Baltimore Ravens',
+            'CHI': 'Chicago Bears', 'CLE': 'Cleveland Browns',
+            'DEN': 'Denver Broncos', 'DET': 'Detroit Lions',
+            'GB': 'Green Bay Packers', 'HOU': 'Houston Texans',
+            'IND': 'Indianapolis Colts', 'JAX': 'Jacksonville Jaguars',
+            'KC': 'Kansas City Chiefs', 'LV': 'Las Vegas Raiders',
+            'LAC': 'Los Angeles Chargers', 'LAR': 'Los Angeles Rams',
+            'MIA': 'Miami Dolphins', 'NE': 'New England Patriots',
+            'NO': 'New Orleans Saints', 'NYG': 'New York Giants',
+            'SF': 'San Francisco 49ers', 'SEA': 'Seattle Seahawks',
+            'TEN': 'Tennessee Titans', 'WAS': 'Washington Commanders'
+        }
+        return mapping.get(abbr, abbr)
+
     def _init_openai(self) -> Optional[OpenAI]:
         if not OPENAI_AVAILABLE:
             logger.warning("OpenAI not available - AI responses will be limited")
@@ -999,93 +1353,246 @@ class ComprehensiveAI:
         logger.warning("No OpenAI API key found - AI responses will be limited")
         return None
 
-    def generate_betting_recommendations(self, user_context: Optional[Dict] = None) -> Dict[str, Any]:
-        """Generate personalized betting recommendations based on user's bankroll."""
+    
+    
+    def generate_betting_recommendations(self, user_context=None):
+        """
+        Generate specific betting recommendations using EXACT same logic as training backtest.
+        FIXED: Handle missing games and odds properly
+        """
         try:
-            bankroll = float(user_context.get('bankroll', 500) if user_context else 500)
+            if user_context and 'bankroll' in user_context:
+                bankroll = float(user_context['bankroll'])
+            else:
+                bankroll = float(session.get('user_bankroll', 500))
             
-            # Get value bets
-            value_bets = self.analyzer.find_value_bets_advanced(min_edge=0.03, max_odds=300)
+            # EXACT parameters from your training backtest
+            MIN_EDGE = 0.02          # 2.5% minimum edge (from training)
+            MAX_BET_PCT = 0.05        # 5% max per bet (from training) 
+            MIN_CONF = 0.52            # 54% minimum model probability
+            MAX_DEC_ODDS = 3.2        # Skip longshots bigger than +170
+            MIN_BOOKS_REQUIRED = 1     # REDUCED from 3 to 1 for testing
+            KELLY_FRACTION = 0.1      # 10% of full Kelly (conservative)
             
-            # Get game predictions
+            recommendations = []
+            total_staked = 0.0
+            max_single_bet = bankroll * MAX_BET_PCT
+            daily_budget = bankroll * 0.10  # 10% daily budget like training
+            today = datetime.utcnow().date()
+            horizon = today + timedelta(days=14)  # Look 2 weeks ahead
+            
             conn = self.db_manager.get_connection()
             try:
+                # Get upcoming games (FIXED: Look further ahead)
                 games_sql = """
-                    SELECT DISTINCT g.game_id, g.home_team, g.away_team, g.game_date
+                    SELECT DISTINCT g.game_id, g.home_team, g.away_team, g.game_date, g.start_time_local
                     FROM games g
-                    WHERE g.game_date BETWEEN date('now') AND date('now', '+7 days')
-                    ORDER BY g.game_date
-                    LIMIT 20
+                    WHERE date(g.game_date) BETWEEN date(:start_date) AND date(:end_date)
+                    ORDER BY date(g.game_date), time(g.start_time_local)
+                    LIMIT 100
                 """
-                games = query_df(conn, games_sql)
+                games = query_df(conn, games_sql, {"start_date": today, "end_date": horizon})
                 
-                recommendations = []
-                total_recommended = 0
-                max_single_bet = bankroll * 0.05  # 5% max per bet
-                daily_budget = bankroll * 0.10    # 10% daily budget
+                if games.empty:
+                    print(f"DEBUG: No games found between {today} and {horizon}")
+                    # Let's check what games exist
+                    all_games = query_df(conn, "SELECT game_id, game_date, home_team, away_team FROM games ORDER BY game_date DESC LIMIT 10")
+                    print(f"DEBUG: Recent games in DB:")
+                    for _, g in all_games.iterrows():
+                        print(f"  {g['game_date']}: {g['away_team']} @ {g['home_team']}")
+                    
+                    return {
+                        'ok': True,
+                        'success': True,
+                        'result': {
+                            'recommendations': [],
+                            'bankroll': bankroll,
+                            'total_recommended': 0,
+                            'message': f'No upcoming games found between {today} and {horizon}'
+                        }
+                    }
                 
-                # Process value bets first
-                for bet in value_bets:
-                    if total_recommended >= daily_budget:
-                        break
+                print(f"DEBUG: Found {len(games)} games to analyze")
+                
+                # Get ALL odds (not just latest) to see what's available
+                game_ids = games["game_id"].tolist()
+                if not game_ids:
+                    return {
+                        'ok': True, 'success': True,
+                        'result': {'recommendations': [], 'bankroll': bankroll, 'total_recommended': 0,
+                                'message': 'No games in window'}
+                    }
+
+                ph = ",".join([f":gid{i}" for i in range(len(game_ids))])
+                params = {f"gid{i}": int(g) for i, g in enumerate(game_ids)}
+
+                odds_sql = f"""
+                    SELECT o.game_id, o.team, o.sportsbook, o.odds, o.timestamp
+                    FROM odds o
+                    JOIN (
+                        SELECT game_id, team, sportsbook, MAX(timestamp) AS ts
+                        FROM odds
+                        WHERE market='h2h' AND game_id IN ({ph})
+                        GROUP BY game_id, team, sportsbook
+                    ) x ON x.game_id=o.game_id AND x.team=o.team AND x.sportsbook=o.sportsbook AND x.ts=o.timestamp
+                """
+                all_odds = query_df(conn, odds_sql, params)
+
+                print(f"DEBUG: Found {len(all_odds)} total odds records")
+                
+                if all_odds.empty:
+                    print("DEBUG: No odds found in database at all")
+                    return {
+                        'ok': True,
+                        'success': True,
+                        'result': {
+                            'recommendations': [],
+                            'bankroll': bankroll,
+                            'total_recommended': 0,
+                            'message': 'No odds data available in database'
+                        }
+                    }
+                
+                # Debug: Show some odds data
+                print("DEBUG: Sample odds:")
+                for _, row in all_odds.head(5).iterrows():
+                    print(f"  {row['game_id']}: {row['team']} @ {row['odds']} ({row['sportsbook']})")
+                
+                for _, game in games.iterrows():
+                    try:
+                        print(f"DEBUG: Analyzing {game['away_team']} @ {game['home_team']}")
                         
-                    # Calculate Kelly stake
-                    if bet.edge_percentage > 3:  # Only recommend 3%+ edges
-                        kelly_fraction = min(0.25, bet.edge_percentage / 100 * 0.5)  # Conservative Kelly
-                        recommended_stake = min(max_single_bet, bankroll * kelly_fraction)
+                        # Get model prediction using your trained model
+                        probs = self.analyzer._calculate_win_probabilities(conn, game)
+                        p_home = probs['home']
+                        p_away = probs['away']
                         
-                        if recommended_stake >= 5:  # Minimum $5 bet
-                            recommendations.append({
-                                'type': 'value_bet',
-                                'game': f"Game ID: {bet.game_id}",
-                                'team': bet.team,
-                                'odds': bet.odds,
-                                'sportsbook': bet.sportsbook,
-                                'edge_percentage': bet.edge_percentage,
-                                'recommended_stake': round(recommended_stake, 2),
-                                'potential_profit': round(recommended_stake * (abs(bet.odds)/100 if bet.odds > 0 else 100/abs(bet.odds)), 2),
-                                'confidence': bet.confidence_level,
-                                'reason': f"{bet.edge_percentage:.1f}% edge over implied probability"
-                            })
-                            total_recommended += recommended_stake
-                
-                # Add high-confidence predictions without clear value
-                if len(recommendations) < 3:
-                    for _, game in games.head(10).iterrows():
-                        if total_recommended >= daily_budget:
-                            break
+                        print(f"  Model: Home {p_home:.1%}, Away {p_away:.1%}")
+                        
+                        # Get odds for this game
+                        game_odds = all_odds[all_odds['game_id'] == game['game_id']]
+                        print(f"  Found {len(game_odds)} odds for this game")
+                        
+                        if game_odds.empty:
+                            print("  No odds found - skipping")
+                            continue
+                        
+                        # Process odds by team with improved name normalization
+                        for team_name in [game['home_team'], game['away_team']]:
+                            print(f"    Processing {team_name}")
                             
-                        analysis = self.analyzer.analyze_game_comprehensive(game['game_id'])
-                        if analysis.confidence_score > 0.75:
-                            max_prob = max(analysis.home_probability, analysis.away_probability)
-                            if max_prob > 0.65:  # High confidence pick
-                                favored_team = analysis.home_team if analysis.home_probability > analysis.away_probability else analysis.away_team
+                            # Find odds for this team
+                            team_odds = game_odds[game_odds['team'].str.contains(team_name, case=False, na=False)]
+                            
+                            if team_odds.empty:
+                                print(f"    No odds found for {team_name}")
+                                continue
+                            
+                            try:
+                                # Get best odds (highest)
                                 
-                                # Conservative stake for non-value bets
-                                stake = min(max_single_bet * 0.5, bankroll * 0.02)
-                                if stake >= 5:
+                                best_odds_row = team_odds.loc[team_odds['odds'].idxmax()]
+                                odds_val = float(best_odds_row['odds'])
+                                books_count = team_odds['sportsbook'].nunique()
+                                
+                                print(f"    Best odds: {odds_val}, Books: {books_count}")
+                                
+                                if books_count < MIN_BOOKS_REQUIRED:
+                                    print(f"    Only {books_count} books, need {MIN_BOOKS_REQUIRED}")
+                                    continue
+                                
+                                # Skip if odds too long
+                                decimal_odds = self._to_decimal_odds(odds_val)
+                                if decimal_odds > MAX_DEC_ODDS:
+                                    print(f"    Odds too long: {decimal_odds}")
+                                    continue
+                                
+                                # Get model probability for this team
+                                if team_name == game['home_team']:
+                                    model_prob = p_home
+                                else:
+                                    model_prob = p_away
+                                
+                                # Check minimum confidence
+                                if model_prob < MIN_CONF:
+                                    print(f"    Model prob {model_prob:.1%} below min {MIN_CONF:.1%}")
+                                    continue
+                                
+                                # Convert American odds to implied probability
+                                if odds_val > 0:
+                                    implied_prob = 100 / (odds_val + 100)
+                                else:
+                                    implied_prob = abs(odds_val) / (abs(odds_val) + 100)
+                                
+                                # Calculate edge
+                                edge = model_prob - implied_prob
+                                edge_pct = edge * 100
+                                
+                                print(f"    Edge: {edge_pct:.1f}% (model {model_prob:.1%} vs implied {implied_prob:.1%})")
+                                
+                                # LOWERED THRESHOLD: Look for 2%+ edges instead of 2.5%+
+                                if edge >= 0.02:  # 2% minimum edge
+                                    print(f"    *** EDGE FOUND: {edge_pct:.1f}% ***")
+                                    
+                                    # Calculate Kelly stake
+                                    kelly = self.kelly_bet_size(model_prob, decimal_odds)
+                                    stake = max(5, min(30, kelly * bankroll * KELLY_FRACTION))
+                                    
+                                    # Confidence based on edge size
+                                    if edge > 0.08:
+                                        confidence = "High"
+                                    elif edge > 0.05:
+                                        confidence = "Medium"  
+                                    else:
+                                        confidence = "Low"
+                                    
                                     recommendations.append({
-                                        'type': 'confidence_bet',
-                                        'game': f"{analysis.away_team} @ {analysis.home_team}",
-                                        'team': favored_team,
-                                        'odds': 'Check sportsbook',
-                                        'sportsbook': 'Various',
-                                        'model_probability': round(max_prob * 100, 1),
+                                        'type': 'model_bet',
+                                        'game': f"{game['away_team']} @ {game['home_team']}",
+                                        'date': str(game['game_date']),
+                                        'time': str(game.get('start_time_local', 'TBD'))[:5],
+                                        'team': team_name,
+                                        'odds': int(odds_val),
+                                        'decimal_odds': round(decimal_odds, 2),
+                                        'sportsbook': best_odds_row['sportsbook'],
+                                        'books_count': books_count,
+                                        'model_probability': round(model_prob, 3),
+                                        'implied_probability': round(implied_prob, 3),
+                                        'edge_percentage': round(edge * 100, 1),
                                         'recommended_stake': round(stake, 2),
-                                        'confidence': 'High',
-                                        'reason': f"Model confidence: {analysis.confidence_score:.2f}, Probability: {max_prob:.1%}"
+                                        'potential_profit': round(stake * (decimal_odds - 1), 2),
+                                        'confidence_level': confidence,
+                                        'risk_assessment': 'Low' if decimal_odds < 2.0 else 'Medium',
+                                        'reason': f"{edge*100:.1f}% model edge over {books_count}-book consensus"
                                     })
-                                    total_recommended += stake
+                                    
+                                    total_staked += stake
+                            
+                            except Exception as e:
+                                print(f"Error processing {team_name}: {e}")
+                                continue
+                    
+                    except Exception as e:
+                        print(f"Error analyzing game {game['game_id']}: {e}")
+                        continue
+                
+                print(f"Found {len(recommendations)} betting opportunities, total recommended: ${total_staked:.2f}")
+                
+                # Sort by edge percentage (best first)
+                recommendations.sort(key=lambda x: x['edge_percentage'], reverse=True)
                 
                 return {
                     'ok': True,
                     'success': True,
                     'result': {
-                        'recommendations': recommendations[:5],  # Top 5 recommendations
+                        'recommendations': recommendations,
                         'bankroll': bankroll,
-                        'total_recommended': round(total_recommended, 2),
-                        'remaining_budget': round(daily_budget - total_recommended, 2),
-                        'risk_level': 'Conservative' if total_recommended < bankroll * 0.05 else 'Moderate'
+                        'total_recommended': round(total_staked, 2),
+                        'remaining_budget': round(daily_budget - total_staked, 2),
+                        'games_scanned': len(games),
+                        'bet_rate': f"{len(recommendations)}/{len(games)} ({len(recommendations)/len(games)*100:.1f}%)" if len(games) > 0 else "0/0",
+                        'risk_level': 'Conservative' if total_staked < bankroll * 0.05 else 'Moderate',
+                        'note': f"Using backtest parameters: {MIN_EDGE*100:.1f}%+ edge, {MIN_BOOKS_REQUIRED}+ books, {KELLY_FRACTION*100:.0f}% Kelly"
                     }
                 }
                 
@@ -1094,12 +1601,52 @@ class ComprehensiveAI:
                 
         except Exception as e:
             logger.exception("generate_betting_recommendations failed")
+            print(f"ERROR in generate_betting_recommendations: {e}")
+            import traceback
+            traceback.print_exc()
             return {
                 'ok': False,
                 'success': False,
                 'error': str(e),
-                'message': 'Failed to generate betting recommendations'
+                'message': 'Failed to generate recommendations using trained model'
             }
+
+    def kelly_bet_size(self, win_prob, decimal_odds):
+        """Calculate Kelly Criterion bet size (same as training)"""
+        if win_prob <= 0 or decimal_odds <= 1:
+            return 0
+        
+        b = decimal_odds - 1  # Net odds
+        p = win_prob
+        q = 1 - win_prob
+        
+        if p * b > q:
+            return (p * b - q) / b
+        return 0
+
+    def _to_decimal_odds(self, odds_value):
+        """Convert various odds formats to decimal (same as training)"""
+        try:
+            odds = float(odds_value)
+            
+            # If already decimal (between 1.01 and 50)
+            if 1.01 <= odds <= 50:
+                return odds
+            
+            # American odds
+            if odds >= 100:
+                return 1 + (odds / 100)
+            elif odds <= -100:
+                return 1 + (100 / abs(odds))
+            elif odds > 0:  # Positive odds less than 100
+                return 1 + (odds / 100)
+            elif odds < 0:   # Negative odds greater than -100
+                return 1 + (100 / abs(odds))
+            else:
+                return 1.91  # Default -110
+                    
+        except:
+            return 1.91  # Default fallback
 
     def _classify_intent(self, message: str) -> MessageIntent:
         """Improved intent classification to ensure proper routing."""
@@ -1135,6 +1682,7 @@ class ComprehensiveAI:
                 logger.warning(f"Failed to build game context: {e}")
         
         if user_context:
+            # FIXED: Use actual user bankroll from context
             bankroll = user_context.get('bankroll', 500)
             parts.append(f"User Bankroll: ${bankroll:.2f}")
         
@@ -1584,20 +2132,6 @@ ai_system = ComprehensiveAI()
 def ai_chat_compat():
     return comprehensive_ai_chat()
 
-@comprehensive_ai_bp.route("/api/ai-betting-recommendations", methods=["GET"])
-def get_betting_recommendations():
-    try:
-        user_context = {
-            'bankroll': session.get('user_bankroll', 500),
-            'username': session.get('username', 'User')
-        }
-        
-        recommendations = ai_system.generate_betting_recommendations(user_context)
-        return jsonify(recommendations)
-        
-    except Exception as e:
-        logger.exception("get_betting_recommendations failed")
-        return jsonify({'ok': False, 'error': str(e)}), 500
 
 @comprehensive_ai_bp.route("/api/ai-chat-comprehensive", methods=["POST"])
 def comprehensive_ai_chat():
@@ -1606,6 +2140,16 @@ def comprehensive_ai_chat():
         data = request.get_json() or {}
         message = data.get('message', '').strip()
         game_id = data.get('game_id')
+
+        username = session.get('username')
+        if not username:
+            return jsonify({
+                'ok': False,
+                'error': 'User not logged in'
+            }), 401
+            
+        from mobile_dashboard import USERS
+        user_data = USERS.get(username, {})
 
         # Get user context from session
         user_context = {

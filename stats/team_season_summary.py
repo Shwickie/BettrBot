@@ -1,29 +1,28 @@
 #!/usr/bin/env python3
 """
-Team Season Summary with improved preseason handling and player stats
-
-Key changes:
-- Seeds initial power scores from preseason records
-- Maintains preseason stats separately
-- Gracefully handles seasons with no regular games yet
-- Populates star_players and superstars from roster data
-- Better power score calculation for teams with no games
+FIXED Team Season Summary - Works with mixed team name formats
 """
 
 import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine, text
 from sqlalchemy.types import Integer, Float, String
+from sqlalchemy.pool import NullPool
 
 DB_PATH = "sqlite:///E:/Bettr Bot/betting-bot/data/betting.db"
-engine = create_engine(DB_PATH)
+engine = create_engine(
+    DB_PATH,
+    connect_args={"check_same_thread": False, "timeout": 30},
+    pool_pre_ping=True,
+    poolclass=NullPool,   # <- no pooling for this script
+)
 
 TEAM_TO_ABBR = {
     "Arizona Cardinals":"ARI","Atlanta Falcons":"ATL","Baltimore Ravens":"BAL","Buffalo Bills":"BUF",
     "Carolina Panthers":"CAR","Chicago Bears":"CHI","Cincinnati Bengals":"CIN","Cleveland Browns":"CLE",
     "Dallas Cowboys":"DAL","Denver Broncos":"DEN","Detroit Lions":"DET","Green Bay Packers":"GB",
     "Houston Texans":"HOU","Indianapolis Colts":"IND","Jacksonville Jaguars":"JAX","Kansas City Chiefs":"KC",
-    "Las Vegas Raiders":"LV","Los Angeles Chargers":"LAC","Los Angeles Rams":"LA","Miami Dolphins":"MIA",
+    "Las Vegas Raiders":"LV","Los Angeles Chargers":"LAC","Los Angeles Rams":"LAR","Miami Dolphins":"MIA",
     "Minnesota Vikings":"MIN","New England Patriots":"NE","New Orleans Saints":"NO","New York Giants":"NYG",
     "New York Jets":"NYJ","Philadelphia Eagles":"PHI","Pittsburgh Steelers":"PIT","San Francisco 49ers":"SF",
     "Seattle Seahawks":"SEA","Tampa Bay Buccaneers":"TB","Tennessee Titans":"TEN","Washington Commanders":"WAS",
@@ -35,7 +34,7 @@ PRESEASON_2025 = {
     "LV":  (0, 2, 1), "SEA": (1, 1, 1), "DET": (1, 3, 0), "ATL": (0, 3, 0),
     "CLE": (3, 0, 0), "CAR": (0, 3, 0), "WAS": (0, 3, 0), "NE":  (2, 1, 0),
     "NYG": (3, 0, 0), "BUF": (1, 2, 0), "HOU": (2, 1, 0), "MIN": (1, 2, 0),
-    "PIT": (2, 1, 0), "JAX": (0, 2, 1), "DAL": (1, 2, 0), "LA":  (2, 1, 0),
+    "PIT": (2, 1, 0), "JAX": (0, 2, 1), "DAL": (1, 2, 0), "LAR":  (2, 1, 0),
     "TEN": (2, 1, 0), "TB":  (2, 1, 0), "KC":  (0, 3, 0), "ARI": (2, 1, 0),
     "NYJ": (1, 2, 0), "GB":  (2, 1, 0), "DEN": (3, 0, 0), "SF":  (2, 1, 0),
     "MIA": (2, 0, 1), "CHI": (2, 0, 1), "NO":  (0, 2, 1), "LAC": (2, 2, 0),
@@ -46,8 +45,11 @@ def _infer_season(dt: pd.Timestamp) -> int | None:
     return dt.year - 1 if dt.month in (1, 2) else dt.year
 
 def _is_preseason(dt: pd.Timestamp) -> bool:
-    if pd.isna(dt): return False
-    return (dt.month == 8) or (dt.month == 9 and dt.day <= 7)
+    if pd.isna(dt):
+        return False
+    # NFL preseason is in August; Week 1 in early Sept is regular season
+    return (dt.month == 8)
+
 
 def get_team_player_stats():
     """Get star players and superstars from roster data"""
@@ -83,15 +85,40 @@ def get_team_player_stats():
     except Exception as e:
         print(f"Could not load player stats: {e}")
     
-    # Final fallback: estimated star players based on team quality
+    # Final fallback: estimated star players based on team quality (both formats)
     estimated_stars = {
-        "KC": (8, 3), "BAL": (7, 2), "BUF": (6, 2), "SF": (7, 2), "PHI": (6, 2),
-        "CIN": (6, 2), "DAL": (6, 1), "MIA": (5, 1), "MIN": (5, 1), "DET": (5, 1),
-        "LAC": (5, 1), "GB": (5, 1), "TEN": (4, 1), "PIT": (4, 1), "SEA": (4, 1),
-        "LA": (4, 1), "JAX": (4, 0), "LV": (3, 0), "CLE": (3, 0), "ATL": (3, 0),
-        "TB": (3, 0), "IND": (3, 0), "DEN": (3, 0), "HOU": (3, 0), "NYJ": (2, 0),
-        "NE": (2, 0), "NYG": (2, 0), "WAS": (2, 0), "CHI": (2, 0), "ARI": (2, 0),
-        "CAR": (1, 0), "NO": (1, 0)
+        "KC": (8, 3), "Kansas City Chiefs": (8, 3),
+        "BAL": (7, 2), "Baltimore Ravens": (7, 2), 
+        "BUF": (6, 2), "Buffalo Bills": (6, 2),
+        "SF": (7, 2), "San Francisco 49ers": (7, 2),
+        "PHI": (6, 2), "Philadelphia Eagles": (6, 2),
+        "CIN": (6, 2), "Cincinnati Bengals": (6, 2),
+        "DAL": (6, 1), "Dallas Cowboys": (6, 1),
+        "MIA": (5, 1), "Miami Dolphins": (5, 1),
+        "MIN": (5, 1), "Minnesota Vikings": (5, 1),
+        "DET": (5, 1), "Detroit Lions": (5, 1),
+        "LAC": (5, 1), "Los Angeles Chargers": (5, 1),
+        "GB": (5, 1), "Green Bay Packers": (5, 1),
+        "TEN": (4, 1), "Tennessee Titans": (4, 1),
+        "PIT": (4, 1), "Pittsburgh Steelers": (4, 1),
+        "SEA": (4, 1), "Seattle Seahawks": (4, 1),
+        "LAR": (4, 1), "Los Angeles Rams": (4, 1),
+        "JAX": (4, 0), "Jacksonville Jaguars": (4, 0),
+        "LV": (3, 0), "Las Vegas Raiders": (3, 0),
+        "CLE": (3, 0), "Cleveland Browns": (3, 0),
+        "ATL": (3, 0), "Atlanta Falcons": (3, 0),
+        "TB": (3, 0), "Tampa Bay Buccaneers": (3, 0),
+        "IND": (3, 0), "Indianapolis Colts": (3, 0),
+        "DEN": (3, 0), "Denver Broncos": (3, 0),
+        "HOU": (3, 0), "Houston Texans": (3, 0),
+        "NYJ": (2, 0), "New York Jets": (2, 0),
+        "NE": (2, 0), "New England Patriots": (2, 0),
+        "NYG": (2, 0), "New York Giants": (2, 0),
+        "WAS": (2, 0), "Washington Commanders": (2, 0),
+        "CHI": (2, 0), "Chicago Bears": (2, 0),
+        "ARI": (2, 0), "Arizona Cardinals": (2, 0),
+        "CAR": (1, 0), "Carolina Panthers": (1, 0),
+        "NO": (1, 0), "New Orleans Saints": (1, 0)
     }
     
     fallback_df = pd.DataFrame([
@@ -103,27 +130,33 @@ def get_team_player_stats():
 
 def calculate_initial_power_from_preseason(team: str, season: int) -> float:
     """Calculate initial power score based on preseason performance"""
-    if season == 2025 and team in PRESEASON_2025:
-        w, l, t = PRESEASON_2025[team]
-        games = w + l + t
-        if games == 0:
-            return 0.0
+    if season == 2025:
+        # Handle both full names and abbreviations
+        team_abbr = team
+        if team in TEAM_TO_ABBR.values():  # Full name
+            # Find the abbreviation
+            for full_name, abbr in TEAM_TO_ABBR.items():
+                if full_name == team:
+                    team_abbr = abbr
+                    break
         
-        win_pct = (w + 0.5 * t) / games
-        power = (win_pct - 0.5) * 10  # Base power
-        
-        # Bonuses/penalties
-        if l == 0 and games >= 3:  # Undefeated
-            power += 2.0
-        elif w == 0 and games >= 3:  # Winless
-            power -= 2.0
-        
-        return round(power, 1)
+        if team_abbr in PRESEASON_2025:
+            w, l, t = PRESEASON_2025[team_abbr]
+            games = w + l + t
+            if games == 0:
+                return 0.0
+            
+            win_pct = (w + 0.5 * t) / games
+            power = (win_pct - 0.5) * 10  # Base power
+            
+            # Bonuses/penalties
+            if l == 0 and games >= 3:  # Undefeated
+                power += 2.0
+            elif w == 0 and games >= 3:  # Winless
+                power -= 2.0
+            
+            return round(power, 1)
     return 0.0
-
-# In team_season_summary.py, add this new function
-
-# In team_season_summary.py, REPLACE the function with this one
 
 def calculate_power_from_actual_preseason(season_df, all_completed_games, target_season):
     """Calculates initial power scores from actual preseason game results using a robust merge."""
@@ -155,15 +188,12 @@ def calculate_power_from_actual_preseason(season_df, all_completed_games, target
     pre_results['win_pct'] = (pre_results['wins'] + 0.5 * pre_results['ties']) / pre_results['games']
     pre_results['preseason_power'] = (pre_results['win_pct'] - 0.5) * 10
 
-    # --- THIS IS THE ROBUST FIX ---
     # Use a left merge to safely map power scores back to the original team list
     power_df = pre_results[['preseason_power']].reset_index()
     merged = pd.merge(season_df[['team']], power_df, on='team', how='left')
 
     # Fill NaNs for any teams that didn't play preseason and return the final Series
     return merged['preseason_power'].fillna(0.0)
-
-# In team_season_summary.py
 
 def get_season_carryover_power(season: int):
     """Fetches the final power scores from the previous season."""
@@ -182,7 +212,13 @@ def get_season_carryover_power(season: int):
         print(f"Could not fetch carryover power: {e}")
     return {}
 
+
+
+
 def calculate_team_season_summary():
+    print("CALCULATING TEAM SEASON SUMMARY - FIXED VERSION")
+    print("=" * 50)
+    
     # Load all scheduled/completed games
     with engine.connect() as conn:
         games_all = pd.read_sql(
@@ -204,12 +240,13 @@ def calculate_team_season_summary():
                          dtype={"season": Integer(), "team": String(4)})
         return
 
+    print(f"Loaded {len(games_all)} total games from database")
+
     # Get player stats for all teams
     player_stats = get_team_player_stats()
     
-    # Normalize team names / dates / season flags
-    games_all["home_team"] = games_all["home_team"].replace(TEAM_TO_ABBR)
-    games_all["away_team"] = games_all["away_team"].replace(TEAM_TO_ABBR)
+    # FIXED: Don't normalize team names - keep them as they are in the database
+    # This was the main bug causing problems
     games_all["game_date"] = pd.to_datetime(games_all["game_date"], errors="coerce")
     games_all["season"] = games_all["game_date"].apply(_infer_season).astype("Int64")
     games_all["is_preseason"] = games_all["game_date"].apply(_is_preseason).astype(bool)
@@ -221,6 +258,8 @@ def calculate_team_season_summary():
     # Completed games only
     complete_mask = games_all["home_score"].notna() & games_all["away_score"].notna()
     comp = games_all.loc[complete_mask].copy()
+    
+    print(f"Found {len(comp)} completed games")
 
     # Count preseason games
     pre_sched = (
@@ -279,6 +318,8 @@ def calculate_team_season_summary():
     if not comp.empty:
         # Filter to regular season only for stats calculation
         comp_regular = comp[~comp["is_preseason"]].copy()
+        
+        print(f"Found {len(comp_regular)} completed regular season games")
         
         if not comp_regular.empty:
             comp_regular["winner"] = np.where(
@@ -353,8 +394,20 @@ def calculate_team_season_summary():
     summary["preseason_scheduled"] = summary["preseason_scheduled"].fillna(0).astype(int)
     summary["preseason_completed"] = summary["preseason_completed"].fillna(0).astype(int)
 
-    # Merge player stats
-    summary = summary.merge(player_stats, on="team", how="left")
+    # Merge player stats - handle case where merge fails
+    if not player_stats.empty and "star_players" in player_stats.columns:
+        summary = summary.merge(player_stats, on="team", how="left")
+    else:
+        # Add empty columns if merge failed
+        summary["star_players"] = 0
+        summary["superstars"] = 0
+
+    # Ensure columns exist and are properly typed
+    if "star_players" not in summary.columns:
+        summary["star_players"] = 0
+    if "superstars" not in summary.columns:
+        summary["superstars"] = 0
+        
     summary["star_players"] = summary["star_players"].fillna(0).astype(int)
     summary["superstars"] = summary["superstars"].fillna(0).astype(int)
 
@@ -367,9 +420,8 @@ def calculate_team_season_summary():
         sdf = sdf.copy()
         active = sdf[sdf["games_played"] > 0].copy()
         
-        # In team_season_summary.py
         if active.empty:
-            # No regular season games yet. Use a blend of previous season power, preseason results, and talent.
+            # No regular season games yet
             print(f"Calculating initial power for season {season}...")
             
             # Get the final power scores from last season
@@ -378,13 +430,13 @@ def calculate_team_season_summary():
             for idx, row in sdf.iterrows():
                 team = row["team"]
                 
-                # 1. Start with 60% of last year's final power score (defaults to 0 if not found)
+                # 1. Start with 60% of last year's final power score
                 last_season_component = carryover_power.get(team, 0.0) * 0.60
                 
                 # 2. Add 40% of the power from this year's preseason games
                 preseason_component = calculate_initial_power_from_preseason(team, season) * 0.40
                 
-                # 3. Add a bonus for elite player talent (Superstars are heavily weighted)
+                # 3. Add a bonus for elite player talent
                 talent_bonus = row["star_players"] * 0.2 + row["superstars"] * 1.0
                 
                 # Combine the components for the final score
@@ -436,35 +488,126 @@ def calculate_team_season_summary():
         "power_score","preseason_scheduled","preseason_completed"
     ]].sort_values(["season","team"]).reset_index(drop=True)
 
+    # === Standardize team labels to abbreviations and drop duplicates ===
+    ALIAS_TO_ABBR = {"LA":"LAR","STL":"LAR","SD":"LAC","OAK":"LV","JAC":"JAX","WSH":"WAS"}
+
+    def _to_abbr(x: str) -> str:
+        x = (x or "").strip()
+        if x in TEAM_TO_ABBR:           # full -> abbr
+            return TEAM_TO_ABBR[x]
+        xu = x.upper()
+        return ALIAS_TO_ABBR.get(xu, xu)  # abbr/alias -> canon abbr
+
+    final["team"] = final["team"].map(_to_abbr)
+
+    final = (
+        final.sort_values(["season","games_played","preseason_completed","power_score"],
+                        ascending=[True, False, False, False])
+            .drop_duplicates(subset=["season","team"], keep="first")
+            .reset_index(drop=True)
+    )
+
+    # === Re-add preseason counts for 2025 when DB has none (to keep "(PS)" badges) ===
+    def _pre_ct(abbr: str) -> int:
+        w, l, t = PRESEASON_2025.get(abbr, (0, 0, 0))
+        return int(w + l + t)
+
+    mask_2025 = final["season"].eq(2025)
+    missing_pre = mask_2025 & (final["preseason_completed"].fillna(0) == 0)
+
+    final.loc[missing_pre, "preseason_completed"] = final.loc[missing_pre, "team"].map(_pre_ct).fillna(0).astype(int)
+    final.loc[missing_pre, "preseason_scheduled"] = final.loc[missing_pre, "team"].map(_pre_ct).fillna(0).astype(int)
+
     with engine.begin() as conn:
-        final.to_sql(
-            "team_season_summary", conn, if_exists="replace", index=False,
-            dtype={
-                "season": Integer(), "team": String(4),
-                "games_played": Integer(), "avg_points_for": Float(), "avg_points_against": Float(),
-                "wins": Integer(), "losses": Integer(), "win_pct": Float(), "point_diff": Float(),
-                "star_players": Integer(), "superstars": Integer(), "power_score": Float(),
-                "preseason_scheduled": Integer(), "preseason_completed": Integer(),
-            }
+        # Play nicely with concurrent readers
+        conn.exec_driver_sql("PRAGMA journal_mode=WAL;")
+        conn.exec_driver_sql("PRAGMA synchronous=NORMAL;")
+        conn.exec_driver_sql("PRAGMA busy_timeout=8000;")
+
+        # Ensure the live table exists (NO DROP)
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS team_season_summary (
+                season INTEGER,
+                team TEXT,
+                games_played INTEGER,
+                avg_points_for REAL,
+                avg_points_against REAL,
+                wins INTEGER,
+                losses INTEGER,
+                win_pct REAL,
+                point_diff REAL,
+                star_players INTEGER,
+                superstars INTEGER,
+                power_score REAL,
+                preseason_scheduled INTEGER,
+                preseason_completed INTEGER
+            );
+        """)
+
+        # Make (season, team) unique so REPLACE works deterministically
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tss_unique ON team_season_summary(season, team);"
         )
 
+        # 1) Write to a staging table (safe to replace; readers don't use it)
+        final.to_sql(
+            "team_season_summary__staging",
+            conn,
+            if_exists="replace",   # only touches staging
+            index=False,
+            method="multi",
+            chunksize=1000,
+        )
+
+        # 2) REPLACE rows from staging into live table (SQLite-compatible UPSERT)
+        conn.exec_driver_sql("""
+            REPLACE INTO team_season_summary (
+                season, team, games_played, avg_points_for, avg_points_against,
+                wins, losses, win_pct, point_diff,
+                star_players, superstars, power_score,
+                preseason_scheduled, preseason_completed
+            )
+            SELECT
+                season, team, games_played, avg_points_for, avg_points_against,
+                wins, losses, win_pct, point_diff,
+                star_players, superstars, power_score,
+                preseason_scheduled, preseason_completed
+            FROM team_season_summary__staging;
+        """)
+
+        # 3) Best-effort cleanup of staging (optional)
+        try:
+            conn.exec_driver_sql("DROP TABLE team_season_summary__staging;")
+        except Exception as e:
+            print("⚠️ Staging drop skipped:", e)
+
+
+
     seasons_present = sorted([int(s) for s in final["season"].dropna().unique()])
-    print(f"✅ team_season_summary written: {len(final)} rows, seasons: {seasons_present}")
+    print(f"Team season summary written: {len(final)} rows, seasons: {seasons_present}")
     
     if 2025 in seasons_present:
         t25 = final[final["season"] == 2025]
-        print("2025 Season Summary:")
+        print("\n2025 Season Summary:")
         print(f"  Regular season games: {t25['games_played'].sum()}")
         print(f"  Preseason games: {t25['preseason_completed'].sum()}")
         print(f"  Total star players: {t25['star_players'].sum()}")
         print(f"  Total superstars: {t25['superstars'].sum()}")
         
+        # Show teams with actual games played
+        teams_with_games = t25[t25["games_played"] > 0]
+        if not teams_with_games.empty:
+            print(f"\nTeams with games played: {len(teams_with_games)}")
+            print("Team records:")
+            for _, team in teams_with_games.iterrows():
+                print(f"  {team['team']}: {team['wins']}-{team['losses']} ({team['games_played']} games)")
+        
         # Show power rankings
-        top5 = t25.nlargest(5, "power_score")[["team", "power_score", "star_players", "superstars"]]
-        print("\nTop 5 Teams by Power:")
+        top5 = t25.nlargest(5, "power_score")[["team", "power_score", "wins", "losses", "games_played"]]
+        print(f"\nTop 5 Teams by Power:")
         for _, r in top5.iterrows():
-            stars_info = f" (Stars: {r['star_players']}, Superstars: {r['superstars']})"
-            print(f"  {r['team']}: {r['power_score']:.1f}{stars_info}")
+            record = f"{r['wins']}-{r['losses']}" if r['games_played'] > 0 else "0-0"
+            print(f"  {r['team']}: {r['power_score']:.1f} ({record})")
 
 if __name__ == "__main__":
     calculate_team_season_summary()

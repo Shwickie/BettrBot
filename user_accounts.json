@@ -2,17 +2,62 @@
   "admin": {
     "password": "scrypt:32768:8:1$7c9K2qRLFjQb0agI$339f3ecad0588a8442c2bc2724b99077cdbd5d0c099ac417ac91d65c7ea9e2aee69bcc327e8b9e4e2d6c70e807f4e27cae167eb178c28df4cdc625009d26a3fc",
     "name": "Admin",
-    "bankroll": 100.0,
+    "bankroll": 90.0,
     "deposits": 5000.0,
     "withdrawals": 0.0,
     "bet_profit_loss": 0.0,
-    "bet_history": [],
+    "bet_history": [
+      {
+        "date": "2025-09-04 23:35",
+        "game": "Carolina Panthers @ Jacksonville Jaguars",
+        "bet_type": "Carolina Panthers ML",
+        "amount": 2.5,
+        "odds": "+154",
+        "sportsbook": "DraftKings",
+        "game_id": "394256a6c3d0f5ecd1208fffaae6a72f",
+        "result": "Loss",
+        "profit_loss": -2.5
+      },
+      {
+        "date": "2025-09-04 23:35",
+        "game": "Miami Dolphins @ Indianapolis Colts",
+        "bet_type": "Miami Dolphins ML",
+        "amount": 2.5,
+        "odds": "-108",
+        "sportsbook": "DraftKings",
+        "game_id": "b02a72c768a6c6dee87aa74f78e84176",
+        "result": "Loss",
+        "profit_loss": -2.5
+      },
+      {
+        "date": "2025-09-04 23:36",
+        "game": "San Francisco 49ers @ Seattle Seahawks",
+        "bet_type": "Seattle Seahawks ML",
+        "amount": 2.5,
+        "odds": "+120",
+        "sportsbook": "DraftKings",
+        "game_id": "9f1ad249959aacae89e5e74e43429a4a",
+        "result": "Loss",
+        "profit_loss": -2.5
+      },
+      {
+        "date": "2025-09-04 23:37",
+        "game": "Houston Texans @ Los Angeles Rams",
+        "bet_type": "Houston Texans ML",
+        "amount": 2.5,
+        "odds": "+145",
+        "sportsbook": "DraftKings",
+        "game_id": "dc0e3db61983a138098f28226788d2d3",
+        "result": "Loss",
+        "profit_loss": -2.5
+      }
+    ],
     "transactions": [],
     "money_transactions": [],
-    "betting_profit_loss": 0.0,
+    "betting_profit_loss": -10.0,
     "is_admin": true,
-    "total_deposits": 5021.0,
-    "total_withdrawals": 1.0
+    "total_deposits": 0.0,
+    "total_withdrawals": 0.0
   },
   "ktm": {
     "password": "scrypt:32768:8:1$EWlQ8ggFXvlnJTDS$869c23640e7672f54fe38996052b2b8aa4945852d987dc0fffa908100cf6ed7c62e297dadf5502067f9d91ac0533f162db4cb606ed3d764ecff8316e232b4880",
