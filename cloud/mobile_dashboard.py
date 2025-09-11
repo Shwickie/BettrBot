@@ -2341,7 +2341,10 @@ def api_admin_wipe_deposits_withdrawals():
     except Exception as e:
         print("wipe-deposits-withdrawals error:", e)
         return jsonify({'error': str(e)}), 500
-
+    
+@app.route("/healthz")
+def healthz():
+    return {"ok": True}, 200
 # Health
 @app.route('/api/health')
 def api_health():
