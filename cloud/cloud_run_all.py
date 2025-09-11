@@ -12,6 +12,28 @@ from datetime import datetime
 from sqlalchemy import create_engine, text
 from config import get_config
 
+from pathlib import Path
+import sys, subprocess, os, time
+from datetime import datetime
+
+# Make repo root importable (…/BettrBot/)
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+    
+PY = sys.executable
+
+TASKS = [
+    ("setup_db",            [PY, "-m", "data.setup_db"]),
+    ("check_scores",        [PY, "-m", "stats.check_scores"]),
+    ("update_scores",       [PY, "-m", "stats.update_scores"]),
+    ("team_season_summary", [PY, "-m", "stats.team_season_summary"]),
+    ("train_betting_model", [PY, "-m", "model.train_betting_model"]),
+    ("prediction",          [PY, "-m", "model.prediction"]),
+    ("get_odds",            [PY, "-m", "odds.get_odds_fixed"]),
+]
+
+
 def setup_cloud_environment():
     """Setup for cloud deployment"""
     config_class = get_config()

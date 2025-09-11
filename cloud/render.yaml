@@ -1,11 +1,28 @@
+# render.yaml (repo root)
 services:
   - type: web
-    name: bettr-bot
-    env: python
+    name: bettr-bot-web
+    runtime: python
+    rootDir: cloud
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn app:application --workers 2 --threads 8 --timeout 120
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
       - key: DATABASE_URL
-        value: postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres
+        sync: false
       - key: FLASK_ENV
         value: production
+
+  - type: cron
+    name: bettr-bot-refresh
+    runtime: python
+    rootDir: cloud
+    buildCommand: pip install -r requirements.txt
+    startCommand: python cloud_run_all.py
+    schedule: "*/30 * * * *"  # every 30 minutes
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        sync: false
