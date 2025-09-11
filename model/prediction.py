@@ -11,12 +11,17 @@ import os
 import sys
 from sqlalchemy import create_engine, text
 from datetime import datetime
-import warnings
+import warnings 
+from pathlib import Path
+import os, pickle, logging
 warnings.filterwarnings('ignore')
 
 # Config - using your exact paths and structure
 DB_PATH = "sqlite:///E:/Bettr Bot/betting-bot/data/betting.db"
-MODEL_PATH = r"E:/Bettr Bot/betting-bot/models/betting_model_fixed.pkl"
+MODEL_PATH = os.environ.get(
+    "BETTR_MODEL_PKL",
+    str(Path(__file__).resolve().parent.parent / "models" / "betting_model_fixed.pkl")
+)
 engine = create_engine(DB_PATH)
 
 class FixedNFLSystem:
@@ -84,21 +89,18 @@ class FixedNFLSystem:
         return team_name[:3].upper()
     
     def load_model(self):
-        """Your existing model loading logic"""
-        if not os.path.exists(MODEL_PATH):
-            raise FileNotFoundError(f"Model not found at {MODEL_PATH}")
+        path = Path(MODEL_PATH)
+        if not path.exists():
+            logging.warning(f"Model not found at {path} — continuing without ML model.")
+            self.model = None
+            return
+        try:
+            with path.open("rb") as f:
+                self.model = pickle.load(f)
+        except Exception as e:
+            logging.exception(f"Failed to load model: {e}")
+            self.model = None
         
-        with open(MODEL_PATH, 'rb') as f:
-            self.model_data = pickle.load(f)
-        
-        print("Model loaded:")
-        auc = self.model_data.get('model_metrics', {}).get('RandomForest', {}).get('auc', 'Unknown')
-        if auc != 'Unknown':
-            print(f"  AUC: {auc:.3f}")
-        else:
-            print(f"  AUC: {auc}")
-        print(f"  Features: {len(self.model_data.get('feature_cols', []))}")
-    
     def load_team_data(self):
         """Your existing team data loading logic"""
         try:

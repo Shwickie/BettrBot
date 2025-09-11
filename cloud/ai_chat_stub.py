@@ -82,17 +82,29 @@ MODEL_PKL = os.environ.get(
 )
 
 _model_pack = None
+# -------- model pack loader (no hardcoded Windows paths) --------
 def load_model_pack():
-    global _model_pack
-    if _model_pack is not None:
-        return _model_pack
-    if not os.path.exists(MODEL_PKL):
-        logger.warning(f"AI Chat: model pack not found at {MODEL_PKL}; using fallback heuristics")
-        _model_pack = None
+    try:
+        env_path = os.environ.get("BETTR_MODEL_PKL")
+        candidates = [
+            env_path,
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "betting_model_fixed.pkl")),
+            os.path.abspath(os.path.join(os.getcwd(), "models", "betting_model_fixed.pkl")),
+        ]
+        fixed_model_path = next((p for p in candidates if p and os.path.exists(p)), None)
+
+        if not fixed_model_path:
+            logger.warning("AI Chat: FIXED model not found via BETTR_MODEL_PKL or repo; using statistical fallback.")
+            return None  # <-- force graceful fallback
+
+        logger.info(f"AI Chat: Loading FIXED model from {fixed_model_path}")
+        with open(fixed_model_path, "rb") as f:
+            pack = pickle.load(f)
+        return pack
+    except Exception as e:
+        logger.warning(f"AI Chat: FAILED TO LOAD FIXED MODEL - using statistical fallback. Reason: {e}")
         return None
-    with open(MODEL_PKL, "rb") as f:
-        _model_pack = pickle.load(f)
-    return _model_pack
+
 
 
 def verify_model_consistency():
@@ -2112,7 +2124,12 @@ Be specific about the data points and explain the reasoning behind the model's c
 # ---------------------------
 # Use the same blueprint name your UI imports
 comprehensive_ai_bp = Blueprint("ai", __name__)
-ai_system = ComprehensiveAI()
+try:
+    ai_system = ComprehensiveAI()
+except Exception as e:
+    logger.warning("ComprehensiveAI bootstrap failed; running without ML.", exc_info=True)
+    ai_system = None  # routes should handle None by using fallback
+
 
 @comprehensive_ai_bp.route("/api/ai-chat", methods=["POST"])
 def ai_chat_compat():
