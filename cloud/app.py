@@ -59,7 +59,10 @@ def health_check():
         try:
             if DATABASE_URL:
                 from sqlalchemy import create_engine, text
-                engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+                engine = create_engine(
+                    DATABASE_URL if "sslmode=" in DATABASE_URL else f"{DATABASE_URL}&sslmode=require" if "?" in DATABASE_URL else f"{DATABASE_URL}?sslmode=require",
+                    pool_pre_ping=True
+                )
                 with engine.connect() as conn:
                     conn.execute(text("SELECT 1"))
                 status['checks']['database'] = 'connected'

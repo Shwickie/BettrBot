@@ -318,7 +318,10 @@ USE_CLOUD_DB = DATABASE_URL.startswith(("postgres://", "postgresql://"))
 
 # create engine
 if USE_CLOUD_DB:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    engine = create_engine(
+    DATABASE_URL if "sslmode=" in DATABASE_URL else f"{DATABASE_URL}&sslmode=require" if "?" in DATABASE_URL else f"{DATABASE_URL}?sslmode=require",
+    pool_pre_ping=True
+)
 else:
     DEFAULT_DB = r"E:/Bettr Bot/betting-bot/data/betting.db"
     DB_PATH = os.environ.get("BETTR_DB_PATH", DEFAULT_DB)
@@ -342,10 +345,8 @@ def ensure_indexes():
 _initialized = False
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-USER_DATA_FILE = os.environ.get(
-    "BETTR_USERS_PATH",
-    "/tmp/user_accounts.json"  # writable on Render
-)
+USER_DATA_FILE = os.environ.get("BETTR_USERS_PATH", os.path.join(BASE_DIR, "user_accounts.json"))
+
 
 app.secret_key = os.environ.get("FLASK_SECRET", "bettr-bot-enhanced-2025")
 
