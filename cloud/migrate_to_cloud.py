@@ -7,6 +7,8 @@ Fixes:
 - Normalizes games date/time columns before upload.
 - If games is empty but games_backup has data, auto-fill games from backup.
 - REPLACE on schema mismatch, APPEND when compatible.
+- For `odds`: force a truncate+append each run to avoid duplicate PKs, and use
+  smaller batches + timestamp/odds normalization to prevent driver errors.
 """
 
 import os
@@ -44,6 +46,11 @@ DEFAULT_BATCH_ROWS = 1000
 # Keep total parameters in a single INSERT well below ~65k
 MAX_PARAMS_PER_INSERT = 50000
 
+# Tables we always clear and re-load to keep runs idempotent (avoid duplicate PKs)
+FORCE_TRUNCATE_APPEND = {"odds"}
+# Per-table batch-size overrides
+SPECIAL_BATCH_ROWS = {"odds": 200}
+
 
 def connect_sqlite(path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
@@ -63,11 +70,13 @@ def pg_table_columns(engine: Engine, table_name: str) -> Optional[set]:
     return {col["name"] for col in insp.get_columns(table_name)}
 
 
-def safe_rows_per_insert(num_cols: int) -> int:
+def safe_rows_per_insert(num_cols: int, table: Optional[str] = None) -> int:
+    # respect per-table override first
+    if table and table in SPECIAL_BATCH_ROWS:
+        return SPECIAL_BATCH_ROWS[table]
     if num_cols <= 0:
         return DEFAULT_BATCH_ROWS
     cap = MAX_PARAMS_PER_INSERT // num_cols
-    # be conservative and not too tiny
     return max(100, min(DEFAULT_BATCH_ROWS, cap))
 
 
@@ -79,6 +88,7 @@ def _to_date(val):
         return ts.date()
     except Exception:
         return None
+
 
 def _to_hms(val):
     # Accept strings like "13:00", "13:00:00", "2024-09-01 13:00", etc.
@@ -104,6 +114,7 @@ def _to_hms(val):
     except Exception:
         return None
 
+
 def normalize_games_df(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     if "game_date" in df.columns:
@@ -111,14 +122,37 @@ def normalize_games_df(df: pd.DataFrame) -> pd.DataFrame:
     if "start_time_local" in df.columns:
         df["start_time_local"] = df["start_time_local"].apply(_to_hms)
     return df
+
+
+def normalize_odds_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure odds types are stable for Postgres schema."""
+    df = df.copy()
+    # expected: id, game_id, team, sportsbook, odds, market, timestamp
+    if "timestamp" in df.columns:
+        ts = pd.to_datetime(df["timestamp"], errors="coerce", utc=False)
+        try:
+            # make tz-naive for TIMESTAMP WITHOUT TIME ZONE
+            df["timestamp"] = ts.dt.tz_localize(None)
+        except Exception:
+            df["timestamp"] = ts
+    if "odds" in df.columns:
+        df["odds"] = pd.to_numeric(df["odds"], errors="coerce")
+    for c in ("team", "game_id", "sportsbook", "market"):
+        if c in df.columns:
+            df[c] = df[c].astype(str).str.strip()
+    return df
+
+
 def write_df(df: pd.DataFrame, engine: Engine, table: str, *, replace: bool) -> None:
     if df.empty:
         print(f"   ⚠️ {table}: source is empty, skipping")
         return
-    # adapt chunk size to stay under param limits
-    chunk_rows = safe_rows_per_insert(len(df.columns))
+
+    # adapt chunk size to stay under param limits / table overrides
+    chunk_rows = safe_rows_per_insert(len(df.columns), table)
     first = True if replace else False
     total = len(df)
+
     for start in range(0, total, chunk_rows):
         chunk = df.iloc[start:start + chunk_rows]
         mode = "replace" if first else "append"
@@ -138,18 +172,41 @@ def write_df(df: pd.DataFrame, engine: Engine, table: str, *, replace: bool) -> 
 
 def migrate_table(pg: Engine, sqlite_conn: sqlite3.Connection, table: str) -> bool:
     print(f"\n📊 Migrating table: {table}")
+
     try:
         df = pd.read_sql_query(f'SELECT * FROM "{table}"', sqlite_conn)
     except Exception as e:
         print(f"   ❌ Failed to read from SQLite: {e}")
         return False
 
+    # Per-table normalization
     if table == "games":
         df = normalize_games_df(df)
+    elif table == "odds":
+        df = normalize_odds_df(df)
 
     if df.empty:
         print("   ⚠️ No rows, skipping")
         return True
+
+    # Idempotent path: certain tables are always cleared then appended
+    if table in FORCE_TRUNCATE_APPEND:
+        try:
+            with pg.begin() as c:
+                c.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY'))
+            print("   🧹 Truncated destination table (RESTART IDENTITY)")
+            write_df(df, pg, table, replace=False)
+            print("   ✅ Truncate+Append complete")
+            return True
+        except Exception as e:
+            print(f"   ⚠️ Truncate path failed ({e}); falling back to REPLACE")
+            try:
+                write_df(df, pg, table, replace=True)
+                print("   ✅ Replaced & migrated (fallback)")
+                return True
+            except Exception as e2:
+                print(f"   ❌ Replace fallback failed: {e2}")
+                return False
 
     try:
         dest_cols = pg_table_columns(pg, table)
@@ -178,11 +235,14 @@ def migrate_table(pg: Engine, sqlite_conn: sqlite3.Connection, table: str) -> bo
         msg = str(e)
         print(f"   ❌ Append/Replace failed: {msg}")
         # Common recoverable schema/param errors
-        hints = ("UndefinedColumn", "does not exist", "INSERT has more expressions than target columns",
-                 "bind parameters", "too many arguments", "too many parameters")
+        hints = (
+            "UndefinedColumn", "does not exist", "INSERT has more expressions than target columns",
+            "bind parameters", "too many arguments", "too many parameters", "duplicate key",
+            "UniqueViolation"
+        )
         if any(h in msg for h in hints):
             try:
-                print("   🔁 Retrying with REPLACE & smaller chunks due to error")
+                print("   🔁 Retrying with REPLACE & safe chunks due to error")
                 write_df(df, pg, table, replace=True)
                 print("   ✅ Replaced & migrated (retry)")
                 return True
@@ -332,13 +392,17 @@ def main():
     ok = fail = 0
     print("\n📦 Migrating ESSENTIAL tables first...")
     for t in essentials:
-        if migrate_table(pg, sqlite_conn, t): ok += 1
-        else: fail += 1
+        if migrate_table(pg, sqlite_conn, t):
+            ok += 1
+        else:
+            fail += 1
 
     print("\n📦 Migrating remaining tables...")
     for t in others:
-        if migrate_table(pg, sqlite_conn, t): ok += 1
-        else: fail += 1
+        if migrate_table(pg, sqlite_conn, t):
+            ok += 1
+        else:
+            fail += 1
 
     # If games is empty but games_backup has data, fill it
     maybe_fill_games_from_backup(pg, sqlite_conn)
@@ -357,6 +421,7 @@ def main():
     print("1) Point your app at POSTGRES_URL (Render env).")
     print("2) Run app locally against cloud DB to sanity-check pages.")
     print("3) Commit & deploy to Render.")
+
 
 if __name__ == "__main__":
     main()
