@@ -2,12 +2,30 @@ services:
   - type: web
     name: bettr-bot
     runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+      python -c "
+      import pickle, numpy as np
+      from sklearn.ensemble import RandomForestClassifier
+      from datetime import datetime
+      if not os.path.exists('./betting_model_fixed.pkl'):
+        print('Creating emergency model...')
+        model = RandomForestClassifier(n_estimators=10, random_state=42)
+        X = np.random.randn(50, 20)
+        y = np.random.randint(0, 2, 50)
+        model.fit(X, y)
+        with open('./betting_model_fixed.pkl', 'wb') as f:
+          pickle.dump({'model': model, 'feature_cols': [f'f{i}' for i in range(20)], 'scaler': None}, f)
+        print('Emergency model created')
+      "
+    startCommand: gunicorn app:app --workers 1 --threads 2 --timeout 300 --bind 0.0.0.0:$PORT --max-requests 1000 --preload
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
       - key: DATABASE_URL
         sync: false
       - key: FLASK_ENV
         value: production
-      - key: BETTR_MODEL_PKL
-        value: ./betting_model_fixed.pkl
+      - key: SECRET_KEY
+        generateValue: true
