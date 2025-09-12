@@ -1,130 +1,200 @@
-# migrate_to_cloud.py - FIXED VERSION
+# migrate_to_cloud.py
 """
-Migrate SQLite database to cloud PostgreSQL (Supabase)
-Run this once to move all your data online
+Migrate SQLite database to cloud PostgreSQL (Supabase) safely.
+
+Fixes:
+- Adaptive chunksize to avoid "too many parameters" errors on big/wide inserts.
+- Normalizes games date/time columns before upload.
+- If games is empty but games_backup has data, auto-fill games from backup.
+- REPLACE on schema mismatch, APPEND when compatible.
 """
 
-import sqlite3
-import psycopg2
 import os
-from sqlalchemy import create_engine, text
+import sqlite3
+from typing import Optional, Sequence
+
 import pandas as pd
-from datetime import datetime
+from sqlalchemy import create_engine, text, inspect
+from sqlalchemy.engine import Engine
 
-# Your current SQLite database
+# === CONFIG ===
 SQLITE_PATH = r"E:\Bettr Bot\betting-bot\data\betting.db"
+POSTGRES_URL = os.getenv(
+    "POSTGRES_URL",
+    # keep the default but ALWAYS set POSTGRES_URL on Render
+    "postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres?sslmode=require",
+)
 
-# Supabase connection - YOUR ACTUAL CREDENTIALS
-POSTGRES_URL = "postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres"
+ESSENTIAL_TABLES: Sequence[str] = (
+    "games",
+    "odds",
+    "team_season_summary",
+    "system_status",
+    "player_stats_2024",
+    "current_nfl_players",
+)
 
-def migrate_table_simple(table_name, batch_size=1000):
-    """Simple table migration using pandas"""
-    print(f"📊 Migrating table: {table_name}")
-    
+SKIP_TABLES = {
+    "sqlite_sequence", "sqlite_stat1", "sqlite_stat2", "sqlite_stat3",
+    "sqlite_stat4", "alembic_version"
+}
+
+# Base target; will be lowered automatically if needed per table
+DEFAULT_BATCH_ROWS = 1000
+# Keep total parameters in a single INSERT well below ~65k
+MAX_PARAMS_PER_INSERT = 50000
+
+
+def connect_sqlite(path: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=OFF;")
+    return conn
+
+
+def connect_postgres(url: str) -> Engine:
+    return create_engine(url, pool_pre_ping=True)
+
+
+def pg_table_columns(engine: Engine, table_name: str) -> Optional[set]:
+    insp = inspect(engine)
+    if not insp.has_table(table_name):
+        return None
+    return {col["name"] for col in insp.get_columns(table_name)}
+
+
+def safe_rows_per_insert(num_cols: int) -> int:
+    if num_cols <= 0:
+        return DEFAULT_BATCH_ROWS
+    cap = MAX_PARAMS_PER_INSERT // num_cols
+    # be conservative and not too tiny
+    return max(100, min(DEFAULT_BATCH_ROWS, cap))
+
+
+def _to_date(val):
     try:
-        # Read from SQLite using pandas
-        sqlite_conn = sqlite3.connect(SQLITE_PATH)
-        df = pd.read_sql_query(f"SELECT * FROM {table_name}", sqlite_conn)
-        sqlite_conn.close()
-        
-        if df.empty:
-            print(f"   ⚠️ Table {table_name} is empty, skipping")
-            return True
-        
-        print(f"   📈 {len(df):,} rows to migrate")
-        
-        # Create PostgreSQL engine
-        postgres_engine = create_engine(POSTGRES_URL, pool_pre_ping=True)
-        
-        # Write to PostgreSQL in batches
-        for i in range(0, len(df), batch_size):
-            batch = df.iloc[i:i+batch_size]
-            batch.to_sql(table_name, postgres_engine, if_exists='append', index=False, method='multi')
-            print(f"   📤 {min(i+batch_size, len(df)):,}/{len(df):,} rows migrated ({min(i+batch_size, len(df))/len(df)*100:.1f}%)")
-        
-        postgres_engine.dispose()
-        print(f"   ✅ {table_name} migration complete")
-        return True
-        
+        ts = pd.to_datetime(val, errors="coerce")
+        if pd.isna(ts):
+            return None
+        return ts.date()
+    except Exception:
+        return None
+
+def _to_hms(val):
+    # Accept strings like "13:00", "13:00:00", "2024-09-01 13:00", etc.
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return None
+    s = str(val).strip()
+    if s == "" or s.lower() in {"none", "nan", "nat"}:
+        return None
+
+    # First try strict time-only formats
+    for fmt in ("%H:%M:%S", "%H:%M"):
+        try:
+            return pd.to_datetime(s, format=fmt).time()
+        except Exception:
+            pass
+
+    # Fallback: general parser (handles full datetimes)
+    try:
+        ts = pd.to_datetime(s, errors="coerce")
+        if pd.isna(ts):
+            return None
+        return ts.time()
+    except Exception:
+        return None
+
+def normalize_games_df(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    if "game_date" in df.columns:
+        df["game_date"] = df["game_date"].apply(_to_date)
+    if "start_time_local" in df.columns:
+        df["start_time_local"] = df["start_time_local"].apply(_to_hms)
+    return df
+def write_df(df: pd.DataFrame, engine: Engine, table: str, *, replace: bool) -> None:
+    if df.empty:
+        print(f"   ⚠️ {table}: source is empty, skipping")
+        return
+    # adapt chunk size to stay under param limits
+    chunk_rows = safe_rows_per_insert(len(df.columns))
+    first = True if replace else False
+    total = len(df)
+    for start in range(0, total, chunk_rows):
+        chunk = df.iloc[start:start + chunk_rows]
+        mode = "replace" if first else "append"
+        chunk.to_sql(
+            table,
+            engine,
+            if_exists=mode,
+            index=False,
+            method="multi",
+            chunksize=chunk_rows,
+        )
+        first = False
+        done = min(start + chunk_rows, total)
+        pct = done / total * 100
+        print(f"   📤 {done:,}/{total:,} rows migrated ({pct:.1f}%) [{table}] {mode.upper() if mode=='replace' else 'append'}")
+
+
+def migrate_table(pg: Engine, sqlite_conn: sqlite3.Connection, table: str) -> bool:
+    print(f"\n📊 Migrating table: {table}")
+    try:
+        df = pd.read_sql_query(f'SELECT * FROM "{table}"', sqlite_conn)
     except Exception as e:
-        print(f"   ❌ Error migrating {table_name}: {e}")
+        print(f"   ❌ Failed to read from SQLite: {e}")
         return False
 
-def migrate_essential_missing():
-    """Migrate the critical missing tables"""
-    print("🔧 FIXING MISSING ESSENTIAL DATA")
-    print("=" * 40)
-    
-    # Tables we need for the dashboard to work
-    critical_tables = {
-        'games': 'Game schedules and scores',
-        'team_season_summary': 'Team power rankings and stats'
-    }
-    
-    success_count = 0
-    
-    for table_name, description in critical_tables.items():
-        print(f"\n📊 Migrating {table_name} ({description})")
-        
-        try:
-            # Read from SQLite
-            sqlite_conn = sqlite3.connect(SQLITE_PATH)
-            df = pd.read_sql_query(f"SELECT * FROM {table_name}", sqlite_conn)
-            sqlite_conn.close()
-            
-            if df.empty:
-                print(f"   ⚠️ {table_name} is empty in local database")
-                continue
-            
-            print(f"   📈 Found {len(df):,} rows")
-            
-            # Write to PostgreSQL
-            postgres_engine = create_engine(POSTGRES_URL, pool_pre_ping=True)
-            
-            # Clear existing data first
-            with postgres_engine.begin() as conn:
-                conn.execute(text(f"DELETE FROM {table_name}"))
-                print(f"   🗑️ Cleared existing {table_name} data")
-            
-            # Insert new data in batches
-            batch_size = 1000
-            for i in range(0, len(df), batch_size):
-                batch = df.iloc[i:i+batch_size]
-                batch.to_sql(table_name, postgres_engine, if_exists='append', index=False, method='multi')
-                print(f"   📤 {min(i+batch_size, len(df)):,}/{len(df):,} rows migrated")
-            
-            postgres_engine.dispose()
-            print(f"   ✅ {table_name} migration complete")
-            success_count += 1
-            
-        except Exception as e:
-            print(f"   ❌ Error migrating {table_name}: {e}")
-    
-    print(f"\n🎉 ESSENTIAL DATA FIX COMPLETE")
-    print(f"✅ Successful: {success_count}/{len(critical_tables)}")
-    
-    # Verify the fix
-    print(f"\n🔍 Verifying fix...")
-    try:
-        engine = create_engine(POSTGRES_URL, pool_pre_ping=True)
-        with engine.connect() as conn:
-            for table in ['games', 'team_season_summary', 'odds']:
-                try:
-                    result = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).fetchone()
-                    print(f"   📊 {table}: {result[0]:,} rows")
-                except Exception as e:
-                    print(f"   ❌ {table}: Error - {e}")
-        engine.dispose()
-    except Exception as e:
-        print(f"   ❌ Verification failed: {e}")
+    if table == "games":
+        df = normalize_games_df(df)
 
-def create_essential_tables():
-    """Create essential tables in PostgreSQL"""
-    print("🏗️ Creating essential table schemas...")
-    
-    # Essential table schemas (simplified)
-    schemas = {
-        'games': '''
+    if df.empty:
+        print("   ⚠️ No rows, skipping")
+        return True
+
+    try:
+        dest_cols = pg_table_columns(pg, table)
+        if dest_cols is None:
+            print("   🆕 Destination table not found; creating it from DataFrame schema")
+            write_df(df, pg, table, replace=True)
+            print("   ✅ Created & migrated")
+            return True
+
+        df_cols = list(df.columns)
+        missing = [c for c in df_cols if c not in dest_cols]
+        if not missing:
+            ordered_cols = [c for c in dest_cols if c in df.columns]
+            df2 = df[ordered_cols]
+            write_df(df2, pg, table, replace=False)
+            print("   ✅ Appended (schemas compatible)")
+            return True
+        else:
+            print(f"   ⚠️ Schema mismatch. Missing in destination: {missing[:8]}{' ...' if len(missing)>8 else ''}")
+            print("   🔁 Replacing destination table to match source schema (one-time destructive change)")
+            write_df(df, pg, table, replace=True)
+            print("   ✅ Replaced & migrated")
+            return True
+
+    except Exception as e:
+        msg = str(e)
+        print(f"   ❌ Append/Replace failed: {msg}")
+        # Common recoverable schema/param errors
+        hints = ("UndefinedColumn", "does not exist", "INSERT has more expressions than target columns",
+                 "bind parameters", "too many arguments", "too many parameters")
+        if any(h in msg for h in hints):
+            try:
+                print("   🔁 Retrying with REPLACE & smaller chunks due to error")
+                write_df(df, pg, table, replace=True)
+                print("   ✅ Replaced & migrated (retry)")
+                return True
+            except Exception as e2:
+                print(f"   ❌ Replace retry failed: {e2}")
+        return False
+
+
+def ensure_core_schemas(pg: Engine) -> bool:
+    print("\n🏗️ Ensuring essential table schemas exist (non-destructive)")
+    ddls = {
+        "games": """
             CREATE TABLE IF NOT EXISTS games (
                 id SERIAL PRIMARY KEY,
                 game_id TEXT,
@@ -136,34 +206,34 @@ def create_essential_tables():
                 away_score INTEGER,
                 season INTEGER
             )
-        ''',
-        'odds': '''
+        """,
+        "odds": """
             CREATE TABLE IF NOT EXISTS odds (
                 id SERIAL PRIMARY KEY,
                 game_id TEXT,
                 team TEXT,
                 sportsbook TEXT,
-                odds REAL,
+                odds DOUBLE PRECISION,
                 market TEXT,
                 timestamp TIMESTAMP
             )
-        ''',
-        'team_season_summary': '''
+        """,
+        "team_season_summary": """
             CREATE TABLE IF NOT EXISTS team_season_summary (
                 id SERIAL PRIMARY KEY,
                 team TEXT,
                 season INTEGER,
-                power_score REAL,
+                power_score DOUBLE PRECISION,
                 wins INTEGER,
                 losses INTEGER,
                 games_played INTEGER,
-                win_pct REAL,
-                avg_points_for REAL,
-                avg_points_against REAL,
-                point_diff REAL
+                win_pct DOUBLE PRECISION,
+                avg_points_for DOUBLE PRECISION,
+                avg_points_against DOUBLE PRECISION,
+                point_diff DOUBLE PRECISION
             )
-        ''',
-        'system_status': '''
+        """,
+        "system_status": """
             CREATE TABLE IF NOT EXISTS system_status (
                 id SERIAL PRIMARY KEY,
                 task TEXT,
@@ -174,98 +244,119 @@ def create_essential_tables():
                 run_type TEXT DEFAULT 'cloud',
                 timeout_seconds INTEGER
             )
-        '''
+        """,
     }
-    
     try:
-        engine = create_engine(POSTGRES_URL, pool_pre_ping=True)
-        with engine.begin() as conn:
-            for table_name, schema in schemas.items():
-                conn.execute(text(schema))
-                print(f"   ✅ Created table: {table_name}")
-        engine.dispose()
+        with pg.begin() as c:
+            for t, ddl in ddls.items():
+                c.execute(text(ddl))
+                print(f"   ✅ ensured: {t}")
         return True
     except Exception as e:
-        print(f"   ❌ Schema creation failed: {e}")
+        print(f"   ❌ Schema ensure failed: {e}")
         return False
+
+
+def list_sqlite_tables(conn: sqlite3.Connection) -> list[str]:
+    q = ("SELECT name FROM sqlite_master WHERE type='table' "
+         "AND name NOT LIKE 'sqlite_%' ORDER BY 1;")
+    rows = conn.execute(q).fetchall()
+    return [r[0] for r in rows if r[0] not in SKIP_TABLES]
+
+
+def table_count(pg: Engine, name: str) -> int:
+    try:
+        with pg.connect() as c:
+            res = c.execute(text(f'SELECT COUNT(*) FROM "{name}"'))
+            return int(res.scalar() or 0)
+    except Exception:
+        return -1
+
+
+def verify_counts(pg: Engine, tables: Sequence[str]) -> None:
+    print("\n🔍 Verifying migration counts (Postgres)")
+    try:
+        with pg.connect() as conn:
+            for t in tables:
+                try:
+                    n = conn.execute(text(f'SELECT COUNT(*) FROM "{t}"')).scalar() or 0
+                    print(f"   📊 {t}: {int(n):,} rows")
+                except Exception as e:
+                    print(f"   ❌ {t}: {e}")
+    except Exception as e:
+        print(f"   ❌ Verification failed: {e}")
+
+
+def maybe_fill_games_from_backup(pg: Engine, sqlite_conn: sqlite3.Connection) -> None:
+    # If games has 0 rows but games_backup exists with data, copy it into games
+    g = table_count(pg, "games")
+    if g == 0:
+        try:
+            df_backup = pd.read_sql_query('SELECT * FROM "games_backup"', sqlite_conn)
+        except Exception:
+            df_backup = pd.DataFrame()
+        if not df_backup.empty:
+            print("\n🩹 games is empty; filling from games_backup...")
+            df_backup = normalize_games_df(df_backup)
+            write_df(df_backup, pg, "games", replace=True)
+            print("   ✅ games populated from games_backup")
+        else:
+            print("\nℹ️ games is empty and games_backup not found or empty; skipping fill.")
+
 
 def main():
     print("🚀 MIGRATING BETTR BOT TO CLOUD DATABASE")
-    print("=" * 50)
-    
-    # Test connections
+    print("=" * 56)
+    # Connections
     try:
-        # Test SQLite
-        sqlite_conn = sqlite3.connect(SQLITE_PATH)
-        sqlite_conn.execute("SELECT 1")
-        sqlite_conn.close()
-        
-        # Test PostgreSQL
-        postgres_engine = create_engine(POSTGRES_URL, pool_pre_ping=True)
-        with postgres_engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        postgres_engine.dispose()
-        
+        sqlite_conn = connect_sqlite(SQLITE_PATH)
+        sqlite_conn.execute("SELECT 1").fetchone()
+        pg = connect_postgres(POSTGRES_URL)
+        with pg.connect() as c:
+            c.execute(text("SELECT 1")).fetchone()
         print("✅ Database connections established")
-        
     except Exception as e:
         print(f"❌ Connection failed: {e}")
         return
-    
-    # Create essential schemas first
-    if not create_essential_tables():
-        print("❌ Failed to create schemas")
+
+    if not ensure_core_schemas(pg):
+        print("❌ Failed to ensure schemas; aborting.")
         return
-    
-    # Get tables from SQLite
-    sqlite_conn = sqlite3.connect(SQLITE_PATH)
-    cursor = sqlite_conn.cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    tables = [row[0] for row in cursor.fetchall()]
+
+    tables = list_sqlite_tables(sqlite_conn)
+    print(f"📋 Found {len(tables)} tables in SQLite")
+
+    essentials = [t for t in ESSENTIAL_TABLES if t in tables]
+    others = [t for t in tables if t not in essentials]
+
+    ok = fail = 0
+    print("\n📦 Migrating ESSENTIAL tables first...")
+    for t in essentials:
+        if migrate_table(pg, sqlite_conn, t): ok += 1
+        else: fail += 1
+
+    print("\n📦 Migrating remaining tables...")
+    for t in others:
+        if migrate_table(pg, sqlite_conn, t): ok += 1
+        else: fail += 1
+
+    # If games is empty but games_backup has data, fill it
+    maybe_fill_games_from_backup(pg, sqlite_conn)
+
+    print("\n🎉 MIGRATION COMPLETE")
+    print(f"✅ Successful: {ok}")
+    print(f"❌ Failed: {fail}")
+
+    # Verify
+    verify_sample = list(dict.fromkeys([*essentials, *others[:5]]))
+    verify_counts(pg, verify_sample)
+
     sqlite_conn.close()
-    migrate_essential_missing()
-    
-    print(f"📋 Found {len(tables)} tables to migrate")
-    
-    # Migrate essential tables first
-    essential_tables = ['games', 'odds', 'team_season_summary', 'system_status', 'player_stats_2024', 'current_nfl_players']
-    
-    successful = 0
-    failed = 0
-    
-    print("\n📦 Migrating essential tables...")
-    for table in essential_tables:
-        if table in tables:
-            success = migrate_table_simple(table)
-            if success:
-                successful += 1
-            else:
-                failed += 1
-    
-    print(f"\n🎉 ESSENTIAL MIGRATION COMPLETE")
-    print(f"✅ Successful: {successful}")
-    print(f"❌ Failed: {failed}")
-    
-    # Test the migration
-    print("\n🔍 Verifying migration...")
-    try:
-        engine = create_engine(POSTGRES_URL, pool_pre_ping=True)
-        with engine.connect() as conn:
-            for table in ['games', 'odds', 'team_season_summary']:
-                try:
-                    result = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).fetchone()
-                    print(f"   📊 {table}: {result[0]:,} rows")
-                except Exception as e:
-                    print(f"   ❌ {table}: Error - {e}")
-        engine.dispose()
-    except Exception as e:
-        print(f"   ❌ Verification failed: {e}")
-    
+    pg.dispose()
     print("\n🌐 Next Steps:")
-    print("1. Test your app.py locally")
-    print("2. Push to GitHub") 
-    print("3. Deploy to Render")
-    print("4. Your dashboard will work with cloud data!")
+    print("1) Point your app at POSTGRES_URL (Render env).")
+    print("2) Run app locally against cloud DB to sanity-check pages.")
+    print("3) Commit & deploy to Render.")
 
 if __name__ == "__main__":
     main()
