@@ -87,6 +87,24 @@ except Exception:
     sys.path.append(os.path.dirname(__file__))
     from ai_chat_stub import comprehensive_ai_bp
 
+def safe_query(query_str, params=None):
+    """Execute query safely with proper PostgreSQL parameter handling"""
+    if not engine:
+        return pd.DataFrame()
+    
+    try:
+        with engine.connect() as conn:
+            if params:
+                # Use SQLAlchemy text() with proper parameter binding
+                result = pd.read_sql(text(query_str), conn, params=params)
+            else:
+                result = pd.read_sql(text(query_str), conn)
+            return result
+    except Exception as e:
+        print(f"Query error: {e}")
+        return pd.DataFrame()
+
+
 
 def _normalize_model_pack(sysobj):
     """Ensure sysobj.model exists and sysobj.model_data['model'] is set."""
@@ -466,13 +484,13 @@ def get_unified_power_scores(conn):
     # 1) Base power + record (seed current season; fallback to last season if empty)
     try:
         base = pd.read_sql_query(
-            "SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season = ?",
-            conn, params=[season]
+            "SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season = :season",
+            conn, params={"season": season}
         )
         base['team'] = base['team'].map(to_abbr)
         if base.empty:
             base = pd.read_sql_query(
-                "SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season = ?",
+                "SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season = :season",
                 conn, params=[season - 1]
             )
     except Exception:
@@ -794,7 +812,7 @@ def dashboard():
         season, _ = current_phase_and_season()
         rankings_df = pd.read_sql_query(
             "SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season=?",
-            conn, params=[season]
+            conn, params={"season": season}
         )
         if rankings_df.empty:
             rankings_df = pd.read_sql_query(
@@ -840,28 +858,19 @@ def api_rankings():
     
     try:
         # Get base power scores from team_season_summary
-        pr = pd.read_sql_query("""
-            SELECT
-                team,
-                power_score,
-                wins,
-                losses,
-                games_played,
-                win_pct,
-                point_diff,
-                preseason_scheduled,
-                preseason_completed
-            FROM team_season_summary
-            WHERE season = ?
-        """, conn, params=[season])
+        pr = pd.read_sql_query(text("""
+                SELECT team, power_score, wins, losses, games_played, win_pct, point_diff
+                FROM team_season_summary 
+                WHERE season = :season
+            """), conn, params={"season": season-1})
         pr['team'] = pr['team'].map(to_abbr)
         if pr.empty:
             # Fall back to previous season
             pr = pd.read_sql_query("""
                 SELECT team, power_score, wins, losses, games_played, win_pct, point_diff
                 FROM team_season_summary 
-                WHERE season = ?
-            """, conn, params=[season-1])
+                WHERE season = :season
+            """, conn, params={"season": season-1})
     except Exception as e:
         print(f"Rankings query error: {e}")
         return jsonify([])
@@ -976,15 +985,13 @@ def api_predictions():
 
     # Load games
     try:
-        games = pd.read_sql_query("""
-            SELECT
-                game_id, away_team AS away, home_team AS home,
-                STRFTIME('%Y-%m-%d', game_date) AS game_date,
-                STRFTIME('%H:%M', start_time_local) AS game_time
-            FROM games
-            WHERE date(game_date) BETWEEN date(?) AND date(?)
-            ORDER BY date(game_date), time(start_time_local)
-        """, conn, params=[today, horizon])
+        games = pd.read_sql_query(text("""
+        SELECT game_id, away_team AS away, home_team AS home, game_date, start_time_local AS game_time
+        FROM games
+        WHERE date(game_date) BETWEEN date(:start_date) AND date(:end_date)
+        ORDER BY date(game_date), time(start_time_local)
+    """), conn, params={"start_date": today, "end_date": horizon})
+
     except Exception:
         return jsonify([])
 
@@ -1164,9 +1171,9 @@ def api_betting_analysis():
         games = pd.read_sql_query("""
             SELECT game_id, away_team, home_team, game_date, start_time_local
             FROM games 
-            WHERE date(game_date) BETWEEN date(?) AND date(?)
+            WHERE date(game_date) BETWEEN date(:start_date) AND date(:end_date)
             ORDER BY game_date, start_time_local
-        """, conn, params=[start, end])
+        """, conn, params={"start_date": start, "end_date": end})
 
         if games.empty:
             return jsonify({
@@ -1336,9 +1343,9 @@ def get_betting_recommendations_debug():
         games = pd.read_sql_query("""
             SELECT game_id, away_team, home_team, game_date, start_time_local
             FROM games 
-            WHERE date(game_date) BETWEEN date(?) AND date(?)
+            WHERE date(game_date) BETWEEN date(:start_date) AND date(:end_date)
             ORDER BY game_date, start_time_local
-        """, conn, params=[today, end])
+        """, conn, params={"start_date": today, "end_date": end})
 
         debug_info = []
         recommendations = []
@@ -1613,9 +1620,9 @@ def api_betting_analysis_fixed():
         games = pd.read_sql_query("""
             SELECT game_id, away_team, home_team, game_date, start_time_local
             FROM games 
-            WHERE date(game_date) BETWEEN date(?) AND date(?)
+            WHERE date(game_date) BETWEEN date(:start_date) AND date(:end_date)
             ORDER BY game_date, start_time_local
-        """, conn, params=[today, end])
+        """, conn, params={"start_date": today, "end_date": end})
 
         print(f"DEBUG FIXED: Found {len(games)} games")
         
@@ -1818,9 +1825,9 @@ def get_betting_recommendations():
         games = pd.read_sql_query("""
             SELECT game_id, away_team, home_team, game_date, start_time_local
             FROM games 
-            WHERE date(game_date) BETWEEN date(?) AND date(?)
+            WHERE date(game_date) BETWEEN date(:start_date) AND date(:end_date)
             ORDER BY game_date, start_time_local
-        """, conn, params=[today, end])
+        """, conn, params={"start_date": today, "end_date": end})
 
         recommendations = []
         total_staked = 0.0
@@ -2001,10 +2008,10 @@ def api_games():
             """
             SELECT game_id, away_team AS away, home_team AS home, game_date, start_time_local AS game_time
             FROM games
-            WHERE date(game_date) BETWEEN date(?) AND date(?)
+            WHERE date(game_date) BETWEEN date(:start_date) AND date(:end_date)
             ORDER BY date(game_date), time(start_time_local)
             """,
-            conn, params=[today, end]
+            conn, params={"start_date": today, "end_date": end}
         )
 
         game_ids = games['game_id'].tolist()
