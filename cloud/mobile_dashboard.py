@@ -215,6 +215,28 @@ def get_dashboard_model_path():
     
     return None
 
+def safe_sql_query(query, conn, params=None):
+    """Helper to safely execute SQL queries on both SQLite and PostgreSQL"""
+    try:
+        if USE_CLOUD_DB:
+            return pd.read_sql_query(text(query), conn, params=params or {})
+        else:
+            # Convert named params to positional for SQLite if needed
+            if params and isinstance(params, dict):
+                # For SQLite, convert :param to ? and extract values
+                import re
+                param_names = re.findall(r':(\w+)', query)
+                sqlite_query = query
+                for param in param_names:
+                    sqlite_query = sqlite_query.replace(f':{param}', '?')
+                param_values = [params[name] for name in param_names]
+                return pd.read_sql_query(sqlite_query, conn, params=param_values)
+            else:
+                return pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        print(f"SQL Query Error: {e}")
+        return pd.DataFrame()
+
 def load_model_pack():
     global _model_pack
     if _model_pack is not None:
@@ -806,13 +828,13 @@ def dashboard():
     try:
         season, _ = current_phase_and_season()
         rankings_df = pd.read_sql_query(
-            "SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season=?",
+            text("SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season=:season"),
             conn, params={"season": season}
         )
         if rankings_df.empty:
             rankings_df = pd.read_sql_query(
-                "SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season=?",
-                conn, params=[season - 1]
+                text("SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season=:season"),
+                conn, params={"season": season - 1}
             )
 
         injuries_df = load_injury_impact_from_detail(conn)[['team','injury_impact']]
@@ -1139,12 +1161,12 @@ def api_betting_analysis():
     
     try:
         # Get games in the time window
-        games = pd.read_sql_query("""
+        games = pd.read_sql_query(text("""
             SELECT game_id, away_team, home_team, game_date, start_time_local
             FROM games 
-            WHERE date(game_date) BETWEEN date(:start_date) AND date(:end_date)
+            WHERE date(game_date) BETWEEN :start_date AND :end_date
             ORDER BY game_date, start_time_local
-        """, conn, params={"start_date": start, "end_date": end})
+        """), conn, params={"start_date": start, "end_date": end})
 
         if games.empty:
             return jsonify({
@@ -1311,12 +1333,12 @@ def get_betting_recommendations_debug():
         end = today + timedelta(days=7)
         
         # Get upcoming games
-        games = pd.read_sql_query("""
+        games = pd.read_sql_query(text("""
             SELECT game_id, away_team, home_team, game_date, start_time_local
             FROM games 
-            WHERE date(game_date) BETWEEN date(:start_date) AND date(:end_date)
+            WHERE date(game_date) BETWEEN :start_date AND :end_date
             ORDER BY game_date, start_time_local
-        """, conn, params={"start_date": today, "end_date": end})
+        """), conn, params={"start_date": today, "end_date": end})
 
         debug_info = []
         recommendations = []
@@ -1976,12 +1998,12 @@ def api_games():
     end = today + timedelta(days=60)
     try:
         games = pd.read_sql_query(
-            """
+            text("""
             SELECT game_id, away_team AS away, home_team AS home, game_date, start_time_local AS game_time
             FROM games
-            WHERE date(game_date) BETWEEN date(:start_date) AND date(:end_date)
-            ORDER BY date(game_date), time(start_time_local)
-            """,
+            WHERE date(game_date) BETWEEN :start_date AND :end_date
+            ORDER BY date(game_date), start_time_local
+            """),
             conn, params={"start_date": today, "end_date": end}
         )
 
