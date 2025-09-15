@@ -17,7 +17,7 @@ if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
 USE_CLOUD_DB = bool(DATABASE_URL)
 
 if USE_CLOUD_DB:
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import create_engine, text, text
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 else:
     engine = None

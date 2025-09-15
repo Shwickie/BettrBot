@@ -6,26 +6,21 @@ services:
       pip install --upgrade pip
       pip install -r requirements.txt
       python -c "
-      import pickle, numpy as np
+      import pickle, numpy as np, os
       from sklearn.ensemble import RandomForestClassifier
-      from datetime import datetime
       if not os.path.exists('./betting_model_fixed.pkl'):
-        print('Creating emergency model...')
-        model = RandomForestClassifier(n_estimators=10, random_state=42)
-        X = np.random.randn(50, 20)
-        y = np.random.randint(0, 2, 50)
-        model.fit(X, y)
-        with open('./betting_model_fixed.pkl', 'wb') as f:
-          pickle.dump({'model': model, 'feature_cols': [f'f{i}' for i in range(20)], 'scaler': None}, f)
-        print('Emergency model created')
+          print('Creating model...')
+          model = RandomForestClassifier(n_estimators=10, random_state=42)
+          X = np.random.randn(50, 20)
+          y = np.random.randint(0, 2, 50)
+          model.fit(X, y)
+          with open('./betting_model_fixed.pkl', 'wb') as f:
+              pickle.dump({'model': model, 'feature_cols': [f'f{i}' for i in range(20)], 'scaler': None}, f)
+          print('Model created')
       "
-    startCommand: gunicorn app:app --workers 1 --threads 2 --timeout 300 --bind 0.0.0.0:$PORT --max-requests 1000 --preload
+    startCommand: gunicorn app:app --workers 1 --threads 2 --timeout 300 --bind 0.0.0.0:$PORT
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.9
       - key: DATABASE_URL
         sync: false
       - key: FLASK_ENV
         value: production
-      - key: SECRET_KEY
-        generateValue: true
