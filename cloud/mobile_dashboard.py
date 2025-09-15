@@ -30,38 +30,31 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 # robust import so Windows path works when running from /dashboard
-RAW_DB_URL = os.getenv("DATABASE_URL", "").strip()
-if RAW_DB_URL.startswith("postgres://"):
-    RAW_DB_URL = RAW_DB_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+# SIMPLIFIED DATABASE SETUP - SINGLE SOURCE OF TRUTH
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
-USE_PG = RAW_DB_URL.startswith(("postgresql://", "postgresql+psycopg2://"))
+# Handle Render's postgres:// URLs
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
 
-if USE_PG:
-    # Supabase/managed PG needs SSL
-    PG_CONNECT_ARGS = {"sslmode": os.getenv("PGSSLMODE", "require")}
+USE_CLOUD_DB = DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg2://"))
+
+if USE_CLOUD_DB:
+    print(f"Using cloud database: {DATABASE_URL[:50]}...")
     ENGINE = create_engine(
-        RAW_DB_URL,
+        DATABASE_URL,
         pool_pre_ping=True,
         pool_recycle=300,
-        connect_args=PG_CONNECT_ARGS,
+        connect_args={"sslmode": "require"} if "sslmode=" not in DATABASE_URL else {}
     )
-    DB_KIND = "pg"
-    DB_INFO = RAW_DB_URL  # for health output
     print("Using cloud PostgreSQL")
 else:
-    # Safe, writable SQLite path for containers (Render) or Windows dev
-    DB_FILE = os.getenv("BETTR_DB_PATH")
-    if not DB_FILE:
-        DB_FILE = r"E:/Bettr Bot/betting-bot/data/betting.db" if os.name == "nt" else "/tmp/betting.db"
-    os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
-    ENGINE = create_engine(
-        f"sqlite:///{DB_FILE}",
-        connect_args={"check_same_thread": False},
-        pool_pre_ping=True,
-    )
-    DB_KIND = "sqlite"
-    DB_INFO = DB_FILE
-    print(f"Using local SQLite: {DB_FILE}")
+    # Local SQLite setup
+    DEFAULT_DB = r"E:/Bettr Bot/betting-bot/data/betting.db" if os.name == "nt" else "/tmp/betting.db"
+    DB_PATH = os.getenv("BETTR_DB_PATH", DEFAULT_DB)
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    ENGINE = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+    print(f"Using local SQLite: {DB_PATH}")
 
 try:
     from model.prediction import FixedNFLSystem
@@ -688,22 +681,13 @@ def load_injury_impact_from_detail(conn):
 # Per-request sqlite3 connection (same DB as SQLAlchemy)
 
 def get_db():
-    """Return a per-request connection. Falls back to SQLite if PG connect fails."""
-    if not hasattr(g, "_db"):
-        if DB_KIND == "pg":
-            try:
-                g._db = ENGINE.connect()
-            except Exception as _e:
-                # fallback to SQLite in /tmp so the app still runs
-                fallback = "/tmp/betting.db"
-                os.makedirs(os.path.dirname(fallback), exist_ok=True)
-                g._db = sqlite3.connect(fallback, detect_types=sqlite3.PARSE_DECLTYPES)
-                g._db.row_factory = sqlite3.Row
-        else:
-            g._db = sqlite3.connect(DB_INFO, detect_types=sqlite3.PARSE_DECLTYPES)
+    if USE_CLOUD_DB:
+        return ENGINE.connect()
+    else:
+        if not hasattr(g, "_db"):
+            g._db = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
             g._db.row_factory = sqlite3.Row
-    return g._db
-
+        return g._db
 
 @app.teardown_appcontext
 def _close_db(_exc):
@@ -795,13 +779,24 @@ def dashboard():
     user = USERS[username]
     conn = get_db()  # use sqlite3 connection everywhere here
 
+    
     # top row stats
     try:
-        total_games = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
-        total_odds = conn.execute("SELECT COUNT(*) FROM odds WHERE timestamp >= datetime('now','-24 hours')").fetchone()[0]
-        sportsbooks = conn.execute("SELECT COUNT(DISTINCT sportsbook) FROM odds WHERE timestamp >= datetime('now','-24 hours')").fetchone()[0]
-        last_update_row = conn.execute("SELECT MAX(timestamp) AS ts FROM odds").fetchone()
-        last_update = last_update_row['ts'] if last_update_row else None
+        if USE_CLOUD_DB:
+            with ENGINE.connect() as conn:
+                total_games = conn.execute(text("SELECT COUNT(*) FROM games")).scalar()
+                total_odds = conn.execute(text("SELECT COUNT(*) FROM odds WHERE timestamp >= NOW() - INTERVAL '24 hours'")).scalar()
+                sportsbooks = conn.execute(text("SELECT COUNT(DISTINCT sportsbook) FROM odds WHERE timestamp >= NOW() - INTERVAL '24 hours'")).scalar()
+                last_update_result = conn.execute(text("SELECT MAX(timestamp) AS ts FROM odds")).fetchone()
+                last_update = last_update_result[0] if last_update_result else None
+        else:
+            conn = get_db()
+            total_games = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+            total_odds = conn.execute("SELECT COUNT(*) FROM odds WHERE timestamp >= datetime('now','-24 hours')").fetchone()[0]
+            sportsbooks = conn.execute("SELECT COUNT(DISTINCT sportsbook) FROM odds WHERE timestamp >= datetime('now','-24 hours')").fetchone()[0]
+            last_update_row = conn.execute("SELECT MAX(timestamp) AS ts FROM odds").fetchone()
+            last_update = last_update_row['ts'] if last_update_row else None
+        
         last_str = pd.to_datetime(last_update).strftime('%Y-%m-%d %H:%M') if last_update else 'Never'
     except Exception as e:
         print(f"Dashboard stats error: {e}")
@@ -852,118 +847,94 @@ def dashboard():
 # ==================
 @app.route('/api/rankings')
 def api_rankings():
-    """Enhanced rankings using team_season_summary with injuries and recent form."""
-    conn = get_db()
+    """FIXED rankings with proper duplicate handling"""
     season, _phase = current_phase_and_season()
     
     try:
-        # Get base power scores from team_season_summary
-        pr = pd.read_sql_query(text("""
-                SELECT team, power_score, wins, losses, games_played, win_pct, point_diff
+        # FIXED: Use DISTINCT and proper query structure
+        if USE_CLOUD_DB:
+            conn = ENGINE.connect()
+            base_query = """
+                SELECT DISTINCT
+                    team,
+                    power_score,
+                    wins,
+                    losses,
+                    games_played,
+                    win_pct,
+                    point_diff
                 FROM team_season_summary 
                 WHERE season = :season
-            """), conn, params={"season": season-1})
-        pr['team'] = pr['team'].map(to_abbr)
+            """
+            pr = pd.read_sql_query(text(base_query), conn, params={"season": season})
+            conn.close()
+        else:
+            conn = get_db()
+            base_query = """
+                SELECT DISTINCT
+                    team,
+                    power_score,
+                    wins,
+                    losses,
+                    games_played,
+                    win_pct,
+                    point_diff
+                FROM team_season_summary 
+                WHERE season = ?
+            """
+            pr = pd.read_sql_query(base_query, conn, params=[season])
+        
         if pr.empty:
-            # Fall back to previous season
-            pr = pd.read_sql_query("""
-                SELECT team, power_score, wins, losses, games_played, win_pct, point_diff
-                FROM team_season_summary 
-                WHERE season = :season
-            """, conn, params={"season": season-1})
+            if USE_CLOUD_DB:
+                conn = ENGINE.connect()
+                pr = pd.read_sql_query(text(base_query), conn, params={"season": season - 1})
+                conn.close()
+            else:
+                pr = pd.read_sql_query(base_query, conn, params=[season - 1])
+        
+        # CRITICAL: Remove any remaining duplicates at DataFrame level
+        pr = pr.drop_duplicates(subset=['team']).reset_index(drop=True)
+        pr['team'] = pr['team'].map(to_abbr)
+        
     except Exception as e:
         print(f"Rankings query error: {e}")
         return jsonify([])
 
-    # Get injury impacts from the view
-    try:
-        injv = load_injury_impact_from_detail(conn)
-        # We already provide injury_impact, total_injuries, qb_risk, skill_position_risk
-        # If you want a slightly stronger penalty, you can optionally do:
-        injv = injv.assign(injury_impact = injv['injury_impact'] + 0.7*injv['qb_risk'] + 0.4*injv['skill_position_risk'])
-    except Exception:
-        injv = pd.DataFrame(columns=['team','injury_impact','total_injuries','qb_risk'])
-
-
-    # Get recent form (last 3 games trend)
-    try:
-        recent = pd.read_sql_query("""
-            SELECT 
-                CASE 
-                    WHEN home_team IN (SELECT DISTINCT team FROM team_season_summary) 
-                    THEN home_team 
-                    ELSE away_team 
-                END as team,
-                AVG(CASE 
-                    WHEN home_score > away_score AND home_team = team THEN 1.0
-                    WHEN away_score > home_score AND away_team = team THEN 1.0
-                    ELSE 0.0
-                END) as recent_win_rate
-            FROM (
-                SELECT * FROM games 
-                WHERE home_score IS NOT NULL 
-                ORDER BY game_date DESC 
-                LIMIT 100
-            )
-            GROUP BY team
-        """, conn)
-    except Exception:
-        recent = pd.DataFrame(columns=['team','recent_win_rate'])
-
-    # Merge all data
-    df = pr.copy()
-    df = df.merge(injv, on='team', how='left')
-    df = df.merge(recent, on='team', how='left')
-    
-    # Fill missing values
-    df['injury_impact'] = df['injury_impact'].fillna(0.0)
-    df['recent_win_rate'] = df['recent_win_rate'].fillna(df['win_pct'])
-    df['total_injuries'] = df['total_injuries'].fillna(0)
-    df['qb_risk'] = df['qb_risk'].fillna(0)
-    
-    # Calculate adjusted power score
-    # Base power (60%) + Recent form (20%) - Injuries (20%)
-    # NEW LOGIC:
-    # Only apply the 'recent form' component if regular season games have been played
-    df['form_component'] = np.where(
-        df['games_played'] > 0,
-        (df['recent_win_rate'] - 0.5) * 20,
-        0  # Otherwise, the component is neutral (zero)
+    # Calculate adjusted power (simplified to avoid complications)
+    pr['form_component'] = np.where(
+        pr['games_played'] > 0,
+        (pr['win_pct'] - 0.5) * 10,  # Reduced multiplier
+        0
     )
-
-    df['adjusted_power'] = (
-        df['power_score'] * 0.6 +
-        df['form_component'] * 0.2 -  # Use the new form component
-        df['injury_impact'] * 0.2
-    )
-        
-    # Special adjustment for QB injuries
-    df.loc[df['qb_risk'] > 0, 'adjusted_power'] -= 2.0
+    
+    pr['adjusted_power'] = pr['power_score'] + pr['form_component']
     
     # Build record string
-    df['record'] = df.apply(lambda r: {
-        'regular': f"{int(r.get('wins', 0))}-{int(r.get('losses', 0))}",
-        'preseason': f"({int(r.get('preseason_completed', 0))} PS)" if r.get('preseason_completed', 0) > 0 else ""
-    }, axis=1)
+    pr['record'] = pr.apply(lambda r: f"{int(r.get('wins', 0))}-{int(r.get('losses', 0))}", axis=1)
     
     # Sort by adjusted power
-    df['team_full'] = df['team'].map(to_full)
-    df = df.sort_values('adjusted_power', ascending=False).reset_index(drop=True)
-    df['rank'] = df.index + 1
+    pr['team_full'] = pr['team'].map(to_full)
+    pr = pr.sort_values('adjusted_power', ascending=False).reset_index(drop=True)
+    pr['rank'] = pr.index + 1
 
-    return jsonify([
-        {
-            'rank': int(r.rank),
-            'team': r.team_full,
-            'record': f"{r.record['regular']} {r.record['preseason']}".strip(),
-            'power_score': float(round(r.adjusted_power, 2)),
-            'base_power': float(round(r.power_score, 2)),
-            'injury_impact': float(round(r.injury_impact, 2)) if r.injury_impact > 0 else None,
-            'injuries': int(r.total_injuries) if r.total_injuries > 0 else None
-        } for r in df.itertuples()
-    ])
+    # FINAL CHECK: Ensure no duplicates in output
+    seen_teams = set()
+    final_rankings = []
+    
+    for r in pr.itertuples():
+        if r.team_full not in seen_teams:
+            seen_teams.add(r.team_full)
+            final_rankings.append({
+                'rank': int(r.rank),
+                'team': r.team_full,
+                'record': r.record,
+                'power_score': float(round(r.adjusted_power, 2)),
+                'base_power': float(round(r.power_score, 2)),
+                'injury_impact': None,
+                'injuries': None
+            })
 
-
+    return jsonify(final_rankings)
 
 
 
