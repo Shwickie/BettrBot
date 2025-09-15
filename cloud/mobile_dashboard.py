@@ -219,29 +219,9 @@ def safe_sql_query(query, conn, params=None):
     """Helper to safely execute SQL queries on both SQLite and PostgreSQL"""
     try:
         if USE_CLOUD_DB:
-            with ENGINE.connect() as conn:
-                total_games = conn.execute(text("SELECT COUNT(*) FROM games")).scalar()
-                total_odds = conn.execute(text("SELECT COUNT(*) FROM odds WHERE timestamp >= NOW() - INTERVAL '24 hours'")).scalar()
-                sportsbooks = conn.execute(text("SELECT COUNT(DISTINCT sportsbook) FROM odds WHERE timestamp >= NOW() - INTERVAL '24 hours'")).scalar()
-                last_update_result = conn.execute(text("SELECT MAX(timestamp) AS ts FROM odds")).fetchone()
-                last_update = last_update_result[0] if last_update_result else None
-                
-                # Get top team in SAME connection
-                season, _ = current_phase_and_season()
-                rankings_query = """
-                    SELECT DISTINCT team, power_score, games_played, win_pct 
-                    FROM team_season_summary 
-                    WHERE season = :season
-                """
-                rankings_df = pd.read_sql_query(text(rankings_query), conn, params={"season": season})
-                
-                if rankings_df.empty:
-                    rankings_df = pd.read_sql_query(text(rankings_query), conn, params={"season": season - 1})
-
-                if not rankings_df.empty:
-                    top_team = to_full(rankings_df.loc[rankings_df['power_score'].idxmax()]['team'])
-                else:
-                    top_team = "N/A"
+            return pd.read_sql_query(text(query), conn, params=params or {})
+        else:
+            return pd.read_sql_query(query, conn, params=params)
     except Exception as e:
         print(f"SQL Query Error: {e}")
         return pd.DataFrame()
@@ -1209,14 +1189,14 @@ def api_betting_analysis():
                     
                     # FIXED: Get odds using proper team name matching
                     # First, get ALL odds (we'll match by team name, not game_id since game_id is null)
-                    odds_df = pd.read_sql_query("""
+                    odds_df = pd.read_sql_query(text("""
                         SELECT team, sportsbook, odds
                         FROM odds 
                         WHERE market = 'h2h'
                         AND odds IS NOT NULL
                         AND odds BETWEEN -800 AND 800
                         ORDER BY timestamp DESC
-                    """, conn)
+                    """, conn))
                     
                     if odds_df.empty:
                         print(f"  No odds found in database")
@@ -1384,19 +1364,14 @@ def get_betting_recommendations_debug():
                         continue
                     
                     # Get odds
-                    odds_df = pd.read_sql_query("""
-                        SELECT o.team, o.sportsbook, o.odds
-                        FROM odds o
-                        JOIN (
-                            SELECT team, sportsbook, MAX(timestamp) AS max_ts
-                            FROM odds 
-                            WHERE game_id = ? AND market = 'h2h'
-                            GROUP BY team, sportsbook
-                        ) latest ON o.team = latest.team 
-                                AND o.sportsbook = latest.sportsbook 
-                                AND o.timestamp = latest.max_ts
-                        WHERE o.game_id = ?
-                    """, conn, params=[game['game_id'], game['game_id']])
+                    odds_df = pd.read_sql_query(text("""
+                        SELECT team, sportsbook, odds
+                        FROM odds 
+                        WHERE market = 'h2h'
+                        AND odds IS NOT NULL
+                        AND odds BETWEEN -800 AND 800
+                        ORDER BY timestamp DESC
+                    """), conn)
                     
                     game_debug['has_odds'] = not odds_df.empty
                     game_debug['odds_count'] = len(odds_df)
@@ -1648,14 +1623,14 @@ def api_betting_analysis_fixed():
                     print(f"  Model: Home {home_prob:.1%}, Away {away_prob:.1%}")
                     
                     # Get odds with BETTER query
-                    odds_df = pd.read_sql_query("""
+                    odds_df = pd.read_sql_query(text("""
                         SELECT team, sportsbook, odds
                         FROM odds 
                         WHERE game_id = ? AND market = 'h2h'
                         AND odds IS NOT NULL
                         AND odds BETWEEN -1000 AND 1000  -- Filter out bad odds
                         ORDER BY timestamp DESC
-                    """, conn, params=[game['game_id']])
+                    """, conn, params=[game['game_id']]))
                     
                     print(f"  Found {len(odds_df)} odds records")
                     
