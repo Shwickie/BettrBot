@@ -219,20 +219,29 @@ def safe_sql_query(query, conn, params=None):
     """Helper to safely execute SQL queries on both SQLite and PostgreSQL"""
     try:
         if USE_CLOUD_DB:
-            return pd.read_sql_query(text(query), conn, params=params or {})
-        else:
-            # Convert named params to positional for SQLite if needed
-            if params and isinstance(params, dict):
-                # For SQLite, convert :param to ? and extract values
-                import re
-                param_names = re.findall(r':(\w+)', query)
-                sqlite_query = query
-                for param in param_names:
-                    sqlite_query = sqlite_query.replace(f':{param}', '?')
-                param_values = [params[name] for name in param_names]
-                return pd.read_sql_query(sqlite_query, conn, params=param_values)
-            else:
-                return pd.read_sql_query(query, conn, params=params)
+            with ENGINE.connect() as conn:
+                total_games = conn.execute(text("SELECT COUNT(*) FROM games")).scalar()
+                total_odds = conn.execute(text("SELECT COUNT(*) FROM odds WHERE timestamp >= NOW() - INTERVAL '24 hours'")).scalar()
+                sportsbooks = conn.execute(text("SELECT COUNT(DISTINCT sportsbook) FROM odds WHERE timestamp >= NOW() - INTERVAL '24 hours'")).scalar()
+                last_update_result = conn.execute(text("SELECT MAX(timestamp) AS ts FROM odds")).fetchone()
+                last_update = last_update_result[0] if last_update_result else None
+                
+                # Get top team in SAME connection
+                season, _ = current_phase_and_season()
+                rankings_query = """
+                    SELECT DISTINCT team, power_score, games_played, win_pct 
+                    FROM team_season_summary 
+                    WHERE season = :season
+                """
+                rankings_df = pd.read_sql_query(text(rankings_query), conn, params={"season": season})
+                
+                if rankings_df.empty:
+                    rankings_df = pd.read_sql_query(text(rankings_query), conn, params={"season": season - 1})
+
+                if not rankings_df.empty:
+                    top_team = to_full(rankings_df.loc[rankings_df['power_score'].idxmax()]['team'])
+                else:
+                    top_team = "N/A"
     except Exception as e:
         print(f"SQL Query Error: {e}")
         return pd.DataFrame()
@@ -1610,12 +1619,12 @@ def api_betting_analysis_fixed():
     
     try:
         # Get games
-        games = pd.read_sql_query("""
+        games = pd.read_sql_query(text("""
             SELECT game_id, away_team, home_team, game_date, start_time_local
             FROM games 
-            WHERE date(game_date) BETWEEN date(:start_date) AND date(:end_date)
+            WHERE date(game_date) BETWEEN :start_date AND :end_date
             ORDER BY game_date, start_time_local
-        """, conn, params={"start_date": today, "end_date": end})
+        """), conn, params={"start_date": today, "end_date": end})
 
         print(f"DEBUG FIXED: Found {len(games)} games")
         
@@ -1815,26 +1824,26 @@ def get_betting_recommendations():
         end = today + timedelta(days=7)
         
         # Get upcoming games
-        games = pd.read_sql_query("""
+        games = pd.read_sql_query(text("""
             SELECT game_id, away_team, home_team, game_date, start_time_local
             FROM games 
-            WHERE date(game_date) BETWEEN date(:start_date) AND date(:end_date)
+            WHERE date(game_date) BETWEEN :start_date AND :end_date
             ORDER BY game_date, start_time_local
-        """, conn, params={"start_date": today, "end_date": end})
+        """), conn, params={"start_date": today, "end_date": end})
 
         recommendations = []
         total_staked = 0.0
         ml_system = get_ml_prediction_system()
         
         # Get all odds once
-        all_odds = pd.read_sql_query("""
+        all_odds = pd.read_sql_query(text("""
             SELECT team, sportsbook, odds
             FROM odds 
             WHERE market = 'h2h'
             AND odds IS NOT NULL
             AND odds BETWEEN -800 AND 800
             ORDER BY timestamp DESC
-        """, conn)
+        """), conn)
         
         for _, game in games.iterrows():
             if not ml_system:
