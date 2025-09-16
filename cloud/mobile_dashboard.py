@@ -776,18 +776,58 @@ from templates import LOGIN_TEMPLATE, HTML_TEMPLATE
 @app.route('/login', methods=['GET','POST'])
 def login():
     if request.method == 'POST':
-        u = request.form['username'].strip().lower()
-        p = request.form['password']
-        if u in USERS and check_password_hash(USERS[u]['password'], p):
-            session['username'] = u
-            return redirect(url_for('dashboard'))
+        username = request.form['username'].strip().lower()
+        password = request.form['password']
+        
+        print(f"Login attempt for user: {username}")
+        
+        # Validate user exists and password is correct
+        if username in USERS:
+            user = USERS[username]
+            if check_password_hash(user['password'], password):
+                # CRITICAL: Set session properly
+                session.clear()  # Clear any existing session
+                session['username'] = username
+                session['user_bankroll'] = user['bankroll']
+                session['is_admin'] = user.get('is_admin', False)
+                session.permanent = True  # Make session persistent
+                
+                print(f"✅ User {username} logged in successfully - Bankroll: ${user['bankroll']:.2f}")
+                return redirect(url_for('dashboard'))
+            else:
+                print(f"❌ Invalid password for user {username}")
+        else:
+            print(f"❌ User {username} not found. Available users: {list(USERS.keys())}")
+        
         return render_template_string(LOGIN_TEMPLATE, error="Invalid username or password")
+    
     return render_template_string(LOGIN_TEMPLATE)
 
+# 7. FIXED logout route to clear session properly
 @app.route('/logout')
 def logout():
+    username = session.get('username', 'unknown')
+    print(f"User {username} logging out")
     session.clear()
     return redirect(url_for('login'))
+
+# 8. ADD route to check which user is currently logged in
+@app.route('/api/current-user')
+@login_required  
+def current_user():
+    username = session.get('username')
+    if username and username in USERS:
+        user = USERS[username]
+        return jsonify({
+            'username': username,
+            'name': user.get('name', username),
+            'bankroll': user.get('bankroll', 0),
+            'is_admin': user.get('is_admin', False)
+        })
+    else:
+        return jsonify({'error': 'No valid user session'}), 401
+
+print("🔧 Session fixes loaded - Apply these changes to mobile_dashboard.py")
 
 # -----------------
 # Dashboard page
@@ -797,12 +837,28 @@ def logout():
 def dashboard():
     if request.method == 'HEAD':
         return '', 204
-    username = session['username']
-    user = USERS[username]
-    conn = get_db()  # use sqlite3 connection everywhere here
-
     
-    # top row stats
+    # CRITICAL: Validate session exists and user is valid
+    username = session.get('username')
+    if not username:
+        print("❌ No username in session, redirecting to login")
+        return redirect(url_for('login'))
+    
+    if username not in USERS:
+        print(f"❌ Username {username} not found in USERS, clearing session")
+        session.clear()
+        return redirect(url_for('login'))
+    
+    user = USERS[username]
+    print(f"✅ Dashboard loaded for user: {username} - Bankroll: ${user['bankroll']:.2f}")
+    
+    # Sync session bankroll with user data
+    session['user_bankroll'] = user['bankroll']
+    
+    # ... rest of dashboard code (keep existing stats logic) ...
+    conn = get_db()
+    
+    # top row stats (keep existing logic)
     try:
         if USE_CLOUD_DB:
             with ENGINE.connect() as conn:
@@ -824,7 +880,7 @@ def dashboard():
         print(f"Dashboard stats error: {e}")
         total_games, total_odds, sportsbooks, last_str = 0, 0, 0, 'Error'
 
-    # find true top team (same logic as rankings)
+    # find top team (keep existing logic)
     try:
         season, _ = current_phase_and_season()
         rankings_df = pd.read_sql_query(
@@ -838,12 +894,9 @@ def dashboard():
             )
 
         injuries_df = load_injury_impact_from_detail(conn)[['team','injury_impact']]
-
-
         merged_df = rankings_df.merge(injuries_df, on='team', how='left')
         merged_df['injury_impact'] = merged_df['injury_impact'].fillna(0.0)
         merged_df['form_component'] = np.where(merged_df['games_played'] > 0, (merged_df['win_pct'] - 0.5) * 20, 0)
-        # lighter injury weight so numbers donâ€™t go negative
         merged_df['adjusted_power'] = (merged_df['power_score'] * 0.6 +
                                        merged_df['form_component'] * 0.2 -
                                        merged_df['injury_impact'] * 0.10)
@@ -862,7 +915,7 @@ def dashboard():
         'last_update': last_str,
     }
 
-    return render_template_string(HTML_TEMPLATE, username=username, user=user, stats=stats, db_type='local', users=USERS)
+    return render_template_string(HTML_TEMPLATE, username=username, user=user, stats=stats, db_type='cloud' if USE_CLOUD_DB else 'local', users=USERS)
 
 # ==================
 # API: /api/rankings
@@ -1323,6 +1376,61 @@ def api_betting_analysis():
         "slate_budget": round(user_bankroll * 0.10, 2),
         "total_recommended": round(total_recommended, 2),
     })
+
+
+@comprehensive_ai_bp.route("/api/ai-chat-comprehensive", methods=["POST"])
+def comprehensive_ai_chat():
+    try:
+        data = request.get_json() or {}
+        message = data.get('message', '').strip()
+        game_id = data.get('game_id')
+
+        # CRITICAL: Proper user validation
+        username = session.get('username')
+        print(f"AI Chat request - Session username: {username}")
+        
+        if not username:
+            print("❌ No username in session")
+            return jsonify({
+                'ok': False,
+                'error': 'No active session - please log in'
+            }), 401
+            
+        if username not in USERS:
+            print(f"❌ Username {username} not found in USERS")
+            session.clear()
+            return jsonify({
+                'ok': False,
+                'error': 'Invalid session - user not found'
+            }), 401
+            
+        user_data = USERS[username]
+        print(f"✅ AI Chat for user: {username} - Bankroll: ${user_data.get('bankroll', 0):.2f}")
+
+        # Use actual user data (not session fallback)
+        user_context = {
+            'bankroll': user_data.get('bankroll', 500),
+            'username': username,
+            'is_admin': user_data.get('is_admin', False)
+        }
+
+        if not message:
+            return jsonify({
+                'ok': False,
+                'error': 'No message provided'
+            }), 400
+
+        # Process message with proper user context
+        internal = ai_system.process_message(message, game_id, user_context)
+        payload = ai_system._to_frontend(internal)
+        return jsonify(payload)
+
+    except Exception as e:
+        logger.error(f"Comprehensive AI chat error: {e}")
+        return jsonify({
+            'ok': False,
+            'error': 'Internal server error'
+        }), 500
 
 
 @app.route('/api/ai-betting-recommendations-debug', methods=['GET'])
@@ -1807,11 +1915,21 @@ def get_betting_recommendations():
     """FIXED: Now uses proper team name matching"""
     try:
         username = session.get('username')
+        print(f"Betting recommendations request - Session username: {username}")
+        
         if not username:
-            return jsonify({'ok': False, 'error': 'User not logged in'}), 401
+            return jsonify({'ok': False, 'error': 'No active session'}), 401
             
-        user_data = USERS.get(username, {})
+        if username not in USERS:
+            print(f"❌ Username {username} not found in USERS")
+            session.clear()
+            return jsonify({'ok': False, 'error': 'Invalid session'}), 401
+            
+        user_data = USERS[username]
         user_bankroll = float(user_data.get('bankroll', 500))
+        
+        print(f"✅ Betting recommendations for: {username} - Bankroll: ${user_bankroll:.2f}")
+
         
         conn = get_db()
         today = datetime.utcnow().date()
@@ -1946,13 +2064,9 @@ def get_betting_recommendations():
             'success': True,
             'result': {
                 'recommendations': recommendations,
-                'bankroll': user_bankroll,
+                'bankroll': user_bankroll,  # Use actual user bankroll
                 'total_recommended': round(total_staked, 2),
-                'remaining_budget': round(user_bankroll * 0.10 - total_staked, 2),
-                'risk_level': 'Conservative' if total_staked < user_bankroll * 0.05 else 'Moderate',
-                'games_scanned': len(games),
-                'minimum_edge': '2.0%',
-                'minimum_confidence': '55%'
+                'user_info': f"Recommendations for {user_data.get('name', username)}"
             }
         })
         
@@ -1963,6 +2077,26 @@ def get_betting_recommendations():
             'success': False,
             'error': str(e)
         }), 500
+
+# 6. ADD debug route to check session state
+@app.route('/api/debug/session')
+@login_required
+def debug_session():
+    username = session.get('username')
+    user_data = USERS.get(username, {})
+    
+    return jsonify({
+        'session_username': username,
+        'user_exists_in_users': username in USERS if username else False,
+        'user_bankroll': user_data.get('bankroll', 0),
+        'user_name': user_data.get('name', 'Unknown'),
+        'is_admin': user_data.get('is_admin', False),
+        'session_keys': list(session.keys()),
+        'total_users_loaded': len(USERS),
+        'available_users': list(USERS.keys()),
+        'session_bankroll': session.get('user_bankroll', 'Not set')
+    })
+
 
 @app.route('/api/delete-bet', methods=['POST'])
 @login_required
@@ -2335,6 +2469,27 @@ def force_reload_models():
         _model_pack = None
         _ml_prediction_system = None
         print("Forced model cache clear on startup")
+
+@app.before_request
+def validate_session():
+    # Skip validation for specific routes
+    if request.endpoint in ['login', 'logout', 'static']:
+        return
+    
+    # Skip validation for health checks
+    if request.path in ['/health', '/healthz', '/version', '/api/health']:
+        return
+    
+    # For API routes requiring authentication
+    if request.path.startswith('/api/') and request.endpoint != 'login':
+        username = session.get('username')
+        
+        # Check if session has username but user doesn't exist
+        if username and username not in USERS:
+            print(f"❌ Session cleanup: User {username} no longer exists")
+            session.clear()
+            if request.path.startswith('/api/'):
+                return jsonify({'error': 'Session expired - user not found'}), 401
 
 
 # Add this route to mobile_dashboard.py in the admin section:
