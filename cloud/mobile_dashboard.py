@@ -38,14 +38,22 @@ if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
 
 USE_CLOUD_DB = DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg2://"))
-
 if USE_CLOUD_DB:
     print(f"Using cloud database: {DATABASE_URL[:50]}...")
     ENGINE = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
         pool_recycle=300,
-        connect_args={"sslmode": "require"} if "sslmode=" not in DATABASE_URL else {}
+        pool_timeout=20,
+        pool_size=5,
+        max_overflow=10,
+        connect_args={
+            "sslmode": "require",
+            "connect_timeout": 10,
+            "keepalives_idle": 600,
+            "keepalives_interval": 30,
+            "keepalives_count": 3
+        }
     )
     print("Using cloud PostgreSQL")
 else:
@@ -693,6 +701,7 @@ def load_injury_impact_from_detail(conn):
 
 def get_db():
     if USE_CLOUD_DB:
+        # Always return a fresh connection for cloud DB
         return ENGINE.connect()
     else:
         if not hasattr(g, "_db"):
@@ -861,46 +870,32 @@ def api_rankings():
     """FIXED rankings with proper duplicate handling"""
     season, _phase = current_phase_and_season()
     
+    season, _phase = current_phase_and_season()
+    
     try:
-        # FIXED: Use DISTINCT and proper query structure
         if USE_CLOUD_DB:
-            conn = ENGINE.connect()
-            base_query = """
-                SELECT DISTINCT
-                    team,
-                    power_score,
-                    wins,
-                    losses,
-                    games_played,
-                    win_pct,
-                    point_diff
-                FROM team_season_summary 
-                WHERE season = :season
-            """
-            pr = pd.read_sql_query(text(base_query), conn, params={"season": season})
-            conn.close()
+            with ENGINE.connect() as conn:
+                base_query = """
+                    SELECT DISTINCT team, power_score, wins, losses,
+                        games_played, win_pct, point_diff
+                    FROM team_season_summary 
+                    WHERE season = :season
+                """
+                pr = pd.read_sql_query(text(base_query), conn, params={"season": season})
+                
+                if pr.empty:
+                    pr = pd.read_sql_query(text(base_query), conn, params={"season": season - 1})
         else:
             conn = get_db()
             base_query = """
-                SELECT DISTINCT
-                    team,
-                    power_score,
-                    wins,
-                    losses,
-                    games_played,
-                    win_pct,
-                    point_diff
+                SELECT DISTINCT team, power_score, wins, losses,
+                    games_played, win_pct, point_diff
                 FROM team_season_summary 
                 WHERE season = ?
             """
             pr = pd.read_sql_query(base_query, conn, params=[season])
-        
-        if pr.empty:
-            if USE_CLOUD_DB:
-                conn = ENGINE.connect()
-                pr = pd.read_sql_query(text(base_query), conn, params={"season": season - 1})
-                conn.close()
-            else:
+            
+            if pr.empty:
                 pr = pd.read_sql_query(base_query, conn, params=[season - 1])
         
         # CRITICAL: Remove any remaining duplicates at DataFrame level
