@@ -48,20 +48,33 @@ if USE_CLOUD_DB:
     ENGINE = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
-        pool_recycle=280,  # Shorter recycle time
-        pool_timeout=30,   # Longer timeout
-        pool_size=3,       # Smaller pool for Render
-        max_overflow=5,    # Smaller overflow
+        pool_recycle=280,
+        pool_timeout=30,
+        pool_size=2,  # Smaller pool
+        max_overflow=3,
         connect_args={
             "sslmode": "require",
             "connect_timeout": 30,
             "application_name": "bettrbot_dashboard",
-            # Remove keepalive settings that can cause issues
         },
-        # Add engine event to handle disconnections
         pool_reset_on_return=None,
-        echo=False  # Set to True for debugging
+        echo=False,
+        # Add these parameters to handle SSL issues better
+        isolation_level="AUTOCOMMIT"
     )
+    
+    # Add connection event to handle SSL disconnections
+    from sqlalchemy import event
+    
+    @event.listens_for(ENGINE, "connect")
+    def set_postgresql_settings(dbapi_connection, connection_record):
+        try:
+            with dbapi_connection.cursor() as cursor:
+                cursor.execute("SET statement_timeout = '30s'")
+                cursor.execute("SET lock_timeout = '10s'")
+        except Exception:
+            pass  # Ignore if these settings fail
+    
     print("Using cloud PostgreSQL with robust connection handling")
 else:
     # Local SQLite setup
