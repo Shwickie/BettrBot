@@ -580,7 +580,6 @@ def _close_db(_exc):
 # -----------------
 # User management
 # -----------------
-USER_DATA_FILE = 'user_accounts.json'
 
 def save_user_accounts(users):
     try:
@@ -621,7 +620,6 @@ def load_user_accounts():
         u.setdefault('total_withdrawals', 0.0)
         u.setdefault('bankroll', u.get('bankroll', 0.0))
         u.setdefault('is_admin', False)
-    save_user_accounts(out)
     return out
 
 USERS = load_user_accounts()
