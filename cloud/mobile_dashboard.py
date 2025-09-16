@@ -962,16 +962,28 @@ def api_predictions():
     today = datetime.utcnow().date()
     horizon = today + timedelta(days=21)
 
+    
     # Load games
     try:
-        games = pd.read_sql_query(text("""
-        SELECT game_id, away_team AS away, home_team AS home, game_date, start_time_local AS game_time
-        FROM games
-        WHERE date(game_date) BETWEEN date(:start_date) AND date(:end_date)
-        ORDER BY date(game_date), time(start_time_local)
-    """), conn, params={"start_date": today, "end_date": horizon})
+        if USE_CLOUD_DB:
+            with ENGINE.connect() as conn:
+                games = pd.read_sql_query(text("""
+                    SELECT game_id, away_team AS away, home_team AS home, game_date, start_time_local AS game_time
+                    FROM games
+                    WHERE game_date BETWEEN :start_date AND :end_date
+                    ORDER BY game_date, start_time_local
+                """), conn, params={"start_date": today, "end_date": horizon})
+        else:
+            conn = get_db()
+            games = pd.read_sql_query("""
+                SELECT game_id, away_team AS away, home_team AS home, game_date, start_time_local AS game_time
+                FROM games
+                WHERE date(game_date) BETWEEN date(?) AND date(?)
+                ORDER BY date(game_date), time(start_time_local)
+            """, conn, params=[today, horizon])
 
-    except Exception:
+    except Exception as e:
+        print(f"Error loading games for predictions: {e}")
         return jsonify([])
 
     # --- build power fallback once ---
