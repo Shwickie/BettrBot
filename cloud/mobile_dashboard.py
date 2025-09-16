@@ -1084,7 +1084,7 @@ def api_predictions():
             continue
 
     # Sort by date/time (keep your existing sort)
-    rows.sort(key=lambda r: (r['game_date'], (r.get('game_time') or '99:99')[:5]))
+    rows.sort(key=lambda r: (r['game_date'], str(r.get('game_time', '99:99'))[:5]))
     return jsonify(rows)
 
 
