@@ -384,7 +384,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Prefer a persistent path on Render; allow override by env
 USERS_PATH_DEFAULT = os.environ.get("BETTR_USERS_PATH")
 if not USERS_PATH_DEFAULT:
-    USERS_PATH_DEFAULT = "/data/user_accounts.json" if os.path.isdir("/data") else os.path.join(BASE_DIR, "user_accounts.json")
+    USERS_PATH_DEFAULT = "/cloud/user_accounts.json" if os.path.isdir("/cloud") else os.path.join(BASE_DIR, "user_accounts.json")
 
 USER_DATA_FILE = USERS_PATH_DEFAULT
 os.makedirs(os.path.dirname(USER_DATA_FILE), exist_ok=True)
