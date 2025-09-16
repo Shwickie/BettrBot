@@ -50,8 +50,8 @@ if USE_CLOUD_DB:
         pool_pre_ping=True,
         pool_recycle=280,
         pool_timeout=30,
-        pool_size=2,  # Smaller pool
-        max_overflow=3,
+        pool_size=5,  # Smaller pool
+        max_overflow=10,
         connect_args={
             "sslmode": "require",
             "connect_timeout": 30,
@@ -380,10 +380,22 @@ def ensure_indexes():
 _initialized = False
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-USER_DATA_FILE = os.environ.get("BETTR_USERS_PATH", os.path.join(BASE_DIR, "user_accounts.json"))
 
+# Prefer a persistent path on Render; allow override by env
+USERS_PATH_DEFAULT = os.environ.get("BETTR_USERS_PATH")
+if not USERS_PATH_DEFAULT:
+    USERS_PATH_DEFAULT = "/data/user_accounts.json" if os.path.isdir("/data") else os.path.join(BASE_DIR, "user_accounts.json")
+
+USER_DATA_FILE = USERS_PATH_DEFAULT
+os.makedirs(os.path.dirname(USER_DATA_FILE), exist_ok=True)
+
+# Create an empty file once so load() doesn’t blow up
+if not os.path.exists(USER_DATA_FILE):
+    with open(USER_DATA_FILE, "w") as f:
+        f.write("{}")
 
 app.secret_key = os.environ.get("FLASK_SECRET", "bettr-bot-enhanced-2025")
+print(f"🔐 Using users file: {USER_DATA_FILE}")
 
 
 @app.route('/debug/routes')
@@ -761,46 +773,96 @@ def _close_db(_exc):
 # User management
 # -----------------
 
-def save_user_accounts(users):
+def save_user_accounts(users: dict):
     try:
-        with open(USER_DATA_FILE, 'w') as f:
+        with open(USER_DATA_FILE, "w") as f:
             json.dump(users, f, indent=2)
     except Exception as e:
         print(f"Error saving user accounts: {e}")
 
-def load_user_accounts():
+def _hash_if_plain(pw: str) -> str:
+    # Accept WerkZeug/Bcrypt/Scrypt hashes; otherwise hash as plain text
+    if not isinstance(pw, str):
+        pw = str(pw)
+    known_prefixes = ("pbkdf2:", "scrypt:", "bcrypt$")
+    return pw if any(pw.startswith(p) for p in known_prefixes) else generate_password_hash(pw)
+
+def load_user_accounts() -> dict:
+    """
+    Loads users from USER_DATA_FILE.
+    Accepts either:
+      - dict {username: {password|password_hash, ...}}
+      - list of {username, password|password_hash, ...}
+    Ensures all usernames are lowercase and passwords are hashed.
+    Always keeps an admin user if one isn’t provided.
+    """
     defaults = {
-        'admin': {
-            'password': generate_password_hash('admin123'),
-            'name': 'Admin',
-            'bankroll': 5000.0,
-            'total_deposits': 5000.0,
-            'total_withdrawals': 0.0,
-            'betting_profit_loss': 0.0,
-            'bet_history': [],
-            'money_transactions': [],
-            'is_admin': True
+        "admin": {
+            "password": generate_password_hash("admin123"),
+            "name": "Admin",
+            "bankroll": 5000.0,
+            "total_deposits": 5000.0,
+            "total_withdrawals": 0.0,
+            "betting_profit_loss": 0.0,
+            "bet_history": [],
+            "money_transactions": [],
+            "is_admin": True,
         }
     }
-    existing = {}
-    if os.path.exists(USER_DATA_FILE):
-        try:
-            with open(USER_DATA_FILE, 'r') as f:
-                existing = json.load(f)
-        except Exception as e:
-            print(f"Error reading {USER_DATA_FILE}: {e}")
-    out = {k.lower(): v for k,v in existing.items()}
-    for k,v in defaults.items():
-        out.setdefault(k, v)
-    for u in out.values():
-        u.setdefault('bet_history', [])
-        u.setdefault('money_transactions', [])
-        u.setdefault('betting_profit_loss', 0.0)
-        u.setdefault('total_deposits', 0.0)
-        u.setdefault('total_withdrawals', 0.0)
-        u.setdefault('bankroll', u.get('bankroll', 0.0))
-        u.setdefault('is_admin', False)
+
+    existing_raw = None
+    try:
+        with open(USER_DATA_FILE, "r") as f:
+            txt = f.read().strip()
+            existing_raw = json.loads(txt) if txt else {}
+    except Exception as e:
+        print(f"Error reading {USER_DATA_FILE}: {e}")
+        existing_raw = {}
+
+    out: dict[str, dict] = {}
+
+    # Support both dict and list styles
+    if isinstance(existing_raw, list):
+        for rec in existing_raw:
+            uname = str(rec.get("username", "")).strip().lower()
+            if not uname:
+                continue
+            pw = rec.get("password_hash") or rec.get("password") or ""
+            user = {
+                "password": _hash_if_plain(pw),
+                "name": rec.get("name", uname),
+                "bankroll": float(rec.get("bankroll", 0.0)),
+                "total_deposits": float(rec.get("total_deposits", 0.0)),
+                "total_withdrawals": float(rec.get("total_withdrawals", 0.0)),
+                "betting_profit_loss": float(rec.get("betting_profit_loss", 0.0)),
+                "bet_history": rec.get("bet_history", []) or [],
+                "money_transactions": rec.get("money_transactions", []) or [],
+                "is_admin": bool(rec.get("is_admin", False)),
+            }
+            out[uname] = user
+    elif isinstance(existing_raw, dict):
+        for k, v in existing_raw.items():
+            uname = str(k).strip().lower()
+            pw = (v or {}).get("password_hash") or (v or {}).get("password") or ""
+            user = dict(v or {})
+            user["password"] = _hash_if_plain(pw)
+            user.setdefault("name", uname)
+            user.setdefault("bankroll", 0.0)
+            user.setdefault("total_deposits", 0.0)
+            user.setdefault("total_withdrawals", 0.0)
+            user.setdefault("betting_profit_loss", 0.0)
+            user.setdefault("bet_history", [])
+            user.setdefault("money_transactions", [])
+            user.setdefault("is_admin", False)
+            out[uname] = user
+    else:
+        out = {}
+
+    # Ensure an admin exists
+    out.setdefault("admin", defaults["admin"])
+
     save_user_accounts(out)
+    print(f"👥 Loaded {len(out)} users: {sorted(out.keys())}")
     return out
 
 USERS = load_user_accounts()
