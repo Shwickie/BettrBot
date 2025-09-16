@@ -25,11 +25,14 @@ from flask import Blueprint
 import os, sys
 from sqlalchemy import create_engine, text
 import sqlite3
+import time
+from functools import wraps
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 # robust import so Windows path works when running from /dashboard
+# FIXED DATABASE SETUP - Robust PostgreSQL connection handling
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 # Handle Render's postgres:// URLs
@@ -37,17 +40,30 @@ if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
 
 USE_CLOUD_DB = DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg2://"))
+
 if USE_CLOUD_DB:
     print(f"Using cloud database: {DATABASE_URL[:50]}...")
+    
+    # CRITICAL: More robust connection settings for Render PostgreSQL
     ENGINE = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
-        pool_recycle=300,
-        pool_timeout=20,
-        pool_size=5,
-        max_overflow=10
+        pool_recycle=280,  # Shorter recycle time
+        pool_timeout=30,   # Longer timeout
+        pool_size=3,       # Smaller pool for Render
+        max_overflow=5,    # Smaller overflow
+        connect_args={
+            "sslmode": "require",
+            "connect_timeout": 30,
+            "application_name": "bettrbot_dashboard",
+            # Remove keepalive settings that can cause issues
+        },
+        # Add engine event to handle disconnections
+        pool_reset_on_return=None,
+        pool_pre_ping=True,
+        echo=False  # Set to True for debugging
     )
-    print("Using cloud PostgreSQL")
+    print("Using cloud PostgreSQL with robust connection handling")
 else:
     # Local SQLite setup
     DEFAULT_DB = r"E:/Bettr Bot/betting-bot/data/betting.db" if os.name == "nt" else "/tmp/betting.db"
@@ -56,9 +72,8 @@ else:
     ENGINE = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
     print(f"Using local SQLite: {DB_PATH}")
 
-# Set global variables for consistency
+# Set global engine reference
 engine = ENGINE
-
 try:
     from model.prediction import FixedNFLSystem
     print("Successfully imported FixedNFLSystem from model.prediction")
@@ -678,13 +693,49 @@ def load_injury_impact_from_detail(conn):
 # Per-request sqlite3 connection (same DB as SQLAlchemy)
 def get_db():
     if USE_CLOUD_DB:
-        # Always return a fresh connection for cloud DB
-        return ENGINE.connect()
+        # FIXED: Better connection handling with retry logic
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                conn = ENGINE.connect()
+                # Test the connection
+                conn.execute(text("SELECT 1"))
+                return conn
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    print(f"Failed to connect after {max_retries} attempts: {e}")
+                    raise
+                print(f"Connection attempt {attempt + 1} failed, retrying...")
+                time.sleep(0.5)  # Brief delay before retry
     else:
         if not hasattr(g, "_db"):
             g._db = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
             g._db.row_factory = sqlite3.Row
         return g._db
+
+def db_retry(max_retries=3):
+    """Decorator to retry database operations on connection failures"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if "SSL connection has been closed" in str(e) or "connection" in str(e).lower():
+                        if attempt == max_retries - 1:
+                            print(f"DB operation failed after {max_retries} attempts: {e}")
+                            return jsonify({"error": "Database connection failed", "details": str(e)}), 500
+                        print(f"DB retry attempt {attempt + 1} for {func.__name__}")
+                        time.sleep(0.5)
+                        continue
+                    else:
+                        # Non-connection error, don't retry
+                        raise
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
 @app.teardown_appcontext
 def _close_db(_exc):
     db = getattr(g, '_db', None)
@@ -807,6 +858,7 @@ print("🔧 Session fixes loaded - Apply these changes to mobile_dashboard.py")
 # Dashboard page
 # -----------------
 @app.route('/', methods=['GET', 'HEAD'])
+@db_retry()
 @login_required
 def dashboard():
     if request.method == 'HEAD':
@@ -895,6 +947,7 @@ def dashboard():
 # API: /api/rankings
 # ==================
 @app.route('/api/rankings')
+@db_retry()
 def api_rankings():
     """FIXED rankings with proper duplicate handling"""
     season, _phase = current_phase_and_season()
@@ -983,6 +1036,7 @@ def api_rankings():
 # API: /api/predictions
 # ======================
 @app.route('/api/predictions')
+@db_retry()
 def api_predictions():
     """Predictions using ML when possible, otherwise power-based fallback (no crashes)."""
     conn = get_db()
@@ -1156,6 +1210,7 @@ def debug_predictions():
 # API: /api/betting-analysis
 # =============================
 @app.route('/api/betting-analysis')
+@db_retry()
 def api_betting_analysis():
     """FIXED: Now properly matches team names between games and odds"""
     conn = get_db()
