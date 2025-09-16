@@ -60,7 +60,6 @@ if USE_CLOUD_DB:
         },
         # Add engine event to handle disconnections
         pool_reset_on_return=None,
-        pool_pre_ping=True,
         echo=False  # Set to True for debugging
     )
     print("Using cloud PostgreSQL with robust connection handling")
