@@ -227,8 +227,10 @@ def safe_sql_query(query, conn, params=None):
     """Helper to safely execute SQL queries on both SQLite and PostgreSQL"""
     try:
         if USE_CLOUD_DB:
+            # PostgreSQL - use named parameters with text()
             return pd.read_sql_query(text(query), conn, params=params or {})
         else:
+            # SQLite - use positional parameters without text()
             return pd.read_sql_query(query, conn, params=params)
     except Exception as e:
         print(f"SQL Query Error: {e}")
@@ -1182,16 +1184,26 @@ def api_betting_analysis():
                     print(f"FIXED: {game['away_team']} @ {game['home_team']}")
                     print(f"  Model: Home {home_prob:.1%}, Away {away_prob:.1%}")
                     
-                    # FIXED: Get odds using proper team name matching
-                    # First, get ALL odds (we'll match by team name, not game_id since game_id is null)
-                    odds_df = pd.read_sql_query(text("""
-                        SELECT team, sportsbook, odds
-                        FROM odds 
-                        WHERE market = 'h2h'
-                        AND odds IS NOT NULL
-                        AND odds BETWEEN -800 AND 800
-                        ORDER BY timestamp DESC
-                    """, conn))
+                    
+                    # FIXED - proper parameter binding for both databases
+                    if USE_CLOUD_DB:
+                        odds_df = pd.read_sql_query(text("""
+                            SELECT team, sportsbook, odds
+                            FROM odds 
+                            WHERE game_id = :game_id AND market = 'h2h'
+                            AND odds IS NOT NULL
+                            AND odds BETWEEN -1000 AND 1000
+                            ORDER BY timestamp DESC
+                        """), conn, params={"game_id": game['game_id']})
+                    else:
+                        odds_df = pd.read_sql_query("""
+                            SELECT team, sportsbook, odds
+                            FROM odds 
+                            WHERE game_id = ? AND market = 'h2h'
+                            AND odds IS NOT NULL
+                            AND odds BETWEEN -1000 AND 1000
+                            ORDER BY timestamp DESC
+                        """, conn, params=[game['game_id']])
                     
                     if odds_df.empty:
                         print(f"  No odds found in database")
@@ -1988,17 +2000,31 @@ def api_games():
 
         game_ids = games['game_id'].tolist()
         if game_ids:
-            ph = ",".join(["?"] * len(game_ids))
-            odds = pd.read_sql_query(f"""
-                SELECT o.game_id, o.team, o.sportsbook, o.odds, o.timestamp
-                FROM odds o
-                JOIN (
-                    SELECT game_id, team, sportsbook, MAX(timestamp) AS ts
-                    FROM odds
-                    WHERE market='h2h' AND game_id IN ({ph})
-                    GROUP BY game_id, team, sportsbook
-                ) x ON x.game_id=o.game_id AND x.team=o.team AND x.sportsbook=o.sportsbook AND x.ts=o.timestamp
-            """, conn, params=game_ids)
+            if USE_CLOUD_DB:
+                ph = ",".join([f":id{i}" for i in range(len(game_ids))])
+                params = {f"id{i}": gid for i, gid in enumerate(game_ids)}
+                odds = pd.read_sql_query(text(f"""
+                    SELECT o.game_id, o.team, o.sportsbook, o.odds, o.timestamp
+                    FROM odds o
+                    JOIN (
+                        SELECT game_id, team, sportsbook, MAX(timestamp) AS ts
+                        FROM odds
+                        WHERE market='h2h' AND game_id IN ({ph})
+                        GROUP BY game_id, team, sportsbook
+                    ) x ON x.game_id=o.game_id AND x.team=o.team AND x.sportsbook=o.sportsbook AND x.ts=o.timestamp
+                """), conn, params=params)
+            else:
+                ph = ",".join(["?"] * len(game_ids))
+                odds = pd.read_sql_query(f"""
+                    SELECT o.game_id, o.team, o.sportsbook, o.odds, o.timestamp
+                    FROM odds o
+                    JOIN (
+                        SELECT game_id, team, sportsbook, MAX(timestamp) AS ts
+                        FROM odds
+                        WHERE market='h2h' AND game_id IN ({ph})
+                        GROUP BY game_id, team, sportsbook
+                    ) x ON x.game_id=o.game_id AND x.team=o.team AND x.sportsbook=o.sportsbook AND x.ts=o.timestamp
+                """, conn, params=game_ids)
             
             # FIXED: Better odds processing
             odds_processed = []
