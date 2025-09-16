@@ -30,7 +30,6 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 # robust import so Windows path works when running from /dashboard
-# SIMPLIFIED DATABASE SETUP - SINGLE SOURCE OF TRUTH
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 # Handle Render's postgres:// URLs
@@ -46,14 +45,7 @@ if USE_CLOUD_DB:
         pool_recycle=300,
         pool_timeout=20,
         pool_size=5,
-        max_overflow=10,
-        connect_args={
-            "sslmode": "require",
-            "connect_timeout": 10,
-            "keepalives_idle": 600,
-            "keepalives_interval": 30,
-            "keepalives_count": 3
-        }
+        max_overflow=10
     )
     print("Using cloud PostgreSQL")
 else:
@@ -63,6 +55,9 @@ else:
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     ENGINE = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
     print(f"Using local SQLite: {DB_PATH}")
+
+# Set global variables for consistency
+engine = ENGINE
 
 try:
     from model.prediction import FixedNFLSystem
@@ -334,30 +329,11 @@ def build_features_for_games(conn, games_df: pd.DataFrame) -> pd.DataFrame:
 # =========================
 # DB PATH (single source)
 # =========================
-DEFAULT_DB = r"E:/Bettr Bot/betting-bot/data/betting.db"
-DB_PATH = os.environ.get("BETTR_DB_PATH", DEFAULT_DB)
 
-# SQLAlchemy engine for summary stats
-_engine = create_engine(f"sqlite:///{DB_PATH}")
-
-# Flask app
 app = Flask(__name__)
 # register AI blueprint at /api/ai-*
 app.register_blueprint(comprehensive_ai_bp, url_prefix='')
 app.secret_key = 'bettr-bot-enhanced-2025'
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
-USE_CLOUD_DB = DATABASE_URL.startswith(("postgres://", "postgresql://"))
-
-# create engine
-if USE_CLOUD_DB:
-    engine = create_engine(
-    DATABASE_URL if "sslmode=" in DATABASE_URL else f"{DATABASE_URL}&sslmode=require" if "?" in DATABASE_URL else f"{DATABASE_URL}?sslmode=require",
-    pool_pre_ping=True
-)
-else:
-    DEFAULT_DB = r"E:/Bettr Bot/betting-bot/data/betting.db"
-    DB_PATH = os.environ.get("BETTR_DB_PATH", DEFAULT_DB)
-    engine = create_engine(f"sqlite:///{DB_PATH}")
 
 # --- ADD: one-time indexes + WAL ---
 def ensure_indexes():
@@ -700,7 +676,6 @@ def load_injury_impact_from_detail(conn):
     return agg[['team','injury_impact','total_injuries','qb_risk','skill_position_risk']]
 
 # Per-request sqlite3 connection (same DB as SQLAlchemy)
-
 def get_db():
     if USE_CLOUD_DB:
         # Always return a fresh connection for cloud DB
@@ -710,7 +685,6 @@ def get_db():
             g._db = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
             g._db.row_factory = sqlite3.Row
         return g._db
-
 @app.teardown_appcontext
 def _close_db(_exc):
     db = getattr(g, '_db', None)
@@ -2598,25 +2572,24 @@ def api_admin_wipe_deposits_withdrawals():
 @app.route("/healthz")
 def healthz():
     return {"ok": True}, 200
-# Health
 @app.route('/api/health')
 def api_health():
     try:
-        if DB_KIND == "pg":
+        if USE_CLOUD_DB:
             with ENGINE.connect() as conn:
                 has_tss = conn.execute(text("SELECT to_regclass('public.team_season_summary')")).scalar()
                 has_games = conn.execute(text("SELECT to_regclass('public.games')")).scalar()
                 has_odds  = conn.execute(text("SELECT to_regclass('public.odds')")).scalar()
                 return jsonify({
                     'backend': 'postgres',
-                    'db_url_or_path': DB_INFO,
+                    'db_url_or_path': DATABASE_URL[:50] + "...",
                     'team_season_summary': bool(has_tss),
                     'games': bool(has_games),
                     'odds': bool(has_odds),
                 })
         else:
             # SQLite
-            con = sqlite3.connect(DB_INFO)
+            con = sqlite3.connect(DB_PATH)
             con.row_factory = sqlite3.Row
             try:
                 cur = con.cursor()
@@ -2630,15 +2603,13 @@ def api_health():
                 con.close()
             return jsonify({
                 'backend': 'sqlite',
-                'db_url_or_path': DB_INFO,
+                'db_url_or_path': DB_PATH,
                 'team_season_summary': has_tss,
                 'games': has_games,
                 'odds': has_odds,
             })
     except Exception as e:
-        return jsonify({'error': str(e), 'db_url_or_path': DB_INFO, 'backend': DB_KIND}), 500
-
-
+        return jsonify({'error': str(e), 'db_url_or_path': DB_PATH if not USE_CLOUD_DB else DATABASE_URL[:50] + "...", 'backend': 'postgres' if USE_CLOUD_DB else 'sqlite'}), 500
 # Entrypoint
 
 def main():
