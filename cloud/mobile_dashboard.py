@@ -1378,7 +1378,7 @@ def api_betting_analysis():
     })
 
 
-@comprehensive_ai_bp.route("/api/ai-chat-comprehensive", methods=["POST"])
+@app.route("/api/ai-chat-comprehensive", methods=["POST"])
 def comprehensive_ai_chat():
     try:
         data = request.get_json() or {}
