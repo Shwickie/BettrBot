@@ -110,6 +110,7 @@ except Exception:
     sys.path.append(os.path.dirname(__file__))
     from ai_chat_stub import comprehensive_ai_bp
 
+
 def safe_query(query_str, params=None):
     """Execute query safely with proper PostgreSQL parameter handling"""
     if not engine:
@@ -169,7 +170,7 @@ def fix_user_data_structure():
     
     if fixed_count > 0:
         save_user_accounts(USERS)
-        print(f"🔧 Fixed {fixed_count} user data issues")
+        print(f"ðŸ”§ Fixed {fixed_count} user data issues")
     
     return fixed_count
 
@@ -204,7 +205,7 @@ def _normalize_model_pack(sysobj):
         model = md
         sysobj.model_data = {"model": model}
 
-    # 4) Last resort: nothing found – keep it None but avoid KeyErrors later
+    # 4) Last resort: nothing found â€“ keep it None but avoid KeyErrors later
     if model is None:
         if not isinstance(sysobj.model_data, dict):
             sysobj.model_data = {}
@@ -433,13 +434,13 @@ if not USERS_PATH_DEFAULT:
 USER_DATA_FILE = USERS_PATH_DEFAULT
 os.makedirs(os.path.dirname(USER_DATA_FILE), exist_ok=True)
 
-# Create an empty file once so load() doesn’t blow up
+# Create an empty file once so load() doesnâ€™t blow up
 if not os.path.exists(USER_DATA_FILE):
     with open(USER_DATA_FILE, "w") as f:
         f.write("{}")
 
 app.secret_key = os.environ.get("FLASK_SECRET", "bettr-bot-enhanced-2025")
-print(f"🔐 Using users file: {USER_DATA_FILE}")
+print(f"ðŸ” Using users file: {USER_DATA_FILE}")
 
 
 @app.route('/debug/routes')
@@ -563,7 +564,7 @@ def get_unified_power_scores(conn):
     except Exception:
         base = pd.DataFrame(columns=['team','power_score','games_played','win_pct'])
 
-    # 2) Injury view (keep it light so we donâ€™t drive everything negative)
+    # 2) Injury view (keep it light so we donÃ¢â‚¬â„¢t drive everything negative)
     # In get_unified_power_scores()
     try:
         inj = load_injury_impact_from_detail(conn)
@@ -576,13 +577,13 @@ def get_unified_power_scores(conn):
     df['injury_impact'] = df['injury_impact'].fillna(0.0)
     df['qb_risk'] = df['qb_risk'].fillna(0)
 
-    # 3) Small â€œformâ€ component so 0â€“0 teams donâ€™t all look identical
+    # 3) Small Ã¢â‚¬Å“formÃ¢â‚¬Â component so 0Ã¢â‚¬â€œ0 teams donÃ¢â‚¬â„¢t all look identical
     df['form_component'] = df.apply(
         lambda r: (r['win_pct'] - 0.5) * 20 if pd.notnull(r['win_pct']) and pd.notnull(r['games_played']) and r['games_played'] > 0 else 0.0,
         axis=1
     )
 
-    # 4) Final adjusted power (keep roughly your historical 0â€“12 feel)
+    # 4) Final adjusted power (keep roughly your historical 0Ã¢â‚¬â€œ12 feel)
     # In get_unified_power_scores()
     df['adj_power'] = (
         # Let the base power score have its full impact
@@ -848,9 +849,9 @@ def load_user_accounts() -> dict:
         with open(USER_DATA_FILE, "r") as f:
             txt = f.read().strip()
             existing_raw = json.loads(txt) if txt else {}
-            print(f"📁 Loaded user data from {USER_DATA_FILE}")
+            print(f"ðŸ“ Loaded user data from {USER_DATA_FILE}")
     except Exception as e:
-        print(f"❌ Error reading {USER_DATA_FILE}: {e}")
+        print(f"âŒ Error reading {USER_DATA_FILE}: {e}")
         existing_raw = {}
 
     out: dict[str, dict] = {}
@@ -903,12 +904,12 @@ def load_user_accounts() -> dict:
     # Ensure an admin exists
     if "admin" not in out:
         out["admin"] = defaults["admin"]
-        print("📝 Created default admin user")
+        print("ðŸ“ Created default admin user")
 
     # Save the corrected structure
     save_user_accounts(out)
     
-    print(f"👥 Loaded {len(out)} users: {sorted(out.keys())}")
+    print(f"ðŸ‘¥ Loaded {len(out)} users: {sorted(out.keys())}")
     for username, user in out.items():
         print(f"  {username}: ${user.get('bankroll', 0):.2f}, {len(user.get('bet_history', []))} bets")
     
@@ -928,15 +929,15 @@ def login():
         username = request.form['username'].strip().lower()
         password = request.form['password']
         
-        print(f"🔐 Login attempt for user: {username}")
-        print(f"🔐 Available users: {list(USERS.keys())}")
+        print(f"ðŸ” Login attempt for user: {username}")
+        print(f"ðŸ” Available users: {list(USERS.keys())}")
         
         # Validate user exists and password is correct
         if username in USERS:
             user = USERS[username]
             stored_password = user.get('password', '')
             
-            print(f"🔐 Stored password hash starts with: {stored_password[:20]}...")
+            print(f"ðŸ” Stored password hash starts with: {stored_password[:20]}...")
             
             if check_password_hash(stored_password, password):
                 # CRITICAL: Clear any existing session first
@@ -948,7 +949,7 @@ def login():
                 session['is_admin'] = bool(user.get('is_admin', False))
                 session.permanent = True  # Make session persistent
                 
-                print(f"✅ User {username} logged in successfully")
+                print(f"âœ… User {username} logged in successfully")
                 print(f"   - Name: {user.get('name', 'Unknown')}")
                 print(f"   - Bankroll: ${user.get('bankroll', 0):.2f}")
                 print(f"   - Is Admin: {user.get('is_admin', False)}")
@@ -956,9 +957,9 @@ def login():
                 
                 return redirect(url_for('dashboard'))
             else:
-                print(f"❌ Invalid password for user {username}")
+                print(f"âŒ Invalid password for user {username}")
         else:
-            print(f"❌ User {username} not found. Available users: {list(USERS.keys())}")
+            print(f"âŒ User {username} not found. Available users: {list(USERS.keys())}")
         
         return render_template_string(LOGIN_TEMPLATE, error="Invalid username or password")
     
@@ -988,7 +989,7 @@ def current_user():
     else:
         return jsonify({'error': 'No valid user session'}), 401
 
-print("🔧 Session fixes loaded - Apply these changes to mobile_dashboard.py")
+print("ðŸ”§ Session fixes loaded - Apply these changes to mobile_dashboard.py")
 
 # -----------------
 # Dashboard page
@@ -1003,16 +1004,16 @@ def dashboard():
     # CRITICAL: Validate session exists and user is valid
     username = session.get('username')
     if not username:
-        print("❌ No username in session, redirecting to login")
+        print("âŒ No username in session, redirecting to login")
         return redirect(url_for('login'))
     
     if username not in USERS:
-        print(f"❌ Username {username} not found in USERS, clearing session")
+        print(f"âŒ Username {username} not found in USERS, clearing session")
         session.clear()
         return redirect(url_for('login'))
     
     user = USERS[username]
-    print(f"✅ Dashboard loaded for user: {username} - Bankroll: ${user['bankroll']:.2f}")
+    print(f"âœ… Dashboard loaded for user: {username} - Bankroll: ${user['bankroll']:.2f}")
     
     # Sync session bankroll with user data
     session['user_bankroll'] = user['bankroll']
@@ -1100,6 +1101,12 @@ def api_rankings():
                     WHERE season = :season
                 """
                 pr = pd.read_sql_query(text(base_query), conn, params={"season": season})
+                # NORMALIZE team names to abbreviations only
+                pr['team'] = pr['team'].map(to_abbr)
+                
+                # REMOVE duplicates by taking the entry with more games played
+                pr = pr.sort_values('games_played', ascending=False).drop_duplicates(subset=['team']).reset_index(drop=True)
+                
                 
                 if pr.empty:
                     pr = pd.read_sql_query(text(base_query), conn, params={"season": season - 1})
@@ -1260,7 +1267,7 @@ def api_predictions():
                     'away_team': to_full(g['away']),
                     'feature_count': len((ml_system.model_data or {}).get('feature_cols', []))
                 })
-                continue  # success → next game
+                continue  # success â†’ next game
             except Exception as e:
                 print(f"FixedNFLSystem failed: {e}")
 
@@ -1555,14 +1562,14 @@ def comprehensive_ai_chat():
         print(f"AI Chat request - Session username: {username}")
         
         if not username:
-            print("❌ No username in session")
+            print("âŒ No username in session")
             return jsonify({
                 'ok': False,
                 'error': 'No active session - please log in'
             }), 401
             
         if username not in USERS:
-            print(f"❌ Username {username} not found in USERS")
+            print(f"âŒ Username {username} not found in USERS")
             session.clear()
             return jsonify({
                 'ok': False,
@@ -1570,7 +1577,7 @@ def comprehensive_ai_chat():
             }), 401
             
         user_data = USERS[username]
-        print(f"✅ AI Chat for user: {username} - Bankroll: ${user_data.get('bankroll', 0):.2f}")
+        print(f"âœ… AI Chat for user: {username} - Bankroll: ${user_data.get('bankroll', 0):.2f}")
 
         # Use actual user data (not session fallback)
         user_context = {
@@ -2086,14 +2093,14 @@ def get_betting_recommendations():
             return jsonify({'ok': False, 'error': 'No active session'}), 401
             
         if username not in USERS:
-            print(f"❌ Username {username} not found in USERS")
+            print(f"âŒ Username {username} not found in USERS")
             session.clear()
             return jsonify({'ok': False, 'error': 'Invalid session'}), 401
             
         user_data = USERS[username]
         user_bankroll = float(user_data.get('bankroll', 500))
         
-        print(f"✅ Betting recommendations for: {username} - Bankroll: ${user_bankroll:.2f}")
+        print(f"âœ… Betting recommendations for: {username} - Bankroll: ${user_bankroll:.2f}")
 
         
         conn = get_db()
@@ -2661,7 +2668,7 @@ def unified_before_request():
     
     # One-time initialization
     if not _initialized:
-        print("🔧 Running one-time initialization...")
+        print("ðŸ”§ Running one-time initialization...")
         
         # Force model cache clear
         _model_pack = None
@@ -2677,12 +2684,12 @@ def unified_before_request():
         # Fix user data structure issues
         try:
             fix_user_data_structure()
-            print("✅ User data structure fixes completed")
+            print("âœ… User data structure fixes completed")
         except Exception as e:
-            print(f"❌ Error fixing user data structure: {e}")
+            print(f"âŒ Error fixing user data structure: {e}")
         
         _initialized = True
-        print("✅ One-time initialization completed")
+        print("âœ… One-time initialization completed")
     
     # Session validation for API routes (merged from validate_session)
     if request.path.startswith('/api/') and request.endpoint not in ['login', 'current_user']:
@@ -2690,7 +2697,7 @@ def unified_before_request():
         
         # Check if session has username but user doesn't exist
         if username and username not in USERS:
-            print(f"❌ Session cleanup: User {username} no longer exists")
+            print(f"âŒ Session cleanup: User {username} no longer exists")
             session.clear()
             return jsonify({'error': 'Session expired - user not found'}), 401
 

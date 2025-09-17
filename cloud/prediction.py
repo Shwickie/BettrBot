@@ -649,15 +649,22 @@ class FixedNFLSystem:
                 winner_abbrev = pred['home_team_abbrev'] if pred['predicted_winner'] == pred['home_team'] else pred['away_team_abbrev']
                 confidence = pred['confidence']
                 
-                print(f"{game['game_date'][:10]} | {away_abbrev:3} @ {home_abbrev:3} | {winner_abbrev:3} wins | {confidence:.1%} confidence")
+                # FIXED: Handle date object properly
+                game_date_str = str(game['game_date']) if hasattr(game['game_date'], 'strftime') else str(game['game_date'])[:10]
+                
+                print(f"{game_date_str[:10]} | {away_abbrev:3} @ {home_abbrev:3} | {winner_abbrev:3} wins | {confidence:.1%} confidence")
                 predictions_made += 1
                 
             except Exception as e:
-                print(f"{game['game_date'][:10]} | {game['away_team']:3} @ {game['home_team']:3} | Error: {str(e)[:30]}")
+                # FIXED: Handle date object in error case too
+                game_date_str = str(game['game_date']) if hasattr(game['game_date'], 'strftime') else str(game['game_date'])
+                away_team_str = str(game.get('away_team', 'UNK'))
+                home_team_str = str(game.get('home_team', 'UNK'))
+                
+                print(f"{game_date_str[:10]} | {away_team_str[:3]} @ {home_team_str[:3]} | Error: {str(e)[:30]}")
         
         print(f"\nMade {predictions_made} predictions")
         return True
-
 
 def is_running_in_pipeline():
     """NEW: Check if we're running in a non-interactive environment (pipeline)"""

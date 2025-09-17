@@ -1,11 +1,11 @@
-# render.yaml - FIXED
+# render_fixed.yaml - WORKING cloud deployment config
 services:
   - type: web
     name: bettr-bot-web
     runtime: python
     buildCommand: |
       pip install -r requirements.txt
-      python fix_model_training.py
+      python verify_deployment.py
     startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 300 --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
@@ -20,11 +20,11 @@ services:
         value: "false"
 
   - type: cron
-    name: bettr-bot-refresh
+    name: bettr-bot-pipeline
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python cloud_run_all.py
-    schedule: "0 */2 * * *"  # every 6 hours (reduced frequency)
+    startCommand: python cloud_run_all_fixed.py
+    schedule: "0 */4 * * *"  # every 4 hours
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
