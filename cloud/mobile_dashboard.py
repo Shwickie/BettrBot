@@ -127,7 +127,51 @@ def safe_query(query_str, params=None):
         print(f"Query error: {e}")
         return pd.DataFrame()
 
-
+def fix_user_data_structure():
+    """Fix any inconsistencies in user data structure"""
+    global USERS
+    fixed_count = 0
+    
+    for username, user_data in USERS.items():
+        original_data = dict(user_data)  # backup
+        
+        # Fix field name mismatches
+        field_mappings = {
+            'deposits': 'total_deposits',
+            'withdrawals': 'total_withdrawals', 
+            'bet_profit_loss': 'betting_profit_loss',
+            'transactions': 'money_transactions'
+        }
+        
+        for old_field, new_field in field_mappings.items():
+            if old_field in user_data and new_field not in user_data:
+                user_data[new_field] = user_data.pop(old_field)
+                print(f"  Fixed {username}: {old_field} -> {new_field}")
+                fixed_count += 1
+        
+        # Ensure all required fields exist with defaults
+        defaults = {
+            'name': username.title(),
+            'bankroll': 0.0,
+            'total_deposits': 0.0,
+            'total_withdrawals': 0.0,
+            'betting_profit_loss': 0.0,
+            'bet_history': [],
+            'money_transactions': [],
+            'is_admin': False
+        }
+        
+        for field, default_value in defaults.items():
+            if field not in user_data:
+                user_data[field] = default_value
+                print(f"  Added missing field {username}.{field} = {default_value}")
+                fixed_count += 1
+    
+    if fixed_count > 0:
+        save_user_accounts(USERS)
+        print(f"🔧 Fixed {fixed_count} user data issues")
+    
+    return fixed_count
 
 def _normalize_model_pack(sysobj):
     """Ensure sysobj.model exists and sysobj.model_data['model'] is set."""
@@ -415,12 +459,16 @@ def list_routes():
 def ai_page():
     return render_template_string(AI_CHAT_TEMPLATE)
 
-@app.before_request
+@app.before_request  
 def _init_once():
     global _initialized
     if not _initialized:
         ensure_indexes()
         get_ml_prediction_system()
+        
+        # Fix user data structure issues
+        fix_user_data_structure()
+        
         _initialized = True
 
 # --------------
@@ -789,12 +837,7 @@ def _hash_if_plain(pw: str) -> str:
 
 def load_user_accounts() -> dict:
     """
-    Loads users from USER_DATA_FILE.
-    Accepts either:
-      - dict {username: {password|password_hash, ...}}
-      - list of {username, password|password_hash, ...}
-    Ensures all usernames are lowercase and passwords are hashed.
-    Always keeps an admin user if one isn’t provided.
+    Loads users from USER_DATA_FILE with improved error handling and structure fixing.
     """
     defaults = {
         "admin": {
@@ -815,8 +858,9 @@ def load_user_accounts() -> dict:
         with open(USER_DATA_FILE, "r") as f:
             txt = f.read().strip()
             existing_raw = json.loads(txt) if txt else {}
+            print(f"📁 Loaded user data from {USER_DATA_FILE}")
     except Exception as e:
-        print(f"Error reading {USER_DATA_FILE}: {e}")
+        print(f"❌ Error reading {USER_DATA_FILE}: {e}")
         existing_raw = {}
 
     out: dict[str, dict] = {}
@@ -832,11 +876,11 @@ def load_user_accounts() -> dict:
                 "password": _hash_if_plain(pw),
                 "name": rec.get("name", uname),
                 "bankroll": float(rec.get("bankroll", 0.0)),
-                "total_deposits": float(rec.get("total_deposits", 0.0)),
-                "total_withdrawals": float(rec.get("total_withdrawals", 0.0)),
-                "betting_profit_loss": float(rec.get("betting_profit_loss", 0.0)),
+                "total_deposits": float(rec.get("total_deposits", rec.get("deposits", 0.0))),
+                "total_withdrawals": float(rec.get("total_withdrawals", rec.get("withdrawals", 0.0))),
+                "betting_profit_loss": float(rec.get("betting_profit_loss", rec.get("bet_profit_loss", 0.0))),
                 "bet_history": rec.get("bet_history", []) or [],
-                "money_transactions": rec.get("money_transactions", []) or [],
+                "money_transactions": rec.get("money_transactions", rec.get("transactions", [])) or [],
                 "is_admin": bool(rec.get("is_admin", False)),
             }
             out[uname] = user
@@ -848,21 +892,36 @@ def load_user_accounts() -> dict:
             user["password"] = _hash_if_plain(pw)
             user.setdefault("name", uname)
             user.setdefault("bankroll", 0.0)
-            user.setdefault("total_deposits", 0.0)
-            user.setdefault("total_withdrawals", 0.0)
-            user.setdefault("betting_profit_loss", 0.0)
+            
+            # Handle field name variations
+            user.setdefault("total_deposits", user.get("deposits", 0.0))
+            user.setdefault("total_withdrawals", user.get("withdrawals", 0.0))
+            user.setdefault("betting_profit_loss", user.get("bet_profit_loss", 0.0))
+            user.setdefault("money_transactions", user.get("transactions", []))
+            
             user.setdefault("bet_history", [])
-            user.setdefault("money_transactions", [])
             user.setdefault("is_admin", False)
+            
+            # Clean up old field names if they exist
+            for old_field in ["deposits", "withdrawals", "bet_profit_loss", "transactions"]:
+                user.pop(old_field, None)
+            
             out[uname] = user
     else:
         out = {}
 
     # Ensure an admin exists
-    out.setdefault("admin", defaults["admin"])
+    if "admin" not in out:
+        out["admin"] = defaults["admin"]
+        print("📝 Created default admin user")
 
+    # Save the corrected structure
     save_user_accounts(out)
+    
     print(f"👥 Loaded {len(out)} users: {sorted(out.keys())}")
+    for username, user in out.items():
+        print(f"  {username}: ${user.get('bankroll', 0):.2f}, {len(user.get('bet_history', []))} bets")
+    
     return out
 
 USERS = load_user_accounts()
@@ -871,6 +930,7 @@ USERS = load_user_accounts()
 # Templates
 # -----------------
 from templates import LOGIN_TEMPLATE, HTML_TEMPLATE
+app.permanent_session_lifetime = timedelta(days=7)  # Sessions last 7 days
 
 @app.route('/login', methods=['GET','POST'])
 def login():
@@ -878,20 +938,32 @@ def login():
         username = request.form['username'].strip().lower()
         password = request.form['password']
         
-        print(f"Login attempt for user: {username}")
+        print(f"🔐 Login attempt for user: {username}")
+        print(f"🔐 Available users: {list(USERS.keys())}")
         
         # Validate user exists and password is correct
         if username in USERS:
             user = USERS[username]
-            if check_password_hash(user['password'], password):
-                # CRITICAL: Set session properly
-                session.clear()  # Clear any existing session
+            stored_password = user.get('password', '')
+            
+            print(f"🔐 Stored password hash starts with: {stored_password[:20]}...")
+            
+            if check_password_hash(stored_password, password):
+                # CRITICAL: Clear any existing session first
+                session.clear()
+                
+                # Set session data
                 session['username'] = username
-                session['user_bankroll'] = user['bankroll']
-                session['is_admin'] = user.get('is_admin', False)
+                session['user_bankroll'] = float(user.get('bankroll', 0))
+                session['is_admin'] = bool(user.get('is_admin', False))
                 session.permanent = True  # Make session persistent
                 
-                print(f"✅ User {username} logged in successfully - Bankroll: ${user['bankroll']:.2f}")
+                print(f"✅ User {username} logged in successfully")
+                print(f"   - Name: {user.get('name', 'Unknown')}")
+                print(f"   - Bankroll: ${user.get('bankroll', 0):.2f}")
+                print(f"   - Is Admin: {user.get('is_admin', False)}")
+                print(f"   - Bet History Count: {len(user.get('bet_history', []))}")
+                
                 return redirect(url_for('dashboard'))
             else:
                 print(f"❌ Invalid password for user {username}")
@@ -2186,18 +2258,34 @@ def get_betting_recommendations():
 @login_required
 def debug_session():
     username = session.get('username')
-    user_data = USERS.get(username, {})
+    user_data = USERS.get(username, {}) if username else {}
     
     return jsonify({
-        'session_username': username,
-        'user_exists_in_users': username in USERS if username else False,
-        'user_bankroll': user_data.get('bankroll', 0),
-        'user_name': user_data.get('name', 'Unknown'),
-        'is_admin': user_data.get('is_admin', False),
-        'session_keys': list(session.keys()),
-        'total_users_loaded': len(USERS),
-        'available_users': list(USERS.keys()),
-        'session_bankroll': session.get('user_bankroll', 'Not set')
+        'session_data': {
+            'username': session.get('username'),
+            'user_bankroll': session.get('user_bankroll'),
+            'is_admin': session.get('is_admin'),
+            'permanent': session.permanent,
+            'all_session_keys': list(session.keys())
+        },
+        'user_data_from_file': {
+            'exists': username in USERS if username else False,
+            'name': user_data.get('name', 'Not found'),
+            'bankroll': user_data.get('bankroll', 0),
+            'bet_history_count': len(user_data.get('bet_history', [])),
+            'is_admin': user_data.get('is_admin', False),
+            'total_deposits': user_data.get('total_deposits', 0),
+            'betting_profit_loss': user_data.get('betting_profit_loss', 0)
+        },
+        'file_info': {
+            'users_file_path': USER_DATA_FILE,
+            'total_users_loaded': len(USERS),
+            'all_usernames': list(USERS.keys())
+        },
+        'environment': {
+            'is_cloud_db': USE_CLOUD_DB,
+            'flask_secret_key_set': bool(app.secret_key)
+        }
     })
 
 
