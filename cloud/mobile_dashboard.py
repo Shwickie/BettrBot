@@ -459,17 +459,7 @@ def list_routes():
 def ai_page():
     return render_template_string(AI_CHAT_TEMPLATE)
 
-@app.before_request  
-def _init_once():
-    global _initialized
-    if not _initialized:
-        ensure_indexes()
-        get_ml_prediction_system()
-        
-        # Fix user data structure issues
-        fix_user_data_structure()
-        
-        _initialized = True
+
 
 # --------------
 # Team mappings
@@ -2254,9 +2244,9 @@ def get_betting_recommendations():
         }), 500
 
 # 6. ADD debug route to check session state
-@app.route('/api/debug/session')
+@app.route('/api/debug/session-full')
 @login_required
-def debug_session():
+def debug_session_full():
     username = session.get('username')
     user_data = USERS.get(username, {}) if username else {}
     
@@ -2287,7 +2277,6 @@ def debug_session():
             'flask_secret_key_set': bool(app.secret_key)
         }
     })
-
 
 @app.route('/api/delete-bet', methods=['POST'])
 @login_required
@@ -2652,17 +2641,16 @@ def api_admin_clear_activity():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# In mobile_dashboard.py, add this to app startup
-@app.before_request
-def force_reload_models():
-    global _model_pack, _ml_prediction_system, _initialized
-    if not _initialized:
-        _model_pack = None
-        _ml_prediction_system = None
-        print("Forced model cache clear on startup")
+# REPLACE all your @app.before_request functions with this single one in mobile_dashboard.py
 
-@app.before_request
-def validate_session():
+# REPLACE all your @app.before_request functions with this single one in mobile_dashboard.py
+
+# REPLACE BOTH of your @app.before_request functions with this SINGLE one:
+
+@app.before_request  
+def unified_before_request():
+    global _initialized, _model_pack, _ml_prediction_system
+    
     # Skip validation for specific routes
     if request.endpoint in ['login', 'logout', 'static']:
         return
@@ -2671,16 +2659,88 @@ def validate_session():
     if request.path in ['/health', '/healthz', '/version', '/api/health']:
         return
     
-    # For API routes requiring authentication
-    if request.path.startswith('/api/') and request.endpoint != 'login':
+    # One-time initialization
+    if not _initialized:
+        print("🔧 Running one-time initialization...")
+        
+        # Force model cache clear
+        _model_pack = None
+        _ml_prediction_system = None
+        print("Forced model cache clear on startup")
+        
+        # Initialize database indexes
+        ensure_indexes()
+        
+        # Initialize ML system
+        get_ml_prediction_system()
+        
+        # Fix user data structure issues
+        try:
+            fix_user_data_structure()
+            print("✅ User data structure fixes completed")
+        except Exception as e:
+            print(f"❌ Error fixing user data structure: {e}")
+        
+        _initialized = True
+        print("✅ One-time initialization completed")
+    
+    # Session validation for API routes (merged from validate_session)
+    if request.path.startswith('/api/') and request.endpoint not in ['login', 'current_user']:
         username = session.get('username')
         
         # Check if session has username but user doesn't exist
         if username and username not in USERS:
             print(f"❌ Session cleanup: User {username} no longer exists")
             session.clear()
-            if request.path.startswith('/api/'):
-                return jsonify({'error': 'Session expired - user not found'}), 401
+            return jsonify({'error': 'Session expired - user not found'}), 401
+
+# ALSO ADD: Debug route to manually trigger user data fix
+@app.route('/api/debug/fix-user-data')
+@login_required
+def debug_fix_user_data():
+    global USERS  # Move this to the TOP
+    
+    if not USERS.get(session['username'], {}).get('is_admin', False):
+        return jsonify({'error': 'Admin only'}), 403
+    
+    try:
+        fixed_count = fix_user_data_structure()
+        
+        # Reload USERS global
+        USERS = load_user_accounts()
+        
+        return jsonify({
+            'success': True,
+            'fixes_applied': fixed_count,
+            'users_loaded': len(USERS),
+            'user_data': {username: USERS.get(username, {}) for username in USERS.keys()}
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    
+# ADD: Debug route to check the actual user data on disk
+@app.route('/api/debug/raw-user-data')
+@login_required  
+def debug_raw_user_data():
+    if not USERS.get(session['username'], {}).get('is_admin', False):
+        return jsonify({'error': 'Admin only'}), 403
+    
+    try:
+        # Read raw file
+        with open(USER_DATA_FILE, 'r') as f:
+            raw_data = json.loads(f.read())
+        
+        return jsonify({
+            'file_path': USER_DATA_FILE,
+            'raw_file_data': raw_data,
+            'loaded_users_count': len(USERS),
+            'loaded_users': list(USERS.keys()),
+            'session_username': session.get('username'),
+            'current_user_in_memory': USERS.get(session.get('username'), 'NOT_FOUND')
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # Add this route to mobile_dashboard.py in the admin section:
