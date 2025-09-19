@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Fixed Comprehensive Odds Fetcher - Get ALL available odds data
-Fixed SQLAlchemy boolean check and other issues
+FIXED Odds Fetcher - Normalizes team names to match your database
+Fixes the team name mismatch issues
 """
 
 import requests
 import time
 import pandas as pd
 from datetime import datetime
-from sqlalchemy import text, create_engine, MetaData
+from sqlalchemy import text, create_engine
 from sqlalchemy.orm import sessionmaker
 
 # ---------------------------
@@ -17,325 +17,275 @@ from sqlalchemy.orm import sessionmaker
 API_KEY = '2ea42e6f961b41a105cd8dac8a3490a8'
 SPORT = 'americanfootball_nfl'
 REGIONS = 'us'
-ODDS_FORMAT = 'decimal'
+ODDS_FORMAT = 'american'  # Changed to american odds format
 DB_PATH = "sqlite:///E:/Bettr Bot/betting-bot/data/betting.db"
 
-# Available markets (we'll test these dynamically)
-BASIC_MARKETS = ['h2h', 'spreads', 'totals']
-PLAYER_PROP_MARKETS = [
-    'player_pass_tds', 'player_pass_yds', 'player_rush_yds', 'player_rec_yds',
-    'player_receiving_yards', 'player_rushing_yards', 'player_passing_yards',
-    'player_pass_completions', 'player_receptions', 'player_anytime_td',
-    'player_first_td', 'player_last_td', 'player_pass_attempts',
-    'player_pass_interceptions', 'player_rush_attempts', 'player_longest_rush',
-    'player_longest_reception', 'player_kicking_points'
-]
-
-# Additional markets to try
-ADDITIONAL_MARKETS = [
-    'alternate_spreads', 'alternate_totals', 'team_totals',
-    'first_half_h2h', 'first_half_spreads', 'first_half_totals',
-    'second_half_h2h', 'second_half_spreads', 'second_half_totals'
-]
+# CRITICAL: Team name mapping to match your database
+TEAM_NAME_MAPPING = {
+    # API team names -> Your database team names
+    'Arizona Cardinals': 'ARI',
+    'Atlanta Falcons': 'ATL', 
+    'Baltimore Ravens': 'BAL',
+    'Buffalo Bills': 'BUF',
+    'Carolina Panthers': 'CAR',
+    'Chicago Bears': 'CHI',
+    'Cincinnati Bengals': 'CIN',
+    'Cleveland Browns': 'CLE',
+    'Dallas Cowboys': 'DAL',
+    'Denver Broncos': 'DEN',
+    'Detroit Lions': 'DET',
+    'Green Bay Packers': 'GB',
+    'Houston Texans': 'HOU',
+    'Indianapolis Colts': 'IND',
+    'Jacksonville Jaguars': 'JAX',
+    'Kansas City Chiefs': 'KC',
+    'Las Vegas Raiders': 'LV',
+    'Los Angeles Chargers': 'LAC',
+    'Los Angeles Rams': 'LAR',
+    'Miami Dolphins': 'MIA',
+    'Minnesota Vikings': 'MIN',
+    'New England Patriots': 'NE',
+    'New Orleans Saints': 'NO',
+    'New York Giants': 'NYG',
+    'New York Jets': 'NYJ',
+    'Philadelphia Eagles': 'PHI',
+    'Pittsburgh Steelers': 'PIT',
+    'San Francisco 49ers': 'SF',
+    'Seattle Seahawks': 'SEA',
+    'Tampa Bay Buccaneers': 'TB',
+    'Tennessee Titans': 'TEN',
+    'Washington Commanders': 'WAS'
+}
 
 class FixedOddsFetcher:
-    """Fetch all available odds data with fixes"""
+    """Fixed odds fetcher with proper team name mapping"""
     
     def __init__(self):
         self.engine = create_engine(DB_PATH, connect_args={"timeout": 30})
         self.Session = sessionmaker(bind=self.engine)
-        self.working_markets = []
-        self.failed_markets = []
         
-    def test_market_availability(self):
-        """Test which markets are currently available"""
-        print("🔍 TESTING MARKET AVAILABILITY")
-        print("=" * 40)
-        
-        all_markets = BASIC_MARKETS + PLAYER_PROP_MARKETS + ADDITIONAL_MARKETS
-        
-        for market in all_markets:
-            url = f'https://api.the-odds-api.com/v4/sports/{SPORT}/odds'
-            params = {
-                'apiKey': API_KEY,
-                'regions': REGIONS,
-                'markets': market,
-                'oddsFormat': ODDS_FORMAT
-            }
-            
-            try:
-                response = requests.get(url, params=params)
-                
-                if response.status_code == 200:
-                    games = response.json()
-                    if games:  # Only count if there are actual games
-                        self.working_markets.append(market)
-                        print(f"✅ {market}: {len(games)} games")
-                    else:
-                        print(f"⚪ {market}: Available but no current games")
-                else:
-                    self.failed_markets.append(market)
-                    error_msg = response.json().get('message', 'Unknown error')
-                    print(f"❌ {market}: {error_msg}")
-                
-                # Small delay to avoid rate limiting
-                time.sleep(0.1)
-                
-            except Exception as e:
-                self.failed_markets.append(market)
-                print(f"❌ {market}: Exception - {e}")
-        
-        print(f"\n📊 SUMMARY:")
-        print(f"  ✅ Working markets: {len(self.working_markets)}")
-        print(f"  ❌ Failed markets: {len(self.failed_markets)}")
-        
-        return self.working_markets
+    def normalize_team_name(self, api_team_name):
+        """Convert API team name to database team name"""
+        return TEAM_NAME_MAPPING.get(api_team_name, api_team_name)
     
-    def fetch_all_odds(self, working_markets):
-        """Fetch odds for all working markets"""
-        print(f"\n📥 FETCHING ODDS FOR {len(working_markets)} MARKETS")
+    def fetch_h2h_odds(self):
+        """Fetch head-to-head moneyline odds"""
+        print("🎯 FETCHING H2H ODDS WITH TEAM NAME FIXING")
         print("=" * 50)
         
-        session = self.Session()
+        url = f'https://api.the-odds-api.com/v4/sports/{SPORT}/odds'
+        params = {
+            'apiKey': API_KEY,
+            'regions': REGIONS,
+            'markets': 'h2h',
+            'oddsFormat': ODDS_FORMAT
+        }
         
-        # Fixed table check
         try:
-            # Check if tables exist
-            result = session.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('games', 'odds')"))
-            existing_tables = [row[0] for row in result.fetchall()]
+            response = requests.get(url, params=params)
             
-            if 'games' not in existing_tables or 'odds' not in existing_tables:
-                print("❌ Missing required database tables")
-                session.close()
+            if response.status_code != 200:
+                print(f"❌ API Error: {response.status_code}")
                 return 0
             
-            print("✅ Database tables found")
+            games = response.json()
+            print(f"📥 Retrieved {len(games)} games from API")
             
-        except Exception as e:
-            print(f"❌ Error checking tables: {e}")
-            session.close()
-            return 0
-        
-        # Get existing game IDs
-        try:
-            result = session.execute(text("SELECT DISTINCT game_id FROM games"))
+            session = self.Session()
+            
+            # Get existing game IDs from your database
+            result = session.execute(text("SELECT DISTINCT game_id FROM games WHERE date(game_date) >= date('now')"))
             existing_game_ids = {row[0] for row in result.fetchall()}
-            print(f"📋 Found {len(existing_game_ids)} games in schedule")
-        except Exception as e:
-            print(f"❌ Error getting game IDs: {e}")
-            session.close()
-            return 0
-        
-        total_inserted = 0
-        total_updated = 0
-        
-        for market in working_markets:
-            print(f"\n🎯 Processing {market}...")
+            print(f"🎮 Found {len(existing_game_ids)} upcoming games in database")
             
-            url = f'https://api.the-odds-api.com/v4/sports/{SPORT}/odds'
-            params = {
-                'apiKey': API_KEY,
-                'regions': REGIONS,
-                'markets': market,
-                'oddsFormat': ODDS_FORMAT
-            }
+            total_inserted = 0
+            total_updated = 0
             
-            try:
-                response = requests.get(url, params=params)
+            for game in games:
+                api_game_id = game.get('id')
+                api_home_team = game.get('home_team')
+                api_away_team = game.get('away_team')
                 
-                if response.status_code != 200:
-                    print(f"  ❌ Failed to fetch {market}")
+                # Normalize team names
+                db_home_team = self.normalize_team_name(api_home_team)
+                db_away_team = self.normalize_team_name(api_away_team)
+                
+                print(f"\n🏈 Processing: {api_away_team} @ {api_home_team}")
+                print(f"   Normalized: {db_away_team} @ {db_home_team}")
+                
+                # Try to match with existing games by team names and date
+                game_date = game.get('commence_time', '')[:10]  # Get date part
+                
+                # Find matching game in database
+                match_query = text("""
+                    SELECT game_id FROM games 
+                    WHERE ((home_team = :home AND away_team = :away) OR 
+                           (home_team = :home_full AND away_team = :away_full))
+                    AND date(game_date) = date(:game_date)
+                    LIMIT 1
+                """)
+                
+                db_game = session.execute(match_query, {
+                    'home': db_home_team,
+                    'away': db_away_team, 
+                    'home_full': api_home_team,
+                    'away_full': api_away_team,
+                    'game_date': game_date
+                }).fetchone()
+                
+                if not db_game:
+                    print(f"   ⚠️ No matching game found in database")
                     continue
-                
-                games = response.json()
-                market_inserted = 0
-                market_updated = 0
-                
-                for game in games:
-                    game_id = game.get('id')
-                    home_team = game.get('home_team')
-                    away_team = game.get('away_team')
                     
-                    # Skip if game not in our schedule
-                    if game_id not in existing_game_ids:
-                        continue
+                db_game_id = db_game[0]
+                print(f"   ✅ Matched to game_id: {db_game_id}")
+                
+                # Process each bookmaker
+                for bookmaker in game.get('bookmakers', []):
+                    sportsbook = bookmaker.get('title', 'Unknown')
                     
-                    # Process each bookmaker
-                    for bookmaker in game.get('bookmakers', []):
-                        sportsbook = bookmaker.get('title', 'Unknown')
-                        
-                        for market_data in bookmaker.get('markets', []):
-                            market_key = market_data.get('key')
+                    for market_data in bookmaker.get('markets', []):
+                        if market_data.get('key') != 'h2h':
+                            continue
                             
-                            for outcome in market_data.get('outcomes', []):
-                                team_or_player = outcome.get('name')
-                                price = outcome.get('price')
-                                point = outcome.get('point')  # For spreads/totals
-                                
-                                if not team_or_player or price is None:
-                                    continue
-                                
-                                # Check if record exists
-                                check_query = text("""
-                                    SELECT id FROM odds 
+                        for outcome in market_data.get('outcomes', []):
+                            api_team = outcome.get('name')
+                            odds_value = outcome.get('price')
+                            
+                            if not api_team or odds_value is None:
+                                continue
+                            
+                            # Normalize team name for database
+                            db_team = self.normalize_team_name(api_team)
+                            
+                            # Check if record exists
+                            check_query = text("""
+                                SELECT id FROM odds 
+                                WHERE game_id = :game_id 
+                                AND team = :team 
+                                AND market = 'h2h' 
+                                AND sportsbook = :sportsbook
+                            """)
+                            
+                            existing = session.execute(check_query, {
+                                'game_id': db_game_id,
+                                'team': db_team,
+                                'sportsbook': sportsbook
+                            }).fetchone()
+                            
+                            if existing:
+                                # Update existing record
+                                update_query = text("""
+                                    UPDATE odds 
+                                    SET odds = :odds, timestamp = :timestamp 
                                     WHERE game_id = :game_id 
                                     AND team = :team 
-                                    AND market = :market 
+                                    AND market = 'h2h' 
                                     AND sportsbook = :sportsbook
                                 """)
                                 
-                                existing = session.execute(check_query, {
-                                    'game_id': game_id,
-                                    'team': team_or_player,
-                                    'market': market_key,
+                                session.execute(update_query, {
+                                    'odds': odds_value,
+                                    'timestamp': datetime.utcnow(),
+                                    'game_id': db_game_id,
+                                    'team': db_team,
                                     'sportsbook': sportsbook
-                                }).fetchone()
+                                })
+                                total_updated += 1
+                            else:
+                                # Insert new record
+                                insert_query = text("""
+                                    INSERT INTO odds (game_id, sportsbook, team, market, odds, timestamp)
+                                    VALUES (:game_id, :sportsbook, :team, :market, :odds, :timestamp)
+                                """)
                                 
-                                if existing:
-                                    # Update existing record
-                                    update_query = text("""
-                                        UPDATE odds 
-                                        SET odds = :odds, timestamp = :timestamp 
-                                        WHERE game_id = :game_id 
-                                        AND team = :team 
-                                        AND market = :market 
-                                        AND sportsbook = :sportsbook
-                                    """)
-                                    
-                                    session.execute(update_query, {
-                                        'odds': price,
-                                        'timestamp': datetime.utcnow(),
-                                        'game_id': game_id,
-                                        'team': team_or_player,
-                                        'market': market_key,
-                                        'sportsbook': sportsbook
-                                    })
-                                    market_updated += 1
-                                else:
-                                    # Insert new record
-                                    insert_query = text("""
-                                        INSERT INTO odds (game_id, sportsbook, team, market, odds, timestamp)
-                                        VALUES (:game_id, :sportsbook, :team, :market, :odds, :timestamp)
-                                    """)
-                                    
-                                    session.execute(insert_query, {
-                                        'game_id': game_id,
-                                        'sportsbook': sportsbook,
-                                        'team': team_or_player,
-                                        'market': market_key,
-                                        'odds': price,
-                                        'timestamp': datetime.utcnow()
-                                    })
-                                    market_inserted += 1
-                
-                session.commit()
-                print(f"  ✅ {market}: +{market_inserted} new, ~{market_updated} updated")
-                total_inserted += market_inserted
-                total_updated += market_updated
-                
-                # Small delay between markets
-                time.sleep(0.5)
-                
-            except Exception as e:
-                print(f"  ❌ Error processing {market}: {e}")
-                session.rollback()
-                continue
-        
-        # Clean up duplicates
-        print(f"\n🧹 CLEANING UP DUPLICATES...")
-        try:
-            session.execute(text("""
-                DELETE FROM odds
-                WHERE id NOT IN (
-                    SELECT MAX(id)
-                    FROM odds
-                    GROUP BY game_id, sportsbook, team, market
-                )
-            """))
+                                session.execute(insert_query, {
+                                    'game_id': db_game_id,
+                                    'sportsbook': sportsbook,
+                                    'team': db_team,
+                                    'market': 'h2h',
+                                    'odds': odds_value,
+                                    'timestamp': datetime.utcnow()
+                                })
+                                total_inserted += 1
+                            
+                            print(f"     {sportsbook}: {db_team} {odds_value}")
+            
             session.commit()
-            print("✅ Duplicates removed")
+            session.close()
+            
+            print(f"\n🏆 RESULTS:")
+            print(f"  📥 New odds: {total_inserted}")
+            print(f"  🔄 Updated: {total_updated}")
+            print(f"  📊 Total: {total_inserted + total_updated}")
+            
+            return total_inserted + total_updated
+            
         except Exception as e:
-            print(f"❌ Error cleaning duplicates: {e}")
-        
-        session.close()
-        
-        print(f"\n🏆 FINAL RESULTS:")
-        print(f"  📥 Total inserted: {total_inserted}")
-        print(f"  🔄 Total updated: {total_updated}")
-        print(f"  📊 Markets processed: {len(working_markets)}")
-        
-        return total_inserted + total_updated
+            print(f"❌ Error fetching odds: {e}")
+            return 0
     
-    def get_odds_summary(self):
-        """Get summary of current odds in database"""
-        print(f"\n📊 CURRENT ODDS SUMMARY")
+    def verify_odds_data(self):
+        """Verify odds are properly stored"""
+        print(f"\n🔍 VERIFYING ODDS DATA")
         print("=" * 30)
         
         try:
             with self.engine.connect() as conn:
-                # Count by market
-                market_counts = pd.read_sql(text("""
-                    SELECT market, COUNT(*) as count, COUNT(DISTINCT sportsbook) as books
-                    FROM odds 
-                    GROUP BY market 
-                    ORDER BY count DESC
-                """), conn)
-                
-                if not market_counts.empty:
-                    print("📈 ODDS BY MARKET:")
-                    for _, row in market_counts.iterrows():
-                        print(f"  {row['market']}: {row['count']} odds from {row['books']} books")
-                
-                # Count by sportsbook
-                book_counts = pd.read_sql(text("""
-                    SELECT sportsbook, COUNT(*) as count, COUNT(DISTINCT market) as markets
-                    FROM odds 
-                    GROUP BY sportsbook 
-                    ORDER BY count DESC
-                """), conn)
-                
-                if not book_counts.empty:
-                    print(f"\n📱 ODDS BY SPORTSBOOK:")
-                    for _, row in book_counts.iterrows():
-                        print(f"  {row['sportsbook']}: {row['count']} odds, {row['markets']} markets")
-                
-                # Recent activity
-                recent = pd.read_sql(text("""
-                    SELECT COUNT(*) as recent_count
+                # Check team names in odds
+                teams_in_odds = pd.read_sql(text("""
+                    SELECT DISTINCT team, COUNT(*) as count
                     FROM odds 
                     WHERE timestamp >= datetime('now', '-1 hour')
-                """), conn).iloc[0]['recent_count']
+                    GROUP BY team
+                    ORDER BY team
+                """), conn)
                 
-                print(f"\n⏰ Recent activity: {recent} odds updated in last hour")
+                print("Teams in recent odds:")
+                for _, row in teams_in_odds.iterrows():
+                    print(f"  {row['team']}: {row['count']} lines")
                 
+                # Check sample odds with games
+                sample = pd.read_sql(text("""
+                    SELECT g.away_team, g.home_team, g.game_date,
+                           o.team, o.sportsbook, o.odds
+                    FROM games g
+                    JOIN odds o ON g.game_id = o.game_id
+                    WHERE date(g.game_date) >= date('now')
+                    AND o.market = 'h2h'
+                    LIMIT 10
+                """), conn)
+                
+                if not sample.empty:
+                    print(f"\nSample matched odds:")
+                    for _, row in sample.iterrows():
+                        print(f"  {row['away_team']} @ {row['home_team']}: {row['team']} {row['odds']} @ {row['sportsbook']}")
+                else:
+                    print("\n❌ No matched odds found!")
+                    
         except Exception as e:
-            print(f"❌ Error getting summary: {e}")
-
+            print(f"❌ Error verifying: {e}")
 
 def main():
     """Main execution"""
-    print("🎰 FIXED COMPREHENSIVE ODDS FETCHER")
+    print("🎰 FIXED ODDS FETCHER")
+    print("Fixes team name mismatches for your AI chat")
     print("=" * 45)
-    print("Getting ALL available odds data...")
     
     fetcher = FixedOddsFetcher()
     
-    # Test what markets are available
-    working_markets = fetcher.test_market_availability()
+    # Fetch h2h odds with proper team names
+    total_odds = fetcher.fetch_h2h_odds()
     
-    if not working_markets:
-        print("❌ No working markets found!")
-        return
+    # Verify the data
+    fetcher.verify_odds_data()
     
-    # Fetch odds for all working markets
-    total_odds = fetcher.fetch_all_odds(working_markets)
-    
-    # Show summary
-    fetcher.get_odds_summary()
-    
-    print(f"\n✅ COMPLETE!")
-    print(f"💰 Ready for betting analysis with {len(working_markets)} markets")
-    print(f"📊 Total odds collected: {total_odds}")
+    if total_odds > 0:
+        print(f"\n✅ SUCCESS!")
+        print(f"Your AI chat should now work with {total_odds} odds")
+        print(f"Team names are now properly matched between odds and games")
+    else:
+        print(f"\n❌ No odds were fetched - check API key and network")
 
 if __name__ == "__main__":
     main()

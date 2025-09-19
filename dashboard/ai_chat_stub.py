@@ -271,23 +271,52 @@ class AdvancedBettingAnalyzer:
             return data
         return None
     
-    def _normalize_team_name(self, name: str) -> str:
-        """Return a canonical full team name for matching odds rows."""
-        mapping = {
-            'ARI':'Arizona Cardinals','ATL':'Atlanta Falcons','BAL':'Baltimore Ravens','BUF':'Buffalo Bills',
-            'CAR':'Carolina Panthers','CHI':'Chicago Bears','CIN':'Cincinnati Bengals','CLE':'Cleveland Browns',
-            'DAL':'Dallas Cowboys','DEN':'Denver Broncos','DET':'Detroit Lions','GB':'Green Bay Packers',
-            'HOU':'Houston Texans','IND':'Indianapolis Colts','JAX':'Jacksonville Jaguars','KC':'Kansas City Chiefs',
-            'LV':'Las Vegas Raiders','LAC':'Los Angeles Chargers','LAR':'Los Angeles Rams','LA':'Los Angeles Rams',
-            'MIA':'Miami Dolphins','MIN':'Minnesota Vikings','NE':'New England Patriots','NO':'New Orleans Saints',
-            'NYG':'New York Giants','NYJ':'New York Jets','PHI':'Philadelphia Eagles','PIT':'Pittsburgh Steelers',
-            'SF':'San Francisco 49ers','SEA':'Seattle Seahawks','TB':'Tampa Bay Buccaneers','TEN':'Tennessee Titans',
-            'WAS':'Washington Commanders','WSH':'Washington Commanders'
+    def normalize_team_for_odds_lookup_FIXED(team_input):
+        """
+        FIXED: Convert team name/abbreviation to the format used in your odds table
+        Based on your diagnostic, odds table uses abbreviations like 'MIA', 'BUF' etc.
+        """
+        # If it's already an abbreviation, return as-is
+        if len(team_input) <= 3 and team_input.upper() in ['ARI', 'ATL', 'BAL', 'BUF', 'CAR', 'CHI', 'CIN', 'CLE', 'DAL', 'DEN', 'DET', 'GB', 'HOU', 'IND', 'JAX', 'KC', 'LV', 'LAC', 'LAR', 'MIA', 'MIN', 'NE', 'NO', 'NYG', 'NYJ', 'PHI', 'PIT', 'SF', 'SEA', 'TB', 'TEN', 'WAS']:
+            return team_input.upper()
+        
+        # Convert full names to abbreviations (reverse mapping)
+        FULL_TO_ABBR = {
+            'Arizona Cardinals': 'ARI',
+            'Atlanta Falcons': 'ATL', 
+            'Baltimore Ravens': 'BAL',
+            'Buffalo Bills': 'BUF',
+            'Carolina Panthers': 'CAR',
+            'Chicago Bears': 'CHI',
+            'Cincinnati Bengals': 'CIN',
+            'Cleveland Browns': 'CLE',
+            'Dallas Cowboys': 'DAL',
+            'Denver Broncos': 'DEN',
+            'Detroit Lions': 'DET',
+            'Green Bay Packers': 'GB',
+            'Houston Texans': 'HOU',
+            'Indianapolis Colts': 'IND',
+            'Jacksonville Jaguars': 'JAX',
+            'Kansas City Chiefs': 'KC',
+            'Las Vegas Raiders': 'LV',
+            'Los Angeles Chargers': 'LAC',
+            'Los Angeles Rams': 'LAR',
+            'Miami Dolphins': 'MIA',
+            'Minnesota Vikings': 'MIN',
+            'New England Patriots': 'NE',
+            'New Orleans Saints': 'NO',
+            'New York Giants': 'NYG',
+            'New York Jets': 'NYJ',
+            'Philadelphia Eagles': 'PHI',
+            'Pittsburgh Steelers': 'PIT',
+            'San Francisco 49ers': 'SF',
+            'Seattle Seahawks': 'SEA',
+            'Tampa Bay Buccaneers': 'TB',
+            'Tennessee Titans': 'TEN',
+            'Washington Commanders': 'WAS'
         }
-        if not name:
-            return ''
-        key = name.strip()
-        return mapping.get(key.upper(), key)
+        
+        return FULL_TO_ABBR.get(team_input, team_input)
 
 
     def method_breakdown(self, game_id: str) -> List[Tuple[str, float, Optional[float]]]:

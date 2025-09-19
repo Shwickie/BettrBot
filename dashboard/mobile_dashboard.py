@@ -401,7 +401,15 @@ def get_unified_power_scores(conn):
 def to_full(name: str | None) -> str:
     if not name:
         return "Unknown"
-    return TEAM_TO_FULL.get(name, name)
+    s = str(name).strip()
+    if not s:
+        return "Unknown"
+    # already a full name?
+    if s in FULL_NAMES:
+        return s
+    su = s.upper()
+    su = CANON.get(su, su)         # LA->LAR, WSH->WAS, etc.
+    return ABBR_TO_FULL.get(su, s) # fallback to original if unknown
 
 # --------------
 # Helpers
@@ -1144,7 +1152,12 @@ def api_betting_analysis():
                         print(f"  Looking for odds for: {team_abbr} -> {full_team_name}")
                         
                         # Find odds for this team using full name
-                        team_odds = odds_df[odds_df['team'] == full_team_name]
+                        team_odds = odds_df[odds_df['team'] == team_abbr]  # Try abbreviation first
+                        if team_odds.empty:
+                            team_odds = odds_df[odds_df['team'] == to_full(team_abbr)]  # Try full name
+                        if team_odds.empty:
+                            # Try partial matching for any remaining mismatches
+                            team_odds = odds_df[odds_df['team'].str.contains(team_abbr, case=False, na=False)]
                         
                         if team_odds.empty:
                             print(f"    No odds found for {full_team_name}")
@@ -1967,8 +1980,13 @@ def api_games():
             teams = []
             
             for tm in (g['home'], g['away']):
+                # Try both abbreviation and full name for odds matching
                 ot = o[o['team']==tm] if not o.empty else pd.DataFrame()
-                
+                if ot.empty and not o.empty:
+                    ot = o[o['team']==to_full(tm)]  # Try full name
+                if ot.empty and not o.empty:
+                    # Try partial matching as last resort
+                    ot = o[o['team'].str.contains(tm, case=False, na=False)]
                 if ot.empty:
                     # FIXED: Use realistic default odds instead of 100
                     teams.append({

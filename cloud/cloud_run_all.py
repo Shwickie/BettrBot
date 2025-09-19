@@ -1,6 +1,7 @@
 # cloud_run_all_fixed.py - WORKING cloud pipeline with proper error handling
 """
 Fixed cloud pipeline that handles all the issues from your error logs
+FIXED: Unicode encoding issues for Windows compatibility
 """
 
 import subprocess
@@ -61,20 +62,22 @@ def setup_cloud_environment():
                 print(f"Connection attempt {attempt + 1} failed, retrying...")
                 time.sleep(2)
             
-        print("✅ Database connection established")
+        print("SUCCESS: Database connection established")
         return engine
         
     except Exception as e:
-        print(f"❌ Database connection failed: {e}")
+        print(f"ERROR: Database connection failed: {e}")
         return None
 
 def run_update_scores():
     """Run the update_scores task with comprehensive error handling"""
-    print("🚀 Running update_scores...")
+    print("TASK: Running update_scores...")
     try:
         # Set environment for the subprocess
         env = os.environ.copy()
         env['BETTR_PIPELINE_MODE'] = 'true'
+        # CRITICAL: Fix Unicode encoding for Windows
+        env['PYTHONIOENCODING'] = 'utf-8'
         
         # Run update_scores.py as subprocess with timeout
         result = subprocess.run(
@@ -83,7 +86,9 @@ def run_update_scores():
             text=True, 
             timeout=600,  # 10 minute timeout
             env=env,
-            cwd=ROOT
+            cwd=ROOT,
+            encoding='utf-8',  # Force UTF-8 encoding
+            errors='replace'   # Replace problematic characters
         )
         
         # Parse output to determine if actually successful
@@ -98,7 +103,7 @@ def run_update_scores():
         ]
         
         if result.returncode == 0 or any(indicator in output for indicator in success_indicators):
-            print("   ✅ update_scores completed successfully")
+            print("   SUCCESS: update_scores completed")
             
             # Show relevant output
             if "Updated" in output:
@@ -108,7 +113,7 @@ def run_update_scores():
             
             return True
         else:
-            print(f"   ❌ update_scores failed:")
+            print(f"   ERROR: update_scores failed:")
             # Show last few lines of error
             error_lines = output.split('\n')[-5:]
             for line in error_lines:
@@ -117,15 +122,15 @@ def run_update_scores():
             return False
             
     except subprocess.TimeoutExpired:
-        print("   ❌ update_scores timed out after 10 minutes")
+        print("   ERROR: update_scores timed out after 10 minutes")
         return False
     except Exception as e:
-        print(f"   ❌ update_scores crashed: {e}")
+        print(f"   ERROR: update_scores crashed: {e}")
         return False
 
 def run_team_season_summary():
     """Generate team season summary data with fixed constraint handling"""
-    print("🚀 Running team_season_summary...")
+    print("TASK: Running team_season_summary...")
     try:
         engine = setup_cloud_environment()
         if not engine:
@@ -245,22 +250,24 @@ def run_team_season_summary():
                 SELECT COUNT(*) FROM team_season_summary WHERE season = :season
             """), {"season": season}).fetchone()[0]
             
-            print(f"   ✅ team_season_summary updated - {count_check} teams for season {season}")
+            print(f"   SUCCESS: team_season_summary updated - {count_check} teams for season {season}")
             return True
             
     except Exception as e:
-        print(f"   ❌ team_season_summary failed: {e}")
+        print(f"   ERROR: team_season_summary failed: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 def run_prediction():
     """Run the prediction task using the FixedNFLSystem"""
-    print("🚀 Running prediction...")
+    print("TASK: Running prediction...")
     try:
         # Set pipeline mode
         env = os.environ.copy()
         env['BETTR_PIPELINE_MODE'] = 'true'
+        # CRITICAL: Fix Unicode encoding
+        env['PYTHONIOENCODING'] = 'utf-8'
         
         # Run prediction.py as subprocess
         result = subprocess.run(
@@ -269,7 +276,9 @@ def run_prediction():
             text=True, 
             timeout=300,  # 5 minute timeout
             env=env,
-            cwd=ROOT
+            cwd=ROOT,
+            encoding='utf-8',
+            errors='replace'
         )
         
         output = result.stdout + result.stderr
@@ -283,7 +292,7 @@ def run_prediction():
         ]
         
         if result.returncode == 0 or any(indicator in output for indicator in success_indicators):
-            print("   ✅ prediction completed successfully")
+            print("   SUCCESS: prediction completed")
             
             # Show prediction count if available
             for line in output.split('\n'):
@@ -294,7 +303,7 @@ def run_prediction():
                     
             return True
         else:
-            print(f"   ❌ prediction failed:")
+            print(f"   ERROR: prediction failed:")
             error_lines = output.split('\n')[-3:]
             for line in error_lines:
                 if line.strip():
@@ -302,7 +311,7 @@ def run_prediction():
             return False
             
     except Exception as e:
-        print(f"   ❌ prediction failed: {e}")
+        print(f"   ERROR: prediction failed: {e}")
         return False
 
 def record_pipeline_status(engine, task, status, message):
@@ -330,13 +339,13 @@ def record_pipeline_status(engine, task, status, message):
 
 def main():
     """Main pipeline execution with better error handling"""
-    print("🌐 BETTR BOT CLOUD PIPELINE - FIXED VERSION")
+    print("BETTR BOT CLOUD PIPELINE - FIXED VERSION")  # Removed Unicode
     print("=" * 50)
     
     # Setup database
     engine = setup_cloud_environment()
     if not engine:
-        print("💥 Cannot proceed without database connection")
+        print("ERROR: Cannot proceed without database connection")
         return False
     
     # Define tasks - ORDER MATTERS
@@ -352,7 +361,7 @@ def main():
     
     for task_name, task_func in tasks:
         try:
-            print(f"\n📋 Running {task_name}...")
+            print(f"\nSTEP: Running {task_name}...")
             task_start = time.time()
             success = task_func()
             task_time = time.time() - task_start
@@ -369,12 +378,12 @@ def main():
             
             if success:
                 success_count += 1
-                print(f"   ✅ {task_name} completed ({task_time:.1f}s)")
+                print(f"   SUCCESS: {task_name} completed ({task_time:.1f}s)")
             else:
-                print(f"   ❌ {task_name} failed ({task_time:.1f}s)")
+                print(f"   ERROR: {task_name} failed ({task_time:.1f}s)")
                 
         except Exception as e:
-            print(f"   💥 {task_name} crashed: {e}")
+            print(f"   CRASH: {task_name} crashed: {e}")
             record_pipeline_status(engine, task_name, "ERROR", str(e))
             results[task_name] = {'success': False, 'time': 0, 'error': str(e)}
     
@@ -383,14 +392,14 @@ def main():
     success_rate = (success_count / len(tasks)) * 100
     
     print(f"\n{'='*50}")
-    print(f"🏁 PIPELINE COMPLETE")
-    print(f"⏱️ Total time: {total_time:.1f} seconds")
-    print(f"✅ Success: {success_count}/{len(tasks)} ({success_rate:.1f}%)")
+    print(f"PIPELINE COMPLETE")
+    print(f"Total time: {total_time:.1f} seconds")
+    print(f"Success: {success_count}/{len(tasks)} ({success_rate:.1f}%)")
     
     # Detailed results
     for task_name, result in results.items():
-        status = "✅" if result['success'] else "❌"
-        print(f"   {status} {task_name}: {result['time']:.1f}s")
+        status = "SUCCESS" if result['success'] else "ERROR"
+        print(f"   {status}: {task_name}: {result['time']:.1f}s")
     
     # Record overall status
     overall_status = "SUCCESS" if success_rate >= 66 else "PARTIAL" if success_rate > 0 else "FAILED"
@@ -398,14 +407,14 @@ def main():
                           f"Pipeline completed: {success_count}/{len(tasks)} tasks successful in {total_time:.1f}s")
     
     if success_rate >= 66:
-        print("🎉 Pipeline successful!")
+        print("SUCCESS: Pipeline successful!")
         print("\nNext steps:")
         print("1. Check your dashboard - should show updated data")
         print("2. Verify predictions are refreshed")
         print("3. Monitor for new games and scores")
         return True
     else:
-        print("⚠️ Pipeline had significant issues - needs attention")
+        print("WARNING: Pipeline had significant issues - needs attention")
         print("\nTroubleshooting:")
         print("1. Check database connectivity")
         print("2. Verify team name mappings")

@@ -1,4 +1,4 @@
-# render_fixed.yaml - WORKING cloud deployment config
+# render_fixed.yaml - WORKING cloud deployment config with automated scheduling
 services:
   - type: web
     name: bettr-bot-web
@@ -18,13 +18,31 @@ services:
         value: ./betting_model_fixed.pkl
       - key: BETTR_PIPELINE_MODE
         value: "false"
+      - key: ENABLE_SCHEDULER
+        value: "true"
 
+  # Cron job for pipeline updates
   - type: cron
     name: bettr-bot-pipeline
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python cloud_run_all_fixed.py
-    schedule: "0 */4 * * *"  # every 4 hours
+    startCommand: python cloud_run_all.py
+    schedule: "0 */4 * * *"  # Every 4 hours
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        sync: false
+      - key: BETTR_PIPELINE_MODE
+        value: "true"
+        
+  # Daily maintenance job
+  - type: cron
+    name: bettr-bot-maintenance
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python automated_scheduler.py
+    schedule: "0 6 * * *"  # Daily at 6 AM UTC
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9

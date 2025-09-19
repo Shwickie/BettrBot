@@ -1,0 +1,77 @@
+[
+  {
+    "database": {
+      "status": "healthy",
+      "recent_games": 48,
+      "recent_odds": 0,
+      "database_type": "PostgreSQL"
+    },
+    "pipeline": {
+      "status": "no_logs",
+      "message": "No pipeline run logs found"
+    },
+    "scheduler": {
+      "running": false,
+      "last_run": null,
+      "run_count": 0,
+      "next_run": null,
+      "apscheduler_available": true
+    },
+    "overall_status": "issues",
+    "issues": [
+      "Pipeline execution",
+      "Automated scheduler"
+    ],
+    "timestamp": "2025-09-17T14:11:14.374466"
+  },
+  {
+    "database": {
+      "status": "healthy",
+      "recent_games": 48,
+      "recent_odds": 0,
+      "database_type": "PostgreSQL"
+    },
+    "pipeline": {
+      "status": "no_logs",
+      "message": "No pipeline run logs found"
+    },
+    "scheduler": {
+      "running": false,
+      "last_run": null,
+      "run_count": 0,
+      "next_run": null,
+      "apscheduler_available": true
+    },
+    "overall_status": "issues",
+    "issues": [
+      "Pipeline execution",
+      "Automated scheduler"
+    ],
+    "timestamp": "2025-09-17T14:11:33.536452"
+  },
+  {
+    "database": {
+      "status": "healthy",
+      "recent_games": 48,
+      "recent_odds": 0,
+      "database_type": "PostgreSQL"
+    },
+    "pipeline": {
+      "status": "no_logs",
+      "message": "No pipeline run logs found"
+    },
+    "scheduler": {
+      "running": false,
+      "last_run": null,
+      "run_count": 0,
+      "next_run": null,
+      "apscheduler_available": true
+    },
+    "overall_status": "issues",
+    "issues": [
+      "Pipeline execution",
+      "Automated scheduler"
+    ],
+    "timestamp": "2025-09-17T14:16:04.821500"
+  }
+]

@@ -754,28 +754,76 @@ AI_CHAT_TEMPLATE = r"""
     }
 
     function autofillOdds(){
-        const teamName = teamSelect.value; 
-        const book = bookSelect.value;
-        const team = selectedGameData.teams.find(x=>x.team===teamName);
-        if(!team){ 
-            oddsInput.value=''; 
-            return; 
+        const teamSelect = document.getElementById('betTeam');
+        const bookSelect = document.getElementById('betSportsbook');
+        const oddsInput = document.getElementById('betOdds');
+        
+        if (!teamSelect || !bookSelect || !oddsInput || !selectedGameData) {
+            return;
         }
         
-        const byBook = team.by_book||[]; 
-        const match = byBook.find(b=>b.sportsbook===book);
-        const line = match ? match.odds : team.odds;
+        const teamName = teamSelect.value;
+        const book = bookSelect.value;
         
-        if(line !== undefined && line !== null && line !== 100 && line !== -100){ 
-            // FIXED: Better odds formatting
-            const oddsNum = Number(line);
-            if (oddsNum > 0) {
-                oddsInput.value = `+${oddsNum}`;
+        // Find the team data
+        const team = selectedGameData.teams.find(x => x.team === teamName);
+        if (!team) {
+            oddsInput.value = '';
+            return;
+        }
+        
+        let finalOdds = null;
+        
+        // First try to find odds for the specific sportsbook
+        const byBook = team.by_book || [];
+        const bookMatch = byBook.find(b => b.sportsbook === book);
+        
+        if (bookMatch && bookMatch.odds != null) {
+            finalOdds = bookMatch.odds;
+        } else {
+            // Fall back to the team's best odds
+            finalOdds = team.odds;
+        }
+        
+        // Convert and validate odds
+        if (finalOdds != null && finalOdds !== undefined) {
+            const oddsNum = Number(finalOdds);
+            
+            // Skip obviously bad odds
+            if (!isFinite(oddsNum) || oddsNum === 0) {
+                oddsInput.value = '-110'; // Default
+                return;
+            }
+            
+            let americanOdds;
+            
+            // Check if it's decimal odds (typically 1.01 to 10.0)
+            if (oddsNum >= 1.01 && oddsNum <= 10.0) {
+                // Convert decimal to American
+                if (oddsNum >= 2.0) {
+                    americanOdds = Math.round((oddsNum - 1) * 100);
+                } else {
+                    americanOdds = Math.round(-100 / (oddsNum - 1));
+                }
             } else {
-                oddsInput.value = `${oddsNum}`;
+                // Assume it's already American odds
+                americanOdds = Math.round(oddsNum);
+            }
+            
+            // Validate the American odds are reasonable
+            if (americanOdds >= -2000 && americanOdds <= 2000 && americanOdds !== 0) {
+                // Format with proper + sign for positive odds
+                if (americanOdds > 0) {
+                    oddsInput.value = `+${americanOdds}`;
+                } else {
+                    oddsInput.value = `${americanOdds}`;
+                }
+            } else {
+                // Use default if odds seem unreasonable
+                oddsInput.value = '-110';
             }
         } else {
-            // Default to standard -110 if no real odds available
+            // No odds found, use default
             oddsInput.value = '-110';
         }
     }
@@ -1677,6 +1725,17 @@ HTML_TEMPLATE = """
             <div style=\"display:flex;gap:10px;justify-content:flex-end;\"><button type=\"submit\" class=\"btn btn-warning\">Adjust Balance</button></div>
         </form>
     </div>
+    <div class="panel admin-panel">
+            <h3>🤖 Automation Status</h3>
+            <div id="automation-status" style="margin: 10px 0;">
+                <div class="loading">Loading automation status...</div>
+            </div>
+            <div class="controls">
+                <button class="btn btn-primary" onclick="refreshAutomationStatus()">Refresh Status</button>
+                <button class="btn btn-warning" onclick="triggerPipelineRun()">Run Pipeline Now</button>
+                <button class="btn btn-success" onclick="viewPipelineLogs()">View Logs</button>
+            </div>
+        </div>
     <div style="margin: 15px 0;">
       <button class="btn btn-warning" onclick="wipeDepositsWithdrawals()" style="margin-right: 10px;">
         Clear Deposits/Withdrawals (All Users)
@@ -2249,16 +2308,31 @@ HTML_TEMPLATE = """
     });
 
     function displayRankings(data){
-        const tbody=document.getElementById('rankings-body'); if(!tbody) return;
-        if(!data||!data.length){ tbody.innerHTML='<tr><td colspan="5" class="loading">No rankings available</td></tr>'; return; }
-        tbody.innerHTML='';
-        data.forEach((t,i)=>{
-            const powerClass=t.power_score>=0?'positive':'negative';
-            const injAdj = (t.injury_impact&&Number(t.injury_impact)!==0)? Number(-t.injury_impact).toFixed(1) : '-';
-            const row=document.createElement('tr');
-            row.innerHTML=`<td style="font-size:11px;">${i+1}</td><td style="font-size:11px;">${t.team}</td><td style="font-size:10px;color:#a8b5d3;">${t.record||'0-0'}</td><td class="right ${powerClass}" style="font-size:11px;">${Number(t.power_score).toFixed(1)}</td><td class="right" style="font-size:10px;">${injAdj}</td>`; tbody.appendChild(row);
-        });
-    }
+      const tbody=document.getElementById('rankings-body'); 
+      if(!tbody) return;
+      
+      if(!data.ok || !data.rankings || !data.rankings.length){ 
+          tbody.innerHTML='<tr><td colspan="5" class="loading">No rankings available</td></tr>'; 
+          return; 
+      }
+      
+      tbody.innerHTML='';
+      data.rankings.forEach((t,i)=>{
+          const powerClass = t.power >= 0 ? 'positive' : 'negative';
+          const injAdj = (t.injury_impact && Number(t.injury_impact) !== 0) ? 
+              Number(-t.injury_impact).toFixed(1) : '-';
+          
+          const row = document.createElement('tr');
+          row.innerHTML = `
+              <td style="font-size:11px;">${i+1}</td>
+              <td style="font-size:11px;">${t.team}</td>
+              <td style="font-size:10px;color:#a8b5d3;">${t.record || '0-0'}</td>
+              <td class="right ${powerClass}" style="font-size:11px;">${Number(t.power).toFixed(1)}</td>
+              <td class="right" style="font-size:10px;">${injAdj}</td>
+          `;
+          tbody.appendChild(row);
+      });
+  }
 
     let __lastAnalysis = null;
     let edgesRenderLimit = 40;

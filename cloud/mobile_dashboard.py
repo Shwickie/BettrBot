@@ -27,6 +27,8 @@ from sqlalchemy import create_engine, text
 import sqlite3
 import time
 from functools import wraps
+import datetime as dt
+
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if PROJECT_ROOT not in sys.path:
@@ -86,6 +88,9 @@ else:
 
 # Set global engine reference
 engine = ENGINE
+DB_PATH = DATABASE_URL if USE_CLOUD_DB else DEFAULT_DB
+
+
 try:
     from model.prediction import FixedNFLSystem
     print("Successfully imported FixedNFLSystem from model.prediction")
@@ -104,6 +109,16 @@ except Exception:
 
 
 try:
+    from automated_scheduler import start_background_scheduler, stop_background_scheduler, get_scheduler_status
+    SCHEDULER_AVAILABLE = True
+except ImportError:
+    print("Automated scheduler not available")
+    SCHEDULER_AVAILABLE = False
+    start_background_scheduler = lambda: False
+    stop_background_scheduler = lambda: None
+    get_scheduler_status = lambda: {"error": "Scheduler not available"}
+
+try:
     from dashboard.ai_chat_stub import comprehensive_ai_bp
 except Exception:
     import os, sys
@@ -113,20 +128,307 @@ except Exception:
 
 def safe_query(query_str, params=None):
     """Execute query safely with proper PostgreSQL parameter handling"""
-    if not engine:
+    if not ENGINE:
         return pd.DataFrame()
     
     try:
-        with engine.connect() as conn:
+        if USE_CLOUD_DB:
+            with ENGINE.connect() as conn:
+                if params:
+                    result = pd.read_sql(text(query_str), conn, params=params)
+                else:
+                    result = pd.read_sql(text(query_str), conn)
+                return result
+        else:
+            conn = get_db()
             if params:
-                # Use SQLAlchemy text() with proper parameter binding
-                result = pd.read_sql(text(query_str), conn, params=params)
+                # Convert dict params to list for SQLite
+                param_list = list(params.values()) if isinstance(params, dict) else params
+                result = pd.read_sql_query(query_str, conn, params=param_list)
             else:
-                result = pd.read_sql(text(query_str), conn)
+                result = pd.read_sql_query(query_str, conn)
             return result
     except Exception as e:
         print(f"Query error: {e}")
         return pd.DataFrame()
+    
+
+def compute_live_records(conn, season: int) -> pd.DataFrame:
+    """
+    FIXED VERSION: Compute W-L-T for the requested season using game_date.
+    Handles both SQLAlchemy connections and raw sqlite3 connections properly.
+    """
+    # Check what type of connection we have
+    is_sqlite_raw = hasattr(conn, 'execute') and not hasattr(conn, 'engine')
+    is_sqlalchemy = hasattr(conn, 'engine')
+    
+    if is_sqlalchemy:
+        # SQLAlchemy connection - check if it's PostgreSQL
+        USE_CLOUD_DB = 'postgresql' in str(conn.engine.url)
+    else:
+        # Raw SQLite connection
+        USE_CLOUD_DB = False
+
+    # Get games with proper database handling
+    if USE_CLOUD_DB:
+        # PostgreSQL with SQLAlchemy
+        games = pd.read_sql_query(text("""
+            WITH g AS (
+                SELECT
+                    game_id, home_team, away_team,
+                    home_score, away_score, week, id, game_date,
+                    CASE
+                      WHEN EXTRACT(MONTH FROM game_date) >= 8
+                        THEN EXTRACT(YEAR FROM game_date)::int
+                      ELSE (EXTRACT(YEAR FROM game_date)::int) - 1
+                    END AS season_year
+                FROM games
+            )
+            SELECT game_id, home_team, away_team, home_score, away_score, week, id, game_date
+            FROM g
+            WHERE season_year = :season
+              AND home_score IS NOT NULL AND away_score IS NOT NULL
+        """), conn, params={"season": season})
+    else:
+        # SQLite - works with both raw connections and SQLAlchemy
+        if is_sqlite_raw:
+            # Raw sqlite3.Connection
+            games = pd.read_sql_query("""
+                WITH g AS (
+                    SELECT
+                        game_id, home_team, away_team,
+                        home_score, away_score, week, id, game_date,
+                        CASE
+                          WHEN CAST(strftime('%m', game_date) AS INT) >= 8
+                            THEN CAST(strftime('%Y', game_date) AS INT)
+                          ELSE CAST(strftime('%Y', game_date) AS INT) - 1
+                        END AS season_year
+                    FROM games
+                )
+                SELECT game_id, home_team, away_team, home_score, away_score, week, id, game_date
+                FROM g
+                WHERE season_year = ?
+                  AND home_score IS NOT NULL AND away_score IS NOT NULL
+            """, conn, params=[season])
+        else:
+            # SQLAlchemy connection to SQLite
+            games = pd.read_sql_query(text("""
+                WITH g AS (
+                    SELECT
+                        game_id, home_team, away_team,
+                        home_score, away_score, week, id, game_date,
+                        CASE
+                          WHEN CAST(strftime('%m', game_date) AS INT) >= 8
+                            THEN CAST(strftime('%Y', game_date) AS INT)
+                          ELSE CAST(strftime('%Y', game_date) AS INT) - 1
+                        END AS season_year
+                    FROM games
+                )
+                SELECT game_id, home_team, away_team, home_score, away_score, week, id, game_date
+                FROM g
+                WHERE season_year = :season
+                  AND home_score IS NOT NULL AND away_score IS NOT NULL
+            """), conn, params={"season": season})
+
+    if games.empty:
+        return pd.DataFrame(columns=[
+            "team","wins","losses","ties","games_played","win_pct",
+            "points_for","points_against","point_diff"
+        ])
+
+    # Normalize team names to full names BEFORE any processing
+    games["home_team"] = games["home_team"].apply(to_full)
+    games["away_team"] = games["away_team"].apply(to_full)
+
+    # Handle duplicate games with fallback game_id
+    games["game_id"] = games["game_id"].fillna("").astype(str).str.strip()
+    games["gid_fallback"] = (
+        pd.to_datetime(games["game_date"]).dt.strftime("%Y%m%d") + "_" +
+        games["away_team"].str.replace(" ", "") + "_" +
+        games["home_team"].str.replace(" ", "")
+    )
+    games["gid"] = games["game_id"].where(games["game_id"] != "", games["gid_fallback"])
+
+    # Remove duplicates (keeping most recent)
+    keep_col = "updated_at" if "updated_at" in games.columns else ("id" if "id" in games.columns else None)
+    if keep_col:
+        games = games.sort_values(keep_col).drop_duplicates("gid", keep="last")
+    else:
+        games = games.drop_duplicates("gid", keep="last")
+
+    # Calculate win/loss indicators
+    games["home_win"] = (games["home_score"] > games["away_score"]).astype(int)
+    games["away_win"] = (games["away_score"] > games["home_score"]).astype(int)
+    games["tie"] = (games["home_score"] == games["away_score"]).astype(int)
+
+    # Aggregate home stats
+    home_stats = games.groupby("home_team").agg(
+        wins=("home_win", "sum"),
+        losses=("away_win", "sum"), 
+        ties=("tie", "sum"),
+        games_played=("home_win", "size"),
+        points_for=("home_score", "sum"),
+        points_against=("away_score", "sum"),
+    ).reset_index()
+    home_stats.rename(columns={"home_team": "team"}, inplace=True)
+
+    # Aggregate away stats  
+    away_stats = games.groupby("away_team").agg(
+        wins=("away_win", "sum"),
+        losses=("home_win", "sum"),
+        ties=("tie", "sum"), 
+        games_played=("away_win", "size"),
+        points_for=("away_score", "sum"),
+        points_against=("home_score", "sum"),
+    ).reset_index()
+    away_stats.rename(columns={"away_team": "team"}, inplace=True)
+
+    # Combine home and away stats
+    all_teams = set(home_stats["team"].unique()) | set(away_stats["team"].unique())
+    
+    records = []
+    for team in all_teams:
+        home_row = home_stats[home_stats["team"] == team]
+        away_row = away_stats[away_stats["team"] == team]
+        
+        # Get stats or default to 0
+        home_wins = home_row["wins"].iloc[0] if not home_row.empty else 0
+        home_losses = home_row["losses"].iloc[0] if not home_row.empty else 0
+        home_ties = home_row["ties"].iloc[0] if not home_row.empty else 0
+        home_games = home_row["games_played"].iloc[0] if not home_row.empty else 0
+        home_pf = home_row["points_for"].iloc[0] if not home_row.empty else 0
+        home_pa = home_row["points_against"].iloc[0] if not home_row.empty else 0
+        
+        away_wins = away_row["wins"].iloc[0] if not away_row.empty else 0
+        away_losses = away_row["losses"].iloc[0] if not away_row.empty else 0
+        away_ties = away_row["ties"].iloc[0] if not away_row.empty else 0
+        away_games = away_row["games_played"].iloc[0] if not away_row.empty else 0
+        away_pf = away_row["points_for"].iloc[0] if not away_row.empty else 0
+        away_pa = away_row["points_against"].iloc[0] if not away_row.empty else 0
+        
+        # Combine totals
+        total_wins = int(home_wins + away_wins)
+        total_losses = int(home_losses + away_losses)
+        total_ties = int(home_ties + away_ties)
+        total_games = int(home_games + away_games)
+        total_pf = int(home_pf + away_pf)
+        total_pa = int(home_pa + away_pa)
+        
+        # Calculate win percentage
+        if total_games > 0:
+            win_pct = (total_wins + 0.5 * total_ties) / total_games
+        else:
+            win_pct = 0.0
+            
+        records.append({
+            "team": team,
+            "wins": total_wins,
+            "losses": total_losses, 
+            "ties": total_ties,
+            "games_played": total_games,
+            "win_pct": win_pct,
+            "points_for": total_pf,
+            "points_against": total_pa,
+            "point_diff": total_pf - total_pa
+        })
+
+    result = pd.DataFrame(records)
+    return result
+
+
+def test_fixed_function():
+    """Test the fixed function with your database"""
+    import os
+    import sqlite3
+    from sqlalchemy import create_engine
+    
+    # Database setup (same as your mobile_dashboard.py)
+    DATABASE_URL = os.environ.get("DATABASE_URL")
+    if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    
+    USE_CLOUD_DB = bool(DATABASE_URL)
+    SEASON = 2025
+    
+    if USE_CLOUD_DB:
+        engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+        with engine.connect() as conn:
+            records = compute_live_records(conn, SEASON)
+    else:
+        local_db = r"E:/Bettr Bot/betting-bot/data/betting.db"
+        conn = sqlite3.connect(local_db)
+        records = compute_live_records(conn, SEASON)
+        conn.close()
+    
+    print(f"\nFINAL RESULTS:")
+    print(f"Total teams: {len(records)}")
+    
+    # Show teams with games played
+    teams_with_games = records[records["games_played"] > 0].sort_values("games_played", ascending=False)
+    print(f"\nTeams with completed games:")
+    for _, team in teams_with_games.iterrows():
+        print(f"  {team['team']}: {team['wins']}-{team['losses']}-{team['ties']} ({team['games_played']} games)")
+    
+    return records
+
+def get_engine():
+    """Return the global SQLAlchemy Engine for BOTH SQLite and Postgres."""
+    return ENGINE
+
+def df_query(sqlite_sql: str, pg_sql: str, params: dict):
+    """Run the right SQL flavor for SQLite vs Postgres and return a DataFrame."""
+    if USE_CLOUD_DB:
+        return pd.read_sql_query(text(pg_sql), get_engine(), params=params)
+    else:
+        # use positional ? for sqlite
+        # infer order from common param names
+        order = []
+        if "season" in params: order.append(params["season"])
+        if "start" in params: order.append(params["start"])
+        if "end" in params: order.append(params["end"])
+        return pd.read_sql_query(sqlite_sql, get_db(), params=order)
+# Add these functions to mobile_dashboard.py if they're missing
+def normalize_team_for_odds_lookup(team_name):
+    """
+    Return the format that matches your odds table (abbreviations like ATL, NYG)
+    """
+    if not team_name:
+        return ''
+    
+    team_str = str(team_name).strip()
+    
+    # If already an abbreviation, return it
+    if team_str in ABBR_TO_FULL:
+        return team_str
+    
+    # If it's a full name, convert to abbreviation  
+    if team_str in FULL_TO_ABBR:
+        return FULL_TO_ABBR[team_str]
+    
+    # Handle canonical mappings
+    team_upper = team_str.upper()
+    team_upper = CANON.get(team_upper, team_upper)
+    
+    return team_upper
+
+def get_full_team_name(team_abbr):
+    """
+    Convert team abbreviation to full name
+    This was referenced as 'full_team_name' in the error logs
+    """
+    if not team_abbr:
+        return "Unknown"
+    
+    team_str = str(team_abbr).strip().upper()
+    
+    # Apply canonical mapping first
+    team_str = CANON.get(team_str, team_str)
+    
+    # Return full name if we have it
+    return ABBR_TO_FULL.get(team_str, team_abbr)
+
+# Also make sure these are available as aliases
+full_team_name = get_full_team_name
 
 def fix_user_data_structure():
     """Fix any inconsistencies in user data structure"""
@@ -173,6 +475,30 @@ def fix_user_data_structure():
         print(f"ðŸ”§ Fixed {fixed_count} user data issues")
     
     return fixed_count
+
+def normalize_team_for_api_games(team_name):
+    """
+    Ensure team names in /api/games match the format used in odds table
+    """
+    if not team_name:
+        return ''
+    
+    team_str = str(team_name).strip()
+    
+    # If it's already an abbreviation that exists in our mapping, return it
+    if team_str in ABBR_TO_FULL:
+        return team_str
+    
+    # If it's a full name, convert to abbreviation for odds lookup
+    if team_str in FULL_TO_ABBR:
+        return FULL_TO_ABBR[team_str]
+    
+    # Apply canonical mappings for edge cases
+    team_upper = team_str.upper()
+    team_upper = CANON.get(team_upper, team_upper)
+    
+    return team_upper
+
 
 def _normalize_model_pack(sysobj):
     """Ensure sysobj.model exists and sysobj.model_data['model'] is set."""
@@ -430,17 +756,32 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USERS_PATH_DEFAULT = os.environ.get("BETTR_USERS_PATH")
 if not USERS_PATH_DEFAULT:
     USERS_PATH_DEFAULT = "/cloud/user_accounts.json" if os.path.isdir("/cloud") else os.path.join(BASE_DIR, "user_accounts.json")
+# FIX - Replace with:
+def get_user_data_path():
+    candidates = [
+        os.path.join(os.getcwd(), "user_accounts.json"),
+        os.path.join(os.path.dirname(__file__), "user_accounts.json"),
+        os.path.join(os.path.dirname(__file__), "..", "user_accounts.json"),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return os.path.join(os.getcwd(), "user_accounts.json")
 
-USER_DATA_FILE = USERS_PATH_DEFAULT
+USER_DATA_FILE = get_user_data_path()
 os.makedirs(os.path.dirname(USER_DATA_FILE), exist_ok=True)
 
-# Create an empty file once so load() doesnâ€™t blow up
+# Create an empty file once so load() doesn't blow up
 if not os.path.exists(USER_DATA_FILE):
     with open(USER_DATA_FILE, "w") as f:
         f.write("{}")
 
 app.secret_key = os.environ.get("FLASK_SECRET", "bettr-bot-enhanced-2025")
-print(f"ðŸ” Using users file: {USER_DATA_FILE}")
+print(f"Looking for user file at: {USER_DATA_FILE}")
+print(f"File exists: {os.path.exists(USER_DATA_FILE)}")
+print(f"Current working directory: {os.getcwd()}")
+print(f"Database connection: {'PostgreSQL' if USE_CLOUD_DB else 'SQLite'}")
+print(f"Users loaded: {len(USERS) if 'USERS' in globals() else 'Not loaded yet'}")
 
 
 @app.route('/debug/routes')
@@ -549,59 +890,57 @@ def get_unified_power_scores(conn):
     """
     season, _ = current_phase_and_season()
 
-    # 1) Base power + record (seed current season; fallback to last season if empty)
+    # 1) Base power from team_season_summary (can be preseason seeded)
     try:
-        base = pd.read_sql_query(
-            "SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season = :season",
-            conn, params={"season": season}
-        )
-        base['team'] = base['team'].map(to_abbr)
-        if base.empty:
-            base = pd.read_sql_query(
+        if USE_CLOUD_DB:
+            base = safe_query(
                 "SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season = :season",
-                conn, params=[season - 1]
+                {"season": season}
+            )
+        else:
+            base = pd.read_sql_query(
+                "SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season = ?",
+                get_db(), params=[season]
             )
     except Exception:
-        base = pd.DataFrame(columns=['team','power_score','games_played','win_pct'])
+        base = pd.DataFrame(columns=["team","power_score","games_played","win_pct"])
 
-    # 2) Injury view (keep it light so we donÃ¢â‚¬â„¢t drive everything negative)
-    # In get_unified_power_scores()
+    # Normalize team names to FULL
+    base["team"] = base["team"].map(to_full)
+
+    # 2) Live records from games (overrides games_played & win_pct)
+    live = compute_live_records(conn, season)
+    df = base.merge(live[["team","games_played","win_pct"]], on="team", how="left", suffixes=("", "_live"))
+    df["games_played"] = df["games_played_live"].fillna(df["games_played"])
+    df["win_pct"]      = df["win_pct_live"].fillna(df["win_pct"])
+    df.drop(columns=[c for c in ["games_played_live","win_pct_live"] if c in df.columns], inplace=True)
+
+    # 3) Injury view
     try:
-        inj = load_injury_impact_from_detail(conn)
-        # keep columns: team, injury_impact, qb_risk
+        inj = load_injury_impact_from_detail(conn)[["team","injury_impact","qb_risk"]]
+        inj["team"] = inj["team"].map(to_full)
     except Exception:
-        inj = pd.DataFrame(columns=['team','injury_impact','qb_risk'])
+        inj = pd.DataFrame(columns=["team","injury_impact","qb_risk"])
 
+    df = df.merge(inj, on="team", how="left")
+    df["injury_impact"] = df["injury_impact"].fillna(0.0)
+    df["qb_risk"] = df["qb_risk"].fillna(0.0)
 
-    df = base.merge(inj, on='team', how='left')
-    df['injury_impact'] = df['injury_impact'].fillna(0.0)
-    df['qb_risk'] = df['qb_risk'].fillna(0)
-
-    # 3) Small Ã¢â‚¬Å“formÃ¢â‚¬Â component so 0Ã¢â‚¬â€œ0 teams donÃ¢â‚¬â„¢t all look identical
-    df['form_component'] = df.apply(
-        lambda r: (r['win_pct'] - 0.5) * 20 if pd.notnull(r['win_pct']) and pd.notnull(r['games_played']) and r['games_played'] > 0 else 0.0,
-        axis=1
+    # 4) Small form component from win_pct (won’t blow up preseason)
+    df["form_component"] = np.where(
+        df["games_played"].fillna(0) > 0,
+        (df["win_pct"].fillna(0.5) - 0.5) * 20,
+        0.0
     )
 
-    # 4) Final adjusted power (keep roughly your historical 0Ã¢â‚¬â€œ12 feel)
-    # In get_unified_power_scores()
-    df['adj_power'] = (
-        # Let the base power score have its full impact
-        df['power_score'].fillna(0.0) * 1.0 +
-
-        # Keep a small component for recent form
-        df['form_component'] * 0.20 -
-
-        # Soften the injury penalty
-        df['injury_impact'] * 0.05
+    # 5) Final adjusted power (keep your scale/weights)
+    df["adj_power"] = (
+        df["power_score"].fillna(0.0) * 1.0 +
+        df["form_component"] * 0.20 -
+        df["injury_impact"] * 0.05
     )
 
-    return df[['team','power_score','games_played','win_pct','injury_impact','qb_risk','adj_power']]
-
-def to_full(name: str | None) -> str:
-    if not name:
-        return "Unknown"
-    return TEAM_TO_FULL.get(name, name)
+    return df[["team","power_score","games_played","win_pct","injury_impact","qb_risk","adj_power"]]
 
 # --------------
 # Helpers
@@ -618,6 +957,67 @@ def current_phase_and_season(today: date | None = None):
     season = current_season_year(d)
     phase = 'preseason' if PRESEASON_START <= d <= PRESEASON_END else 'regular'
     return season, phase
+
+def compute_team_records(conn, season_year: int) -> pd.DataFrame:
+    """
+    Build W-L-T and GP from scored games in the 'games' table for the given NFL season.
+    Works in SQLite.
+    """
+    sql = text("""
+    WITH g AS (
+      SELECT
+        CASE WHEN CAST(strftime('%m', game_date) AS INTEGER) >= 8
+             THEN CAST(strftime('%Y', game_date) AS INTEGER)
+             ELSE CAST(strftime('%Y', game_date) AS INTEGER) - 1
+        END AS season_year,
+        home_team, away_team, home_score, away_score
+      FROM games
+      WHERE home_score IS NOT NULL AND away_score IS NOT NULL
+    ),
+    home AS (
+      SELECT season_year, home_team AS team,
+             SUM(CASE WHEN home_score > away_score THEN 1 ELSE 0 END) AS wins,
+             SUM(CASE WHEN home_score < away_score THEN 1 ELSE 0 END) AS losses,
+             SUM(CASE WHEN home_score = away_score THEN 1 ELSE 0 END) AS ties,
+             COUNT(*) AS gp
+      FROM g
+      GROUP BY season_year, home_team
+    ),
+    away AS (
+      SELECT season_year, away_team AS team,
+             SUM(CASE WHEN away_score > home_score THEN 1 ELSE 0 END) AS wins,
+             SUM(CASE WHEN away_score < home_score THEN 1 ELSE 0 END) AS losses,
+             SUM(CASE WHEN away_score = home_score THEN 1 ELSE 0 END) AS ties,
+             COUNT(*) AS gp
+      FROM g
+      GROUP BY season_year, away_team
+    ),
+    tot AS (
+      SELECT season_year, team,
+             SUM(wins)   AS wins,
+             SUM(losses) AS losses,
+             SUM(ties)   AS ties,
+             SUM(gp)     AS games_played
+      FROM (SELECT * FROM home UNION ALL SELECT * FROM away)
+      GROUP BY season_year, team
+    )
+    SELECT team, wins, losses, ties, games_played
+    FROM tot
+    WHERE season_year = :season
+    """)
+    df = pd.read_sql_query(sql, conn, params={'season': season_year})
+    if df.empty:
+        # still return a frame with expected columns
+        df = pd.DataFrame(columns=['team', 'wins', 'losses', 'ties', 'games_played'])
+    for col in ('wins','losses','ties','games_played'):
+        if col not in df.columns:
+            df[col] = 0
+    df['wins'] = df['wins'].fillna(0).astype(int)
+    df['losses'] = df['losses'].fillna(0).astype(int)
+    df['ties'] = df['ties'].fillna(0).astype(int)
+    df['games_played'] = df['games_played'].fillna(0).astype(int)
+    df['win_pct'] = df.apply(lambda r: (r['wins'] / r['games_played']) if r['games_played'] else 0.0, axis=1)
+    return df
 
 # ---------- Injury impact from ai_injury_validation_detail (with superstar weighting) ----------
 # Designation weights (severity)
@@ -697,20 +1097,59 @@ def load_injury_impact_from_detail(conn):
     import pandas as pd
 
     try:
-        df = pd.read_sql_query("""
-            SELECT
-              COALESCE(team_ai, team_inj)          AS team,
-              COALESCE(position, '')               AS position,
-              COALESCE(designation, '')            AS designation,
-              COALESCE(inj_name, roster_name, '')  AS player,
-              COALESCE(inj_missing_team, 0)        AS inj_missing_team,
-              COALESCE(roster_missing_team, 0)     AS roster_missing_team,
-              COALESCE(team_mismatch, 0)           AS team_mismatch
-            FROM ai_injury_validation_detail
-        """, conn)
-    except Exception:
-        return pd.DataFrame(columns=['team','injury_impact','total_injuries','qb_risk','skill_position_risk'])
+        if USE_CLOUD_DB:
+            with ENGINE.connect() as db_conn:
+                table_check = conn.execute(
+                    text("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_injury_validation_detail'")
+                ).fetchone()  # if using SQLAlchemy Connection
+                if not table_check:
+                    print("ai_injury_validation_detail table not found")
+                    return pd.DataFrame(columns=['team','injury_impact','total_injuries','qb_risk','skill_position_risk'])
 
+                df = pd.read_sql(text("""
+                    SELECT
+                        COALESCE(team_ai, team_inj)          AS team,
+                        COALESCE(position, '')               AS position,
+                        COALESCE(designation, '')            AS designation,
+                        COALESCE(inj_name, roster_name, '')  AS player,
+                        COALESCE(inj_missing_team, 0)        AS inj_missing_team,
+                        COALESCE(roster_missing_team, 0)     AS roster_missing_team,
+                        COALESCE(team_mismatch, 0)           AS team_mismatch
+                    FROM ai_injury_validation_detail
+                """), db_conn)
+        else:
+            # Check if table exists in SQLite (works for sqlite3 or SQLAlchemy)
+            try:
+                if isinstance(conn, sqlite3.Connection):
+                    table_check = conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_injury_validation_detail'"
+                    ).fetchone()
+                else:
+                    # SQLAlchemy Connection against SQLite
+                    table_check = conn.execute(
+                        text("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_injury_validation_detail'")
+                    ).fetchone()
+            except Exception:
+                table_check = None
+
+            if not table_check:
+                print("ai_injury_validation_detail table not found")
+                return pd.DataFrame(columns=['team','injury_impact','total_injuries','qb_risk','skill_position_risk'])
+
+            df = pd.read_sql_query("""
+                SELECT
+                    COALESCE(team_ai, team_inj)          AS team,
+                    COALESCE(position, '')               AS position,
+                    COALESCE(designation, '')            AS designation,
+                    COALESCE(inj_name, roster_name, '')  AS player,
+                    COALESCE(inj_missing_team, 0)        AS inj_missing_team,
+                    COALESCE(roster_missing_team, 0)     AS roster_missing_team,
+                    COALESCE(team_mismatch, 0)           AS team_mismatch
+                FROM ai_injury_validation_detail
+            """, conn)
+    except Exception as e:
+        print(f"Error loading injury data: {e}")
+        return pd.DataFrame(columns=['team','injury_impact','total_injuries','qb_risk','skill_position_risk'])
     if df.empty:
         return pd.DataFrame(columns=['team','injury_impact','total_injuries','qb_risk','skill_position_risk'])
 
@@ -756,20 +1195,8 @@ def load_injury_impact_from_detail(conn):
 # Per-request sqlite3 connection (same DB as SQLAlchemy)
 def get_db():
     if USE_CLOUD_DB:
-        # FIXED: Better connection handling with retry logic
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                conn = ENGINE.connect()
-                # Test the connection
-                conn.execute(text("SELECT 1"))
-                return conn
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    print(f"Failed to connect after {max_retries} attempts: {e}")
-                    raise
-                print(f"Connection attempt {attempt + 1} failed, retrying...")
-                time.sleep(0.5)  # Brief delay before retry
+        # Return the global engine for cloud DB
+        return ENGINE
     else:
         if not hasattr(g, "_db"):
             g._db = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
@@ -1043,28 +1470,29 @@ def dashboard():
         print(f"Dashboard stats error: {e}")
         total_games, total_odds, sportsbooks, last_str = 0, 0, 0, 'Error'
 
-    # find top team (keep existing logic)
+    # Top team calculation with proper connection
     try:
         season, _ = current_phase_and_season()
-        rankings_df = pd.read_sql_query(
-            text("SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season=:season"),
-            conn, params={"season": season}
-        )
-        if rankings_df.empty:
-            rankings_df = pd.read_sql_query(
-                text("SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season=:season"),
-                conn, params={"season": season - 1}
+        with ENGINE.connect() as conn:
+            rankings_df = safe_query(
+                "SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season = :season",
+                {"season": season}
             )
+            if rankings_df.empty:
+                rankings_df = safe_query(
+                    "SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season = :season",
+                    {"season": season - 1}
+                )
 
-        injuries_df = load_injury_impact_from_detail(conn)[['team','injury_impact']]
-        merged_df = rankings_df.merge(injuries_df, on='team', how='left')
-        merged_df['injury_impact'] = merged_df['injury_impact'].fillna(0.0)
-        merged_df['form_component'] = np.where(merged_df['games_played'] > 0, (merged_df['win_pct'] - 0.5) * 20, 0)
-        merged_df['adjusted_power'] = (merged_df['power_score'] * 0.6 +
-                                       merged_df['form_component'] * 0.2 -
-                                       merged_df['injury_impact'] * 0.10)
+            injuries_df = load_injury_impact_from_detail(conn)[['team','injury_impact']]
+            merged_df = rankings_df.merge(injuries_df, on='team', how='left')
+            merged_df['injury_impact'] = merged_df['injury_impact'].fillna(0.0)
+            merged_df['form_component'] = np.where(merged_df['games_played'] > 0, (merged_df['win_pct'] - 0.5) * 20, 0)
+            merged_df['adjusted_power'] = (merged_df['power_score'] * 0.6 +
+                                           merged_df['form_component'] * 0.2 -
+                                           merged_df['injury_impact'] * 0.10)
 
-        top_team = to_full(merged_df.loc[merged_df['adjusted_power'].idxmax()]['team']) if not merged_df.empty else "N/A"
+            top_team = to_full(merged_df.loc[merged_df['adjusted_power'].idxmax()]['team']) if not merged_df.empty else "N/A"
     except Exception as e:
         print(f"Top team calculation error: {e}")
         top_team = 'Error'
@@ -1080,125 +1508,157 @@ def dashboard():
 
     return render_template_string(HTML_TEMPLATE, username=username, user=user, stats=stats, db_type='cloud' if USE_CLOUD_DB else 'local', users=USERS)
 
+
 # ==================
 # API: /api/rankings
 # ==================
-@app.route('/api/rankings')
-@db_retry()
+@app.get("/api/rankings")
 def api_rankings():
-    """FIXED rankings with proper duplicate handling"""
-    season, _phase = current_phase_and_season()
-    
-    season, _phase = current_phase_and_season()
-    
+    season = request.args.get("season", type=int) or date.today().year
     try:
-        if USE_CLOUD_DB:
-            with ENGINE.connect() as conn:
-                base_query = """
-                    SELECT DISTINCT team, power_score, wins, losses,
-                        games_played, win_pct, point_diff
-                    FROM team_season_summary 
-                    WHERE season = :season
-                """
-                pr = pd.read_sql_query(text(base_query), conn, params={"season": season})
-                # NORMALIZE team names to abbreviations only
-                pr['team'] = pr['team'].map(to_abbr)
-                
-                # REMOVE duplicates by taking the entry with more games played
-                pr = pr.sort_values('games_played', ascending=False).drop_duplicates(subset=['team']).reset_index(drop=True)
-                
-                
-                if pr.empty:
-                    pr = pd.read_sql_query(text(base_query), conn, params={"season": season - 1})
-        else:
-            conn = get_db()
-            base_query = """
-                SELECT DISTINCT team, power_score, wins, losses,
-                    games_played, win_pct, point_diff
-                FROM team_season_summary 
-                WHERE season = ?
-            """
-            pr = pd.read_sql_query(base_query, conn, params=[season])
-            
-            if pr.empty:
-                pr = pd.read_sql_query(base_query, conn, params=[season - 1])
+        conn = get_db()
         
-        # CRITICAL: Remove any remaining duplicates at DataFrame level
-        pr = pr.drop_duplicates(subset=['team']).reset_index(drop=True)
-        pr['team'] = pr['team'].map(to_abbr)
+        # Get power and records
+        power = pd.read_sql_query(
+            "SELECT season, team, power_score AS power FROM team_season_summary WHERE season = ?",
+            conn, params=[season]
+        )
+        
+        # Get live records
+        rec = compute_live_records(conn, season)
+        
+        # Get injury data
+        try:
+            injuries_df = load_injury_impact_from_detail(conn)[['team','injury_impact']]
+            injuries_df["team"] = injuries_df["team"].map(to_full)
+        except Exception as e:
+            print(f"Error loading injury data: {e}")
+            injuries_df = pd.DataFrame(columns=["team","injury_impact"])
+        
+        if rec.empty:
+            return jsonify({"ok": True, "rankings": []})
+
+        # Normalize team names
+        power["team"] = power["team"].map(to_full) if not power.empty else []
+        rec["team"] = rec["team"].map(to_full)
+
+        # Merge all data
+        df = pd.merge(rec, power[["team","power"]], on="team", how="left") if not power.empty else rec.copy()
+        df["power"] = df["power"].fillna(0.0) if "power" in df.columns else 0.0
+        
+        # Merge injury data
+        df = df.merge(injuries_df, on="team", how="left")
+        df["injury_impact"] = df["injury_impact"].fillna(0.0)
+
+        # Create record string
+        def _rec_str(r):
+            w = int(r.get("wins", 0) or 0)
+            l = int(r.get("losses", 0) or 0)
+            t = int(r.get("ties", 0) or 0)
+            return f"{w}-{l}" + (f"-{t}" if t > 0 else "")
+
+        df["record_str"] = df.apply(_rec_str, axis=1)
+
+        # Sort by power DESC, then win pct
+        df = df.sort_values(["power","win_pct","point_diff"], ascending=[False, False, False])
+
+        out = df[[
+            "team","record_str","power","wins","losses","ties",
+            "games_played","win_pct","point_diff","injury_impact"
+        ]].rename(columns={
+            "record_str":"record"
+        })
+
+        rankings_data = out.to_dict(orient="records")
+        return jsonify({"ok": True, "rankings": rankings_data})
         
     except Exception as e:
-        print(f"Rankings query error: {e}")
-        return jsonify([])
+        print(f"Rankings error: {e}")
+        return jsonify({"ok": False, "rankings": [], "error": str(e)})
 
-    # Calculate adjusted power (simplified to avoid complications)
-    pr['form_component'] = np.where(
-        pr['games_played'] > 0,
-        (pr['win_pct'] - 0.5) * 10,  # Reduced multiplier
-        0
-    )
+@app.route('/api/debug/games-check')
+@login_required
+def debug_games_check():
+    """Debug what games are in the database"""
+    if not USERS.get(session['username'], {}).get('is_admin', False):
+        return jsonify({'error': 'Admin only'}), 403
     
-    pr['adjusted_power'] = pr['power_score'] + pr['form_component']
+    try:
+        conn = get_db()
+        today = datetime.utcnow().date()
+        
+        # Check all games
+        if USE_CLOUD_DB:
+            all_games = safe_query("SELECT game_id, away_team, home_team, game_date FROM games ORDER BY game_date LIMIT 10")
+        else:
+            all_games = pd.read_sql_query("SELECT game_id, away_team, home_team, game_date FROM games ORDER BY game_date LIMIT 10", conn)
+        
+        # Check future games specifically
+        if USE_CLOUD_DB:
+            future_games = safe_query("""
+                SELECT game_id, away_team, home_team, game_date 
+                FROM games 
+                WHERE game_date >= :today 
+                ORDER BY game_date LIMIT 5
+            """, {"today": today})
+        else:
+            future_games = pd.read_sql_query("""
+                SELECT game_id, away_team, home_team, game_date 
+                FROM games 
+                WHERE date(game_date) >= date(?) 
+                ORDER BY game_date LIMIT 5
+            """, conn, params=[today])
+        
+        return jsonify({
+            'today': str(today),
+            'total_games_sample': all_games.to_dict('records') if not all_games.empty else [],
+            'future_games': future_games.to_dict('records') if not future_games.empty else [],
+            'total_future_count': len(future_games),
+            'database_type': 'cloud' if USE_CLOUD_DB else 'local'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)})
     
-    # Build record string
-    pr['record'] = pr.apply(lambda r: f"{int(r.get('wins', 0))}-{int(r.get('losses', 0))}", axis=1)
-    
-    # Sort by adjusted power
-    pr['team_full'] = pr['team'].map(to_full)
-    pr = pr.sort_values('adjusted_power', ascending=False).reset_index(drop=True)
-    pr['rank'] = pr.index + 1
-
-    # FINAL CHECK: Ensure no duplicates in output
-    seen_teams = set()
-    final_rankings = []
-    
-    for r in pr.itertuples():
-        if r.team_full not in seen_teams:
-            seen_teams.add(r.team_full)
-            final_rankings.append({
-                'rank': int(r.rank),
-                'team': r.team_full,
-                'record': r.record,
-                'power_score': float(round(r.adjusted_power, 2)),
-                'base_power': float(round(r.power_score, 2)),
-                'injury_impact': None,
-                'injuries': None
-            })
-
-    return jsonify(final_rankings)
-
-
-
-
-
-
-# ======================
-# API: /api/predictions
-# ======================
+@app.route('/api/debug/ai-status')
+@login_required  
+def debug_ai_status():
+    """Check AI system status"""
+    try:
+        ml_system = get_ml_prediction_system()
+        return jsonify({
+            'ml_system_available': ml_system is not None,
+            'ml_system_type': type(ml_system).__name__ if ml_system else None,
+            'has_model_data': hasattr(ml_system, 'model_data') if ml_system else False,
+            'model_data_keys': list(ml_system.model_data.keys()) if ml_system and hasattr(ml_system, 'model_data') and ml_system.model_data else [],
+            'error': None
+        })
+    except Exception as e:
+        return jsonify({
+            'ml_system_available': False,
+            'error': str(e)
+        })
 # ======================
 # API: /api/predictions
 # ======================
 @app.route('/api/predictions')
-@db_retry()
 def api_predictions():
     """Predictions using ML when possible, otherwise power-based fallback (no crashes)."""
     conn = get_db()
     today = datetime.utcnow().date()
+    # FIXED: Back to 21 days like old system for predictions
     horizon = today + timedelta(days=21)
 
-    
-    # Load games
+    # Load games with proper database handling
     try:
         if USE_CLOUD_DB:
-            with ENGINE.connect() as conn:
-                games = pd.read_sql_query(text("""
-                    SELECT game_id, away_team AS away, home_team AS home, game_date, start_time_local AS game_time
-                    FROM games
-                    WHERE game_date BETWEEN :start_date AND :end_date
-                    ORDER BY game_date, start_time_local
-                """), conn, params={"start_date": today, "end_date": horizon})
+            games = safe_query("""
+                SELECT game_id, away_team AS away, home_team AS home, game_date, start_time_local AS game_time
+                FROM games
+                WHERE game_date BETWEEN :start_date AND :end_date
+                ORDER BY game_date, start_time_local
+            """, {"start_date": today, "end_date": horizon})
         else:
-            conn = get_db()
             games = pd.read_sql_query("""
                 SELECT game_id, away_team AS away, home_team AS home, game_date, start_time_local AS game_time
                 FROM games
@@ -1206,21 +1666,21 @@ def api_predictions():
                 ORDER BY date(game_date), time(start_time_local)
             """, conn, params=[today, horizon])
 
+        print(f"DEBUG: Found {len(games)} games between {today} and {horizon}")
+        if not games.empty:
+            print(f"Sample games: {games[['away', 'home', 'game_date']].head()}")
+
     except Exception as e:
         print(f"Error loading games for predictions: {e}")
         return jsonify([])
 
     # --- build power fallback once ---
-    # (matches your existing logic)
     try:
-        pmap = get_power_map_cached(conn)  # your helper
+        pmap = get_power_map_cached(conn)
     except Exception:
         pmap = {}
 
     HFA = 2.5
-    def to_full(name: str | None) -> str:
-        return TEAM_TO_FULL.get(name, name or "Unknown")
-
     def win_prob_fallback(away_abbr, home_abbr):
         aw = pmap.get(to_full(away_abbr), pmap.get(away_abbr, 0.0))
         hm = pmap.get(to_full(home_abbr), pmap.get(home_abbr, 0.0)) + HFA
@@ -1228,98 +1688,109 @@ def api_predictions():
         return 1.0 - ph, ph  # away, home
 
     ml_system = get_ml_prediction_system()
+    if not ml_system:
+        print("ML system not available, using fallback predictions")
+    
     rows = []
 
     for _, g in games.iterrows():
-        used_ml = False
-        prediction_result = None
+        try:
+            # 1) Try ML path
+            if ml_system:
+                try:
+                    prediction_result = ml_system.predict_game(
+                        home_team=to_full(g['home']),
+                        away_team=to_full(g['away']),
+                        game_date=str(g['game_date'])
+                    )
+                    home_win_prob = float(prediction_result.get('home_win_probability', 0.5))
+                    away_win_prob = 1.0 - home_win_prob
+                    pick_abbr = g['home'] if home_win_prob >= away_win_prob else g['away']
+                    confidence = max(home_win_prob, away_win_prob)
 
-        # 1) Try ML path
-        if ml_system:
+                    rows.append({
+                        'game_id': g['game_id'],
+                        'matchup': f"{to_full(g['away'])} @ {to_full(g['home'])}",
+                        'prediction': to_full(pick_abbr),
+                        'confidence': confidence,
+                        'confidence_level': 'high' if confidence >= 0.70 else ('medium' if confidence >= 0.60 else 'low'),
+                        'betting_grade': 'strong' if confidence >= 0.70 else ('consider' if confidence >= 0.60 else 'weak'),
+                        'home_win_probability': home_win_prob,
+                        'away_win_probability': away_win_prob,
+                        'home_win_prob': home_win_prob,
+                        'away_win_prob': away_win_prob,
+                        'game_date': str(g['game_date']),
+                        'game_time': str(g['game_time'])[:5] if g['game_time'] else 'TBD',
+                        'model_prediction': True,
+                        'power_difference': 0,
+                        'key_factors': prediction_result.get('key_factors', {}),
+                        'home_team': to_full(g['home']),
+                        'away_team': to_full(g['away']),
+                        'feature_count': len((ml_system.model_data or {}).get('feature_cols', []))
+                    })
+                    continue  # success → next game
+                except Exception as e:
+                    print(f"FixedNFLSystem failed: {e}")
+
+            # 2) Fallback path
             try:
-                prediction_result = ml_system.predict_game(
-                    home_team=to_full(g['home']),
-                    away_team=to_full(g['away']),
-                    game_date=str(g['game_date'])
-                )
-                home_win_prob = float(prediction_result.get('home_win_probability', 0.5))
-                away_win_prob = 1.0 - home_win_prob
-                pick_abbr = g['home'] if home_win_prob >= away_win_prob else g['away']
-                confidence = max(home_win_prob, away_win_prob)
+                pa, ph = win_prob_fallback(g['away'], g['home'])
+                pick_abbr = g['home'] if ph >= pa else g['away']
+                confidence = max(pa, ph)
+
+                if confidence >= 0.70:
+                    confidence_level = 'medium'; betting_grade = 'consider'
+                elif confidence >= 0.60:
+                    confidence_level = 'low'; betting_grade = 'weak'
+                else:
+                    confidence_level = 'very-low'; betting_grade = 'avoid'
 
                 rows.append({
                     'game_id': g['game_id'],
                     'matchup': f"{to_full(g['away'])} @ {to_full(g['home'])}",
                     'prediction': to_full(pick_abbr),
-                    'confidence': confidence,
-                    'confidence_level': 'high' if confidence >= 0.70 else ('medium' if confidence >= 0.60 else 'low'),
-                    'betting_grade': 'strong' if confidence >= 0.70 else ('consider' if confidence >= 0.60 else 'weak'),
-                    'home_win_probability': home_win_prob,
-                    'away_win_probability': away_win_prob,
-                    'home_win_prob': home_win_prob,
-                    'away_win_prob': away_win_prob,
+                    'confidence': float(confidence),
+                    'confidence_level': confidence_level,
+                    'betting_grade': betting_grade,
+                    'home_win_probability': float(ph),
+                    'away_win_probability': float(pa),
+                    'home_win_prob': float(ph),
+                    'away_win_prob': float(pa),
                     'game_date': str(g['game_date']),
                     'game_time': str(g['game_time'])[:5] if g['game_time'] else 'TBD',
-                    'model_prediction': True,
+                    'model_prediction': False,
                     'power_difference': 0,
-                    'key_factors': prediction_result.get('key_factors', {}),
+                    'key_factors': {},
                     'home_team': to_full(g['home']),
-                    'away_team': to_full(g['away']),
-                    'feature_count': len((ml_system.model_data or {}).get('feature_cols', []))
+                    'away_team': to_full(g['away'])
                 })
-                continue  # success â†’ next game
             except Exception as e:
-                print(f"FixedNFLSystem failed: {e}")
+                print(f"Error predicting game {g['away']} @ {g['home']}: {e}")
+                continue
 
-        # 2) Fallback path (NO ML FIELDS TOUCHED)
-        try:
-            pa, ph = win_prob_fallback(g['away'], g['home'])
-            pick_abbr = g['home'] if ph >= pa else g['away']
-            confidence = max(pa, ph)
-
-            if confidence >= 0.70:
-                confidence_level = 'medium'; betting_grade = 'consider'
-            elif confidence >= 0.60:
-                confidence_level = 'low'; betting_grade = 'weak'
-            else:
-                confidence_level = 'very-low'; betting_grade = 'avoid'
-
-            rows.append({
-                'game_id': g['game_id'],
-                'matchup': f"{to_full(g['away'])} @ {to_full(g['home'])}",
-                'prediction': to_full(pick_abbr),
-                'confidence': float(confidence),
-                'confidence_level': confidence_level,
-                'betting_grade': betting_grade,
-                'home_win_probability': float(ph),
-                'away_win_probability': float(pa),
-                'home_win_prob': float(ph),
-                'away_win_prob': float(pa),
-                'game_date': str(g['game_date']),
-                'game_time': str(g['game_time'])[:5] if g['game_time'] else 'TBD',
-                'model_prediction': False,
-                'power_difference': 0,
-                'key_factors': {},
-                'home_team': to_full(g['home']),
-                'away_team': to_full(g['away'])
-            })
         except Exception as e:
-            print(f"Error predicting game {g['away']} @ {g['home']}: {e}")
+            print(f"Error processing game {g['away']} @ {g['home']}: {e}")
             continue
 
-    # Sort by date/time (keep your existing sort)
+    # Sort by date/time
     rows.sort(key=lambda r: (r['game_date'], str(r.get('game_time', '99:99'))[:5]))
     return jsonify(rows)
 
 
 
 def to_full(name: str | None) -> str:
-    """Convert team abbreviation or partial name to full team name"""
     if not name:
         return "Unknown"
-    
-    # Use your existing TEAM_TO_FULL mapping or create one
-    return TEAM_TO_FULL.get(name, name)
+    s = str(name).strip()
+    if not s:
+        return "Unknown"
+    # already a full name?
+    if s in FULL_NAMES:
+        return s
+    su = s.upper()
+    su = CANON.get(su, su)         # LA->LAR, WSH->WAS, etc.
+    return ABBR_TO_FULL.get(su, s) # fallback to original if unknown
+
 
 
 @app.route('/api/predictions/debug')
@@ -1355,7 +1826,7 @@ def debug_predictions():
 @app.route('/api/betting-analysis')
 @db_retry()
 def api_betting_analysis():
-    """FIXED: Now properly matches team names between games and odds"""
+    """FIXED: Now properly uses game_id linking"""
     conn = get_db()
     week = request.args.get('week', 'current')
     edge_filter = request.args.get('edge', 'all')
@@ -1383,23 +1854,33 @@ def api_betting_analysis():
     opportunities = []
     
     try:
-        # Get games in the time window
-        games = pd.read_sql_query(text("""
-            SELECT game_id, away_team, home_team, game_date, start_time_local
-            FROM games 
-            WHERE date(game_date) BETWEEN :start_date AND :end_date
-            ORDER BY game_date, start_time_local
-        """), conn, params={"start_date": start, "end_date": end})
+        # Get games in the time window - REQUIRE valid game_ids
+        if USE_CLOUD_DB:
+            games = safe_query("""
+                SELECT game_id, away_team, home_team, game_date, start_time_local
+                FROM games
+                WHERE game_date BETWEEN :start_date AND :end_date
+                AND game_id IS NOT NULL
+                ORDER BY game_date, start_time_local
+            """, {"start_date": start, "end_date": end})
+        else:
+            games = pd.read_sql_query("""
+                SELECT game_id, away_team, home_team, game_date, start_time_local
+                FROM games
+                WHERE date(game_date) BETWEEN date(?) AND date(?)
+                AND game_id IS NOT NULL
+                ORDER BY date(game_date), time(start_time_local)
+            """, conn, params=[start, end])
 
         if games.empty:
             return jsonify({
                 "opportunities": [],
                 "total_found": 0,
                 "user_bankroll": user_bankroll,
-                "message": f"No games found between {start} and {end}"
+                "message": f"No games with valid game_ids found between {start} and {end}"
             })
 
-        print(f"FIXED: Found {len(games)} games in window")
+        print(f"FIXED: Found {len(games)} games with valid game_ids")
 
         # Get ML system predictions for these games
         ml_system = get_ml_prediction_system()
@@ -1409,8 +1890,8 @@ def api_betting_analysis():
                 if ml_system:
                     # Get ML prediction
                     prediction_result = ml_system.predict_game(
-                        home_team=game['home_team'],
-                        away_team=game['away_team'],
+                        home_team=to_full(game['home_team']),
+                        away_team=to_full(game['away_team']),
                         game_date=str(game['game_date'])
                     )
                     
@@ -1418,20 +1899,19 @@ def api_betting_analysis():
                     away_prob = prediction_result['away_win_probability']
                     confidence = prediction_result['confidence']
                     
-                    print(f"FIXED: {game['away_team']} @ {game['home_team']}")
+                    print(f"FIXED: {game['away_team']} @ {game['home_team']} (ID: {game['game_id']})")
                     print(f"  Model: Home {home_prob:.1%}, Away {away_prob:.1%}")
                     
-                    
-                    # FIXED - proper parameter binding for both databases
+                    # Get odds using game_id - THIS IS THE KEY FIX
                     if USE_CLOUD_DB:
-                        odds_df = pd.read_sql_query(text("""
+                        odds_df = safe_query("""
                             SELECT team, sportsbook, odds
                             FROM odds 
                             WHERE game_id = :game_id AND market = 'h2h'
                             AND odds IS NOT NULL
                             AND odds BETWEEN -1000 AND 1000
                             ORDER BY timestamp DESC
-                        """), conn, params={"game_id": game['game_id']})
+                        """, {"game_id": game['game_id']})
                     else:
                         odds_df = pd.read_sql_query("""
                             SELECT team, sportsbook, odds
@@ -1443,25 +1923,23 @@ def api_betting_analysis():
                         """, conn, params=[game['game_id']])
                     
                     if odds_df.empty:
-                        print(f"  No odds found in database")
+                        print(f"  No odds found for game_id: {game['game_id']}")
                         continue
                     
-                    # Check each team for value using FIXED team name matching
+                    print(f"  Found {len(odds_df)} odds records for this game")
+                    
+                    # Check each team for value
                     for team_abbr in [game['home_team'], game['away_team']]:
-                        # Convert abbreviation to full name for odds lookup
-                        full_team_name = normalize_team_for_odds_lookup(team_abbr)
                         model_prob = home_prob if team_abbr == game['home_team'] else away_prob
                         
-                        print(f"  Looking for odds for: {team_abbr} -> {full_team_name}")
-                        
-                        # Find odds for this team using full name
-                        team_odds = odds_df[odds_df['team'] == full_team_name]
+                        # Find odds for this team
+                        team_odds = odds_df[odds_df['team'] == team_abbr]
                         
                         if team_odds.empty:
-                            print(f"    No odds found for {full_team_name}")
+                            print(f"    No odds found for {team_abbr}")
                             continue
                         
-                        print(f"    Found {len(team_odds)} odds records")
+                        print(f"    Found {len(team_odds)} odds records for {team_abbr}")
                         
                         # Get best odds (highest)
                         best_row = team_odds.loc[team_odds['odds'].idxmax()]
@@ -1520,7 +1998,7 @@ def api_betting_analysis():
                                 "edge_pct": round(edge_pct, 1),
                                 "recommended_amount": round(stake, 2),
                                 "confidence": round(confidence * 100, 1),
-                                "game_id": str(game.get('game_id', 'unknown')),
+                                "game_id": str(game['game_id']),
                                 "user_bankroll": user_bankroll
                             })
                 
@@ -1550,59 +2028,7 @@ def api_betting_analysis():
     })
 
 
-@app.route("/api/ai-chat-comprehensive", methods=["POST"])
-def comprehensive_ai_chat():
-    try:
-        data = request.get_json() or {}
-        message = data.get('message', '').strip()
-        game_id = data.get('game_id')
 
-        # CRITICAL: Proper user validation
-        username = session.get('username')
-        print(f"AI Chat request - Session username: {username}")
-        
-        if not username:
-            print("âŒ No username in session")
-            return jsonify({
-                'ok': False,
-                'error': 'No active session - please log in'
-            }), 401
-            
-        if username not in USERS:
-            print(f"âŒ Username {username} not found in USERS")
-            session.clear()
-            return jsonify({
-                'ok': False,
-                'error': 'Invalid session - user not found'
-            }), 401
-            
-        user_data = USERS[username]
-        print(f"âœ… AI Chat for user: {username} - Bankroll: ${user_data.get('bankroll', 0):.2f}")
-
-        # Use actual user data (not session fallback)
-        user_context = {
-            'bankroll': user_data.get('bankroll', 500),
-            'username': username,
-            'is_admin': user_data.get('is_admin', False)
-        }
-
-        if not message:
-            return jsonify({
-                'ok': False,
-                'error': 'No message provided'
-            }), 400
-
-        # Process message with proper user context
-        internal = ai_system.process_message(message, game_id, user_context)
-        payload = ai_system._to_frontend(internal)
-        return jsonify(payload)
-
-    except Exception as e:
-        logger.error(f"Comprehensive AI chat error: {e}")
-        return jsonify({
-            'ok': False,
-            'error': 'Internal server error'
-        }), 500
 
 
 @app.route('/api/ai-betting-recommendations-debug', methods=['GET'])
@@ -1611,154 +2037,158 @@ def get_betting_recommendations_debug():
     try:
         username = session.get('username')
         if not username:
-            return jsonify({'ok': False, 'error': 'User not logged in'}), 401
-            
-        user_data = USERS.get(username, {})
+            return jsonify({'ok': False, 'error': 'No active session'}), 200
+        if username not in USERS:
+            session.clear()
+            return jsonify({'ok': False, 'error': 'Invalid session'}), 200
+
+        user_data = USERS[username]
         user_bankroll = float(user_data.get('bankroll', 500))
-        
-        conn = get_db()
+
         today = datetime.utcnow().date()
         end = today + timedelta(days=7)
-        
-        # Get upcoming games
-        games = pd.read_sql_query(text("""
-            SELECT game_id, away_team, home_team, game_date, start_time_local
-            FROM games 
-            WHERE date(game_date) BETWEEN :start_date AND :end_date
-            ORDER BY game_date, start_time_local
-        """), conn, params={"start_date": today, "end_date": end})
 
-        debug_info = []
         recommendations = []
+        total_staked = 0.0
         ml_system = get_ml_prediction_system()
-        
+        if not ml_system:
+            return jsonify({'ok': True, 'success': True, 'result': {
+                'recommendations': [],
+                'bankroll': user_bankroll,
+                'total_recommended': 0.0,
+                'user_info': f"Recommendations for {user_data.get('name', username)}",
+                'note': 'Model not available'
+            }})
+
+        # Use a Connection for all queries
+        with get_engine().connect() as cx:
+            if USE_CLOUD_DB:
+                games = safe_query("""
+                    SELECT game_id, away_team, home_team, game_date, start_time_local
+                    FROM games
+                    WHERE game_date BETWEEN :start_date AND :end_date
+                    ORDER BY game_date, start_time_local
+                """, {"start_date": today, "end_date": end})
+
+                all_odds = safe_query("""
+                    SELECT team, sportsbook, odds
+                    FROM odds 
+                    WHERE market = 'h2h'
+                    AND odds IS NOT NULL
+                    AND odds BETWEEN -800 AND 800
+                    ORDER BY timestamp DESC
+                """)
+            else:
+                games = pd.read_sql_query("""
+                    SELECT game_id, away_team, home_team, game_date, start_time_local
+                    FROM games
+                    WHERE date(game_date) BETWEEN date(?) AND date(?)
+                    ORDER BY date(game_date), time(start_time_local)
+                """, cx, params=[today, end])
+
+                all_odds = pd.read_sql_query("""
+                    SELECT team, sportsbook, odds
+                    FROM odds 
+                    WHERE market = 'h2h'
+                    AND odds IS NOT NULL
+                    AND odds BETWEEN -800 AND 800
+                    ORDER BY timestamp DESC
+                """, cx)
+
         for _, game in games.iterrows():
-            game_debug = {
-                'game': f"{game['away_team']} @ {game['home_team']}",
-                'has_ml_system': ml_system is not None,
-                'has_odds': False,
-                'predictions': None,
-                'opportunities': []
-            }
-            
-            if ml_system:
-                try:
-                    # Get ML prediction
-                    prediction_result = ml_system.predict_game(
-                        home_team=game['home_team'],
-                        away_team=game['away_team'],
-                        game_date=str(game['game_date'])
-                    )
-                    
-                    game_debug['predictions'] = {
-                        'home_prob': prediction_result['home_win_probability'],
-                        'away_prob': prediction_result['away_win_probability'],
-                        'confidence': prediction_result['confidence']
-                    }
-                    
-                    # LOWERED THRESHOLDS FOR TESTING
-                    if prediction_result['confidence'] < 0.51:  # Was 0.58, now 0.51
-                        game_debug['skip_reason'] = f"Low confidence: {prediction_result['confidence']:.1%}"
-                        debug_info.append(game_debug)
+            try:
+                prediction_result = ml_system.predict_game(
+                    home_team=to_full(game['home_team']),
+                    away_team=to_full(game['away_team']),
+                    game_date=str(game['game_date'])
+                )
+                home_prob = float(prediction_result['home_win_probability'])
+                away_prob = float(prediction_result['away_win_probability'])
+                confidence = float(prediction_result.get('confidence', max(home_prob, away_prob)))
+
+                # modest threshold to actually show picks
+                if confidence < 0.55:
+                    continue
+
+                for team_abbr in [game['home_team'], game['away_team']]:
+                    model_prob = home_prob if team_abbr == game['home_team'] else away_prob
+                    if model_prob < 0.52:
                         continue
+
+                    # FIXED: Use the normalize function instead of the missing one
+                    normalized_team = normalize_team_for_odds_lookup(team_abbr)
+                    team_odds = all_odds[all_odds['team'] == normalized_team]
                     
-                    # Get odds
-                    odds_df = pd.read_sql_query(text("""
-                        SELECT team, sportsbook, odds
-                        FROM odds 
-                        WHERE market = 'h2h'
-                        AND odds IS NOT NULL
-                        AND odds BETWEEN -800 AND 800
-                        ORDER BY timestamp DESC
-                    """), conn)
+                    if team_odds.empty:
+                        # Try with original team name
+                        team_odds = all_odds[all_odds['team'] == team_abbr]
                     
-                    game_debug['has_odds'] = not odds_df.empty
-                    game_debug['odds_count'] = len(odds_df)
-                    
-                    if odds_df.empty:
-                        game_debug['skip_reason'] = "No odds found"
-                        debug_info.append(game_debug)
+                    if team_odds.empty:
                         continue
-                    
-                    # Check both teams for value with LOWER threshold
-                    for team_name in [game['home_team'], game['away_team']]:
-                        model_prob = prediction_result['home_win_probability'] if team_name == game['home_team'] else prediction_result['away_win_probability']
-                        
-                        # LOWERED threshold from 0.52 to 0.51
-                        if model_prob < 0.51:
-                            continue
-                        
-                        # Find odds
-                        team_odds = odds_df[odds_df['team'] == team_name]
-                        if team_odds.empty:
-                            team_odds = odds_df[odds_df['team'].str.contains(team_name, case=False, na=False)]
-                        if team_odds.empty:
-                            continue
-                        
-                        # Get best odds
-                        best_row = team_odds.loc[team_odds['odds'].idxmax()]
-                        odds_val = float(best_row['odds'])
-                        
-                        # Calculate edge
+
+                    best_row = team_odds.loc[team_odds['odds'].idxmax()]
+                    odds_val = float(best_row['odds'])
+
+                    # american vs decimal
+                    if 1.01 <= odds_val <= 10.0:
+                        implied_prob = 1.0 / odds_val
+                        american_odds = int((odds_val - 1) * 100) if odds_val >= 2.0 else int(-100 / (odds_val - 1))
+                        decimal_odds = odds_val
+                    else:
+                        american_odds = int(odds_val)
                         if odds_val > 0:
                             implied_prob = 100 / (odds_val + 100)
                             decimal_odds = 1 + (odds_val / 100)
                         else:
                             implied_prob = abs(odds_val) / (abs(odds_val) + 100)
                             decimal_odds = 1 + (100 / abs(odds_val))
-                        
-                        edge = model_prob - implied_prob
-                        edge_pct = edge * 100
-                        
-                        opportunity = {
-                            'team': team_name,
-                            'model_prob': f"{model_prob:.1%}",
-                            'implied_prob': f"{implied_prob:.1%}", 
-                            'edge_pct': f"{edge_pct:.1f}%",
-                            'odds': odds_val
-                        }
-                        game_debug['opportunities'].append(opportunity)
-                        
-                        # LOWERED edge threshold from 3% to 1%
-                        if edge_pct >= 1.0:  # Was 3.0%, now 1.0%
-                            kelly = (model_prob * decimal_odds - 1) / (decimal_odds - 1)
-                            stake = max(5.0, min(
-                                user_bankroll * 0.05,
-                                kelly * user_bankroll * 0.25
-                            ))
-                            
-                            recommendations.append({
-                                'game': f"{game['away_team']} @ {game['home_team']}",
-                                'team': team_name,
-                                'odds': int(odds_val),
-                                'edge_percentage': round(edge_pct, 1),
-                                'recommended_stake': round(stake, 2),
-                                'confidence_level': "Debug",
-                                'reason': f"{edge_pct:.1f}% edge (debug mode)"
-                            })
-                
-                except Exception as e:
-                    game_debug['error'] = str(e)
-            
-            debug_info.append(game_debug)
-        
+
+                    edge = model_prob - implied_prob
+                    edge_pct = edge * 100.0
+                    if edge_pct < 2.0:
+                        continue
+
+                    kelly = (model_prob * decimal_odds - 1) / (decimal_odds - 1)
+                    stake = max(5.0, min(user_bankroll * 0.05, kelly * user_bankroll * 0.25))
+
+                    recommendations.append({
+                        'type': 'model_bet',
+                        'game': f"{to_full(game['away_team'])} @ {to_full(game['home_team'])}",
+                        'date': str(game['game_date']),
+                        'time': str(game.get('start_time_local', 'TBD'))[:5],
+                        'team': to_full(team_abbr),
+                        'odds': american_odds,
+                        'decimal_odds': round(decimal_odds, 2),
+                        'sportsbook': best_row['sportsbook'],
+                        'model_probability': round(model_prob, 3),
+                        'implied_probability': round(implied_prob, 3),
+                        'edge_percentage': round(edge_pct, 1),
+                        'recommended_stake': round(stake, 2),
+                        'potential_profit': round(stake * (decimal_odds - 1), 2),
+                        'confidence_level': "High" if edge_pct > 6 else ("Medium" if edge_pct > 3 else "Low"),
+                        'reason': f"{edge_pct:.1f}% model edge with {confidence*100:.0f}% prediction confidence"
+                    })
+                    total_staked += stake
+
+            except Exception as e:
+                print(f"Error processing game in AI recs: {e}")
+                continue
+
+        recommendations.sort(key=lambda x: x['edge_percentage'], reverse=True)
         return jsonify({
             'ok': True,
             'success': True,
-            'debug_info': debug_info,
             'result': {
                 'recommendations': recommendations,
                 'bankroll': user_bankroll,
-                'total_recommended': sum(r['recommended_stake'] for r in recommendations),
-                'games_analyzed': len(games),
-                'games_with_odds': sum(1 for g in debug_info if g['has_odds']),
-                'games_with_predictions': sum(1 for g in debug_info if g['predictions']),
-                'note': 'DEBUG MODE: Lowered thresholds to 51% confidence and 1% edge'
+                'total_recommended': round(total_staked, 2),
+                'user_info': f"Recommendations for {user_data.get('name', username)}"
             }
         })
-        
     except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        print(f"Error in get_betting_recommendations: {e}")
+        return jsonify({'ok': False, 'success': False, 'error': str(e)}), 200
+
 
 
 @app.route('/api/debug-odds-data')
@@ -1893,12 +2323,15 @@ def api_betting_analysis_fixed():
     
     try:
         # Get games
-        games = pd.read_sql_query(text("""
-            SELECT game_id, away_team, home_team, game_date, start_time_local
-            FROM games 
-            WHERE date(game_date) BETWEEN :start_date AND :end_date
-            ORDER BY game_date, start_time_local
-        """), conn, params={"start_date": today, "end_date": end})
+        odds_df = pd.read_sql_query(text("""
+            SELECT team, sportsbook, odds
+            FROM odds
+            WHERE game_id = :gid AND market = 'h2h'
+            AND odds IS NOT NULL
+            AND odds BETWEEN -1000 AND 1000
+            ORDER BY timestamp DESC
+        """), get_engine(), params={"gid": game['game_id']})
+
 
         print(f"DEBUG FIXED: Found {len(games)} games")
         
@@ -2042,138 +2475,102 @@ def api_betting_analysis_fixed():
         "debug": "fixed_version_with_validation"
     })
 
-# Add this to mobile_dashboard.py to fix the team name matching
 
-def normalize_team_for_odds_lookup(team_abbr):
-    """Convert team abbreviation to full name for odds lookup"""
-    ABBR_TO_ODDS_NAME = {
-        'ARI': 'Arizona Cardinals',
-        'ATL': 'Atlanta Falcons', 
-        'BAL': 'Baltimore Ravens',
-        'BUF': 'Buffalo Bills',
-        'CAR': 'Carolina Panthers',
-        'CHI': 'Chicago Bears',
-        'CIN': 'Cincinnati Bengals',
-        'CLE': 'Cleveland Browns',
-        'DAL': 'Dallas Cowboys',
-        'DEN': 'Denver Broncos',
-        'DET': 'Detroit Lions',
-        'GB': 'Green Bay Packers',
-        'HOU': 'Houston Texans',
-        'IND': 'Indianapolis Colts',
-        'JAX': 'Jacksonville Jaguars',
-        'KC': 'Kansas City Chiefs',
-        'LV': 'Las Vegas Raiders',
-        'LAC': 'Los Angeles Chargers',
-        'LAR': 'Los Angeles Rams',
-        'MIA': 'Miami Dolphins',
-        'MIN': 'Minnesota Vikings',
-        'NE': 'New England Patriots',
-        'NO': 'New Orleans Saints',
-        'NYG': 'New York Giants',
-        'NYJ': 'New York Jets',
-        'PHI': 'Philadelphia Eagles',
-        'PIT': 'Pittsburgh Steelers',
-        'SF': 'San Francisco 49ers',
-        'SEA': 'Seattle Seahawks',
-        'TB': 'Tampa Bay Buccaneers',
-        'TEN': 'Tennessee Titans',
-        'WAS': 'Washington Commanders'
-    }
-    return ABBR_TO_ODDS_NAME.get(team_abbr, team_abbr)
 
 @app.route('/api/ai-betting-recommendations', methods=['GET'])
 def get_betting_recommendations():
-    """FIXED: Now uses proper team name matching"""
+    """
+    Stable version:
+      - Always uses a SQLAlchemy Connection (no OptionEngine issues).
+      - Works with PG (text + named params) and SQLite (Pandas + Connection is fine).
+      - On any internal error, returns 200 with ok=False (no UI 500).
+    """
     try:
         username = session.get('username')
         print(f"Betting recommendations request - Session username: {username}")
-        
         if not username:
-            return jsonify({'ok': False, 'error': 'No active session'}), 401
-            
+            return jsonify({'ok': False, 'error': 'No active session'}), 200
         if username not in USERS:
-            print(f"âŒ Username {username} not found in USERS")
             session.clear()
-            return jsonify({'ok': False, 'error': 'Invalid session'}), 401
-            
+            return jsonify({'ok': False, 'error': 'Invalid session'}), 200
+
         user_data = USERS[username]
         user_bankroll = float(user_data.get('bankroll', 500))
-        
-        print(f"âœ… Betting recommendations for: {username} - Bankroll: ${user_bankroll:.2f}")
 
-        
-        conn = get_db()
         today = datetime.utcnow().date()
-        end = today + timedelta(days=7)
-        
-        # Get upcoming games
-        games = pd.read_sql_query(text("""
-            SELECT game_id, away_team, home_team, game_date, start_time_local
-            FROM games 
-            WHERE date(game_date) BETWEEN :start_date AND :end_date
-            ORDER BY game_date, start_time_local
-        """), conn, params={"start_date": today, "end_date": end})
+        end   = today + timedelta(days=7)
 
         recommendations = []
         total_staked = 0.0
         ml_system = get_ml_prediction_system()
-        
-        # Get all odds once
-        all_odds = pd.read_sql_query(text("""
-            SELECT team, sportsbook, odds
-            FROM odds 
-            WHERE market = 'h2h'
-            AND odds IS NOT NULL
-            AND odds BETWEEN -800 AND 800
-            ORDER BY timestamp DESC
-        """), conn)
-        
+        if not ml_system:
+            return jsonify({'ok': True, 'success': True, 'result': {
+                'recommendations': [],
+                'bankroll': user_bankroll,
+                'total_recommended': 0.0,
+                'user_info': f"Recommendations for {user_data.get('name', username)}",
+                'note': 'Model not available'
+            }})
+
+        # Use a Connection for all queries
+        with get_engine().connect() as cx:
+            games = pd.read_sql_query(
+                text("""
+                    SELECT game_id, away_team, home_team, game_date, start_time_local
+                    FROM games
+                    WHERE game_date BETWEEN :start_date AND :end_date
+                    ORDER BY game_date, start_time_local
+                """),
+                cx,
+                params={"start_date": today, "end_date": end},
+            )
+
+            all_odds = pd.read_sql_query(
+                text("""
+                    SELECT team, sportsbook, odds
+                    FROM odds 
+                    WHERE market = 'h2h'
+                    AND odds IS NOT NULL
+                    AND odds BETWEEN -800 AND 800
+                    ORDER BY timestamp DESC
+                """),
+                cx,
+            )
+
         for _, game in games.iterrows():
-            if not ml_system:
-                continue
-                
             try:
-                # Get ML prediction
                 prediction_result = ml_system.predict_game(
                     home_team=game['home_team'],
                     away_team=game['away_team'],
                     game_date=str(game['game_date'])
                 )
-                
-                home_prob = prediction_result['home_win_probability']
-                away_prob = prediction_result['away_win_probability']
-                confidence = prediction_result['confidence']
-                
-                # Only recommend high-confidence picks
-                if confidence < 0.55:  # Lowered from 0.58
+                home_prob = float(prediction_result['home_win_probability'])
+                away_prob = float(prediction_result['away_win_probability'])
+                confidence = float(prediction_result.get('confidence', max(home_prob, away_prob)))
+
+                # modest threshold to actually show picks
+                if confidence < 0.55:
                     continue
-                
-                # Check both teams for value using FIXED team matching
+
                 for team_abbr in [game['home_team'], game['away_team']]:
                     model_prob = home_prob if team_abbr == game['home_team'] else away_prob
-                    
-                    # Only recommend if model is confident in this team
                     if model_prob < 0.52:
                         continue
-                    
-                    # FIXED: Find odds using proper team name conversion
+
                     full_team_name = normalize_team_for_odds_lookup(team_abbr)
                     team_odds = all_odds[all_odds['team'] == full_team_name]
-                    
                     if team_odds.empty:
                         continue
-                    
-                    # Get best odds
+
                     best_row = team_odds.loc[team_odds['odds'].idxmax()]
                     odds_val = float(best_row['odds'])
-                    
-                    # Handle decimal vs American odds (same as above)
-                    if 1.01 <= odds_val <= 10.0:  # Decimal odds
+
+                    # american vs decimal
+                    if 1.01 <= odds_val <= 10.0:
                         implied_prob = 1.0 / odds_val
                         american_odds = int((odds_val - 1) * 100) if odds_val >= 2.0 else int(-100 / (odds_val - 1))
                         decimal_odds = odds_val
-                    else:  # American odds
+                    else:
                         american_odds = int(odds_val)
                         if odds_val > 0:
                             implied_prob = 100 / (odds_val + 100)
@@ -2181,29 +2578,15 @@ def get_betting_recommendations():
                         else:
                             implied_prob = abs(odds_val) / (abs(odds_val) + 100)
                             decimal_odds = 1 + (100 / abs(odds_val))
-                    
+
                     edge = model_prob - implied_prob
-                    edge_pct = edge * 100
-                    
-                    # Only recommend 2%+ edges (lowered from 3%)
+                    edge_pct = edge * 100.0
                     if edge_pct < 2.0:
                         continue
-                    
-                    # Calculate stake
+
                     kelly = (model_prob * decimal_odds - 1) / (decimal_odds - 1)
-                    stake = max(5.0, min(
-                        user_bankroll * 0.05,  # 5% max
-                        kelly * user_bankroll * 0.25  # 25% Kelly
-                    ))
-                    
-                    # Confidence level
-                    if edge_pct > 6:
-                        confidence_level = "High"
-                    elif edge_pct > 3:
-                        confidence_level = "Medium"
-                    else:
-                        confidence_level = "Low"
-                    
+                    stake = max(5.0, min(user_bankroll * 0.05, kelly * user_bankroll * 0.25))
+
                     recommendations.append({
                         'type': 'model_bet',
                         'game': f"{to_full(game['away_team'])} @ {to_full(game['home_team'])}",
@@ -2218,37 +2601,30 @@ def get_betting_recommendations():
                         'edge_percentage': round(edge_pct, 1),
                         'recommended_stake': round(stake, 2),
                         'potential_profit': round(stake * (decimal_odds - 1), 2),
-                        'confidence_level': confidence_level,
+                        'confidence_level': "High" if edge_pct > 6 else ("Medium" if edge_pct > 3 else "Low"),
                         'reason': f"{edge_pct:.1f}% model edge with {confidence*100:.0f}% prediction confidence"
                     })
-                    
                     total_staked += stake
-                    
+
             except Exception as e:
-                print(f"Error processing game: {e}")
+                print(f"Error processing game in AI recs: {e}")
                 continue
-        
-        # Sort by edge
+
         recommendations.sort(key=lambda x: x['edge_percentage'], reverse=True)
-        
         return jsonify({
             'ok': True,
             'success': True,
             'result': {
                 'recommendations': recommendations,
-                'bankroll': user_bankroll,  # Use actual user bankroll
+                'bankroll': user_bankroll,
                 'total_recommended': round(total_staked, 2),
                 'user_info': f"Recommendations for {user_data.get('name', username)}"
             }
         })
-        
     except Exception as e:
+        # Return 200 so the UI doesn't show a "Network error" bubble; surface the error in JSON
         print(f"Error in get_betting_recommendations: {e}")
-        return jsonify({
-            'ok': False,
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({'ok': False, 'success': False, 'error': str(e)}), 200
 
 # 6. ADD debug route to check session state
 @app.route('/api/debug/session-full')
@@ -2317,133 +2693,124 @@ def api_delete_bet():
 # Simple games + odds preview (now includes per-book breakdown)
 @app.route('/api/games')
 def api_games():
-    conn = get_db()
-    today = datetime.utcnow().date()
-    end = today + timedelta(days=60)
+    """FIXED VERSION - Searches odds by team names, not game_id"""
     try:
-        games = pd.read_sql_query(
-            text("""
+        conn = get_db()
+        today = datetime.utcnow().date()
+        end = today + timedelta(days=60)
+        
+        # Get games
+        games = pd.read_sql_query("""
             SELECT game_id, away_team AS away, home_team AS home, game_date, start_time_local AS game_time
             FROM games
-            WHERE date(game_date) BETWEEN :start_date AND :end_date
-            ORDER BY date(game_date), start_time_local
-            """),
-            conn, params={"start_date": today, "end_date": end}
-        )
+            WHERE date(game_date) BETWEEN date(?) AND date(?)
+            AND game_id IS NOT NULL AND game_id != ''
+            ORDER BY date(game_date), time(start_time_local)
+        """, conn, params=[today, end])
 
-        game_ids = games['game_id'].tolist()
-        if game_ids:
-            if USE_CLOUD_DB:
-                ph = ",".join([f":id{i}" for i in range(len(game_ids))])
-                params = {f"id{i}": gid for i, gid in enumerate(game_ids)}
-                odds = pd.read_sql_query(text(f"""
-                    SELECT o.game_id, o.team, o.sportsbook, o.odds, o.timestamp
-                    FROM odds o
-                    JOIN (
-                        SELECT game_id, team, sportsbook, MAX(timestamp) AS ts
-                        FROM odds
-                        WHERE market='h2h' AND game_id IN ({ph})
-                        GROUP BY game_id, team, sportsbook
-                    ) x ON x.game_id=o.game_id AND x.team=o.team AND x.sportsbook=o.sportsbook AND x.ts=o.timestamp
-                """), conn, params=params)
-            else:
-                ph = ",".join(["?"] * len(game_ids))
-                odds = pd.read_sql_query(f"""
-                    SELECT o.game_id, o.team, o.sportsbook, o.odds, o.timestamp
-                    FROM odds o
-                    JOIN (
-                        SELECT game_id, team, sportsbook, MAX(timestamp) AS ts
-                        FROM odds
-                        WHERE market='h2h' AND game_id IN ({ph})
-                        GROUP BY game_id, team, sportsbook
-                    ) x ON x.game_id=o.game_id AND x.team=o.team AND x.sportsbook=o.sportsbook AND x.ts=o.timestamp
-                """, conn, params=game_ids)
-            
-            # FIXED: Better odds processing
-            odds_processed = []
-            for _, row in odds.iterrows():
-                normalized = normalize_american_odds(row['odds'])
-                if normalized is not None:  # Only include valid odds
-                    odds_processed.append({
-                        'game_id': row['game_id'],
-                        'team': row['team'],
-                        'sportsbook': row['sportsbook'],
-                        'odds': row['odds'],
-                        'ao': normalized,
-                        'timestamp': row['timestamp']
-                    })
-            
-            odds = pd.DataFrame(odds_processed)
-        else:
-            odds = pd.DataFrame(columns=['game_id','team','sportsbook','odds','timestamp','ao'])
-            
-        out = []
-        for _, g in games.iterrows():
-            o = odds[odds['game_id']==g['game_id']] if not odds.empty else pd.DataFrame()
+        print(f"DEBUG: Found {len(games)} games with valid game_ids")
+
+        if games.empty:
+            return jsonify([])
+
+        # Get ALL recent odds (not filtered by game_id since they don't match)
+        odds = pd.read_sql_query("""
+            SELECT team, sportsbook, odds, timestamp
+            FROM odds 
+            WHERE market = 'h2h'
+            AND odds IS NOT NULL
+            AND timestamp >= datetime('now', '-7 days')
+            ORDER BY timestamp DESC
+        """, conn)
+
+        print(f"DEBUG: Found {len(odds)} recent odds records")
+
+        # Process each game
+        result = []
+        for _, game in games.iterrows():
             teams = []
             
-            for tm in (g['home'], g['away']):
-                ot = o[o['team']==tm] if not o.empty else pd.DataFrame()
+            for team_name in [game['away'], game['home']]:
+                # Search odds by team name directly
+                team_odds = odds[odds['team'] == team_name]
                 
-                if ot.empty:
-                    # FIXED: Use realistic default odds instead of 100
+                print(f"DEBUG: Team {team_name} has {len(team_odds)} odds records")
+                
+                if team_odds.empty:
                     teams.append({
-                        "team": to_full(tm), 
-                        "odds": -110,  # Standard line instead of 100
-                        "sportsbook": "No Line", 
+                        "team": to_full(team_name),
+                        "odds": -110,
+                        "sportsbook": "No Line",
                         "by_book": []
                     })
                 else:
-                    # Find best odds (highest for positive, closest to 0 for negative)
-                    best_idx = None
-                    best_value = None
+                    # Process valid odds
+                    valid_odds = []
+                    for _, row in team_odds.iterrows():
+                        try:
+                            odds_val = float(row['odds'])
+                            
+                            # Convert to American odds if needed
+                            if 1.01 <= odds_val <= 10.0:  # Decimal
+                                if odds_val >= 2.0:
+                                    american_odds = int((odds_val - 1) * 100)
+                                else:
+                                    american_odds = int(-100 / (odds_val - 1))
+                            else:  # Already American
+                                american_odds = int(odds_val)
+                            
+                            # Validate range
+                            if -1000 <= american_odds <= 1000:
+                                valid_odds.append({
+                                    'sportsbook': row['sportsbook'],
+                                    'odds': american_odds
+                                })
+                        except (ValueError, TypeError):
+                            continue
                     
-                    for idx, row in ot.iterrows():
-                        odds_val = int(row['ao'])
-                        if best_value is None:
-                            best_value = odds_val
-                            best_idx = idx
-                        elif odds_val > 0 and best_value > 0:
-                            # Both positive, take higher
-                            if odds_val > best_value:
-                                best_value = odds_val
-                                best_idx = idx
-                        elif odds_val < 0 and best_value < 0:
-                            # Both negative, take closer to zero (less negative)
-                            if odds_val > best_value:
-                                best_value = odds_val
-                                best_idx = idx
-                        elif odds_val > 0 and best_value < 0:
-                            # Positive beats negative
-                            best_value = odds_val
-                            best_idx = idx
-                    
-                    best_odds = int(ot.loc[best_idx,'ao']) if best_idx is not None else -110
-                    best_book = str(ot.loc[best_idx,'sportsbook']) if best_idx is not None else "Unknown"
-                    
-                    by_book = [
-                        {"sportsbook": str(r['sportsbook']), "odds": int(r['ao'])}
-                        for _, r in ot.iterrows()
-                    ]
+                    if valid_odds:
+                        # Find best odds (highest for positive, closest to 0 for negative)
+                        best_odds_entry = max(valid_odds, key=lambda x: x['odds'])
+                        
+                        teams.append({
+                            "team": to_full(team_name),
+                            "odds": best_odds_entry['odds'],
+                            "sportsbook": best_odds_entry['sportsbook'],
+                            "by_book": valid_odds
+                        })
+                        
+                        print(f"DEBUG: {team_name} -> {best_odds_entry['odds']} @ {best_odds_entry['sportsbook']}")
+                    else:
+                        teams.append({
+                            "team": to_full(team_name),
+                            "odds": -110,
+                            "sportsbook": "No Odds",
+                            "by_book": []
+                        })
 
-                    teams.append({
-                        "team": to_full(tm),
-                        "odds": best_odds,
-                        "sportsbook": best_book,
-                        "by_book": by_book
-                    })
-
-            out.append({
-                "game_id": str(g['game_id']),
-                "game": f"{to_full(g['away'])} @ {to_full(g['home'])}",
-                "date": str(g['game_date']),
-                "time": (str(g['game_time'])[:5] if g['game_time'] else "TBD"),
+            result.append({
+                "game_id": str(game['game_id']),
+                "game": f"{to_full(game['away'])} @ {to_full(game['home'])}",
+                "date": str(game['game_date']),
+                "time": str(game['game_time'])[:5] if game['game_time'] else "TBD",
                 "teams": teams
             })
-        return jsonify(out)
+
+        print(f"DEBUG: Returning {len(result)} games")
+        return jsonify(result)
+
     except Exception as e:
-        print('games error', e)
-        return jsonify([]), 200
+        print(f"api_games error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify([])
+
+    except Exception as e:
+        print(f"api_games error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify([])
+
 
 # Activity + betting endpoints
 @app.route('/api/recent-activity')
@@ -2557,6 +2924,78 @@ def api_money_transaction():
         print("/api/money-transaction error:", e)
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/debug/games-count-by-date')
+@login_required
+def debug_games_by_date():
+    if not USERS.get(session['username'], {}).get('is_admin', False):
+        return jsonify({'error': 'Admin only'}), 403
+    
+    conn = get_db()
+    today = datetime.utcnow().date()
+    
+    try:
+        if USE_CLOUD_DB:
+            games_count = safe_query("""
+                SELECT DATE(game_date) as date, COUNT(*) as count
+                FROM games 
+                WHERE game_date >= :today
+                GROUP BY DATE(game_date)
+                ORDER BY game_date LIMIT 10
+            """, {"today": today})
+        else:
+            games_count = pd.read_sql_query("""
+                SELECT DATE(game_date) as date, COUNT(*) as count
+                FROM games 
+                WHERE date(game_date) >= date(?)
+                GROUP BY date(game_date)
+                ORDER BY date(game_date) LIMIT 10
+            """, conn, params=[today])
+        
+        return jsonify({
+            'today': str(today),
+            'games_by_date': games_count.to_dict('records') if not games_count.empty else [],
+            'database_type': 'cloud' if USE_CLOUD_DB else 'local'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+
+@app.route('/api/debug/raw-games-data')
+@login_required
+def debug_raw_games():
+    if not USERS.get(session['username'], {}).get('is_admin', False):
+        return jsonify({'error': 'Admin only'}), 403
+    
+    conn = get_db()
+    try:
+        if USE_CLOUD_DB:
+            raw_games = safe_query("""
+                SELECT game_id, away_team, home_team, game_date, start_time_local, 
+                       created_at, updated_at
+                FROM games 
+                ORDER BY game_date 
+                LIMIT 20
+            """)
+        else:
+            raw_games = pd.read_sql_query("""
+                SELECT game_id, away_team, home_team, game_date, start_time_local
+                FROM games 
+                ORDER BY game_date 
+                LIMIT 20
+            """, conn)
+        
+        return jsonify({
+            'total_games': len(raw_games),
+            'sample_games': raw_games.to_dict('records'),
+            'date_range': {
+                'earliest': str(raw_games['game_date'].min()) if not raw_games.empty else None,
+                'latest': str(raw_games['game_date'].max()) if not raw_games.empty else None
+            }
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
 @app.route('/api/settle-bet', methods=['POST'])
 @login_required
 def api_settle_bet():
@@ -2668,7 +3107,7 @@ def unified_before_request():
     
     # One-time initialization
     if not _initialized:
-        print("ðŸ”§ Running one-time initialization...")
+        print("🔧 Running one-time initialization...")
         
         # Force model cache clear
         _model_pack = None
@@ -2684,23 +3123,23 @@ def unified_before_request():
         # Fix user data structure issues
         try:
             fix_user_data_structure()
-            print("âœ… User data structure fixes completed")
+            print("✅ User data structure fixes completed")
         except Exception as e:
-            print(f"âŒ Error fixing user data structure: {e}")
+            print(f"❌ Error fixing user data structure: {e}")
         
         _initialized = True
-        print("âœ… One-time initialization completed")
+        print("✅ One-time initialization completed")
     
-    # Session validation for API routes (merged from validate_session)
+    # Session validation for API routes
     if request.path.startswith('/api/') and request.endpoint not in ['login', 'current_user']:
         username = session.get('username')
         
         # Check if session has username but user doesn't exist
         if username and username not in USERS:
-            print(f"âŒ Session cleanup: User {username} no longer exists")
+            print(f"❌ Session cleanup: User {username} no longer exists")
             session.clear()
             return jsonify({'error': 'Session expired - user not found'}), 401
-
+        
 # ALSO ADD: Debug route to manually trigger user data fix
 @app.route('/api/debug/fix-user-data')
 @login_required
@@ -2907,3 +3346,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    test_fixed_function()
