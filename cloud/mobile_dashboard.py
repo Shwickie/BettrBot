@@ -151,12 +151,31 @@ def safe_query(query_str, params=None):
     except Exception as e:
         print(f"Query error: {e}")
         return pd.DataFrame()
-    
+
+def safe_query_with_fallback(query, params=None):
+    """Helper to safely execute SQL queries with fallback for missing data"""
+    try:
+        if USE_CLOUD_DB:
+            # PostgreSQL - use named parameters with text()
+            with ENGINE.connect() as conn:
+                return pd.read_sql_query(text(query), conn, params=params or {})
+        else:
+            # SQLite - use positional parameters
+            conn = get_db()
+            if params and isinstance(params, dict):
+                # Convert named params to positional for SQLite
+                param_values = list(params.values())
+                query_sqlite = query.replace(':season', '?').replace(':start_date', '?').replace(':end_date', '?')
+                return pd.read_sql_query(query_sqlite, conn, params=param_values)
+            else:
+                return pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        print(f"SQL Query Error: {e}")
+        return pd.DataFrame()
 
 def compute_live_records(conn, season: int) -> pd.DataFrame:
     """
-    FIXED VERSION: Compute W-L-T for the requested season using game_date.
-    Handles both SQLAlchemy connections and raw sqlite3 connections properly.
+    FIXED VERSION: Removed 'week' column and improved PostgreSQL compatibility
     """
     # Check what type of connection we have
     is_sqlite_raw = hasattr(conn, 'execute') and not hasattr(conn, 'engine')
@@ -169,14 +188,14 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
         # Raw SQLite connection
         USE_CLOUD_DB = False
 
-    # Get games with proper database handling
+    # Get games with proper database handling - REMOVED 'week' column
     if USE_CLOUD_DB:
         # PostgreSQL with SQLAlchemy
         games = pd.read_sql_query(text("""
             WITH g AS (
                 SELECT
                     game_id, home_team, away_team,
-                    home_score, away_score, week, id, game_date,
+                    home_score, away_score, id, game_date,
                     CASE
                       WHEN EXTRACT(MONTH FROM game_date) >= 8
                         THEN EXTRACT(YEAR FROM game_date)::int
@@ -184,7 +203,7 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
                     END AS season_year
                 FROM games
             )
-            SELECT game_id, home_team, away_team, home_score, away_score, week, id, game_date
+            SELECT game_id, home_team, away_team, home_score, away_score, id, game_date
             FROM g
             WHERE season_year = :season
               AND home_score IS NOT NULL AND away_score IS NOT NULL
@@ -197,7 +216,7 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
                 WITH g AS (
                     SELECT
                         game_id, home_team, away_team,
-                        home_score, away_score, week, id, game_date,
+                        home_score, away_score, id, game_date,
                         CASE
                           WHEN CAST(strftime('%m', game_date) AS INT) >= 8
                             THEN CAST(strftime('%Y', game_date) AS INT)
@@ -205,7 +224,7 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
                         END AS season_year
                     FROM games
                 )
-                SELECT game_id, home_team, away_team, home_score, away_score, week, id, game_date
+                SELECT game_id, home_team, away_team, home_score, away_score, id, game_date
                 FROM g
                 WHERE season_year = ?
                   AND home_score IS NOT NULL AND away_score IS NOT NULL
@@ -216,7 +235,7 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
                 WITH g AS (
                     SELECT
                         game_id, home_team, away_team,
-                        home_score, away_score, week, id, game_date,
+                        home_score, away_score, id, game_date,
                         CASE
                           WHEN CAST(strftime('%m', game_date) AS INT) >= 8
                             THEN CAST(strftime('%Y', game_date) AS INT)
@@ -224,7 +243,7 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
                         END AS season_year
                     FROM games
                 )
-                SELECT game_id, home_team, away_team, home_score, away_score, week, id, game_date
+                SELECT game_id, home_team, away_team, home_score, away_score, id, game_date
                 FROM g
                 WHERE season_year = :season
                   AND home_score IS NOT NULL AND away_score IS NOT NULL
@@ -236,6 +255,7 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
             "points_for","points_against","point_diff"
         ])
 
+    # Rest of the function stays the same...
     # Normalize team names to full names BEFORE any processing
     games["home_team"] = games["home_team"].apply(to_full)
     games["away_team"] = games["away_team"].apply(to_full)
@@ -3224,7 +3244,58 @@ def debug_fix_user_data():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     
+@app.route('/api/debug/check-odds-data')
+@login_required
+def debug_check_odds():
+    """Check what odds data exists in the database"""
+    if not USERS.get(session['username'], {}).get('is_admin', False):
+        return jsonify({'error': 'Admin only'}), 403
     
+    try:
+        with ENGINE.connect() as conn:
+            # Check total odds count
+            total_odds = conn.execute(text("SELECT COUNT(*) FROM odds")).scalar()
+            
+            # Check recent odds
+            recent_odds = safe_query("""
+                SELECT game_id, team, sportsbook, odds, market, timestamp
+                FROM odds 
+                WHERE timestamp >= CURRENT_DATE - INTERVAL '7 days'
+                ORDER BY timestamp DESC 
+                LIMIT 20
+            """)
+            
+            # Check games that should have odds
+            upcoming_games = safe_query("""
+                SELECT game_id, home_team, away_team, game_date
+                FROM games 
+                WHERE game_date >= CURRENT_DATE
+                ORDER BY game_date 
+                LIMIT 10
+            """)
+            
+            # Check for orphaned odds (odds without matching games)
+            orphaned_odds = safe_query("""
+                SELECT DISTINCT o.game_id, COUNT(*) as odds_count
+                FROM odds o
+                LEFT JOIN games g ON o.game_id = g.game_id
+                WHERE g.game_id IS NULL
+                GROUP BY o.game_id
+                LIMIT 10
+            """)
+            
+            return jsonify({
+                'total_odds_records': int(total_odds),
+                'recent_odds_sample': recent_odds.to_dict('records') if not recent_odds.empty else [],
+                'upcoming_games_sample': upcoming_games.to_dict('records') if not upcoming_games.empty else [],
+                'orphaned_odds': orphaned_odds.to_dict('records') if not orphaned_odds.empty else [],
+                'database_type': 'PostgreSQL'
+            })
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # ADD: Debug route to check the actual user data on disk
 @app.route('/api/debug/raw-user-data')
 @login_required  
