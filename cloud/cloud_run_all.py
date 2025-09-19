@@ -1,7 +1,8 @@
-# cloud_run_all_fixed.py - WORKING cloud pipeline with proper error handling
+# cloud_run_all.py - FIXED VERSION for Render deployment
 """
 Fixed cloud pipeline that handles all the issues from your error logs
 FIXED: Unicode encoding issues for Windows compatibility
+FIXED: Database connection handling for PostgreSQL
 """
 
 import subprocess
@@ -32,7 +33,7 @@ def setup_cloud_environment():
             print("WARNING: No DATABASE_URL found, using default")
             DATABASE_URL = "postgresql://postgres.bmfwrdsastxbsbubuuhs:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres"
         
-        # Fix postgres:// URLs
+        # Fix postgres:// URLs (Render uses this format)
         if DATABASE_URL.startswith('postgres://'):
             DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
         
@@ -79,17 +80,34 @@ def run_update_scores():
         # CRITICAL: Fix Unicode encoding for Windows
         env['PYTHONIOENCODING'] = 'utf-8'
         
-        # Run update_scores.py as subprocess with timeout
-        result = subprocess.run(
-            [PY, "update_scores.py"], 
-            capture_output=True, 
-            text=True, 
-            timeout=600,  # 10 minute timeout
-            env=env,
-            cwd=ROOT,
-            encoding='utf-8',  # Force UTF-8 encoding
-            errors='replace'   # Replace problematic characters
-        )
+        # Look for update_scores.py in stats directory
+        stats_dir = ROOT / "stats"
+        update_scores_path = stats_dir / "update_scores.py"
+        
+        if update_scores_path.exists():
+            # Run from stats directory
+            result = subprocess.run(
+                [PY, str(update_scores_path)], 
+                capture_output=True, 
+                text=True, 
+                timeout=600,  # 10 minute timeout
+                env=env,
+                cwd=ROOT,
+                encoding='utf-8',  # Force UTF-8 encoding
+                errors='replace'   # Replace problematic characters
+            )
+        else:
+            # Fallback to root directory
+            result = subprocess.run(
+                [PY, "update_scores.py"], 
+                capture_output=True, 
+                text=True, 
+                timeout=600,
+                env=env,
+                cwd=ROOT,
+                encoding='utf-8',
+                errors='replace'
+            )
         
         # Parse output to determine if actually successful
         output = result.stdout + result.stderr
@@ -269,9 +287,25 @@ def run_prediction():
         # CRITICAL: Fix Unicode encoding
         env['PYTHONIOENCODING'] = 'utf-8'
         
+        # Look for prediction.py in both current directory and model directory
+        prediction_paths = [
+            ROOT / "prediction.py",
+            ROOT / "model" / "prediction.py"
+        ]
+        
+        prediction_path = None
+        for path in prediction_paths:
+            if path.exists():
+                prediction_path = path
+                break
+        
+        if not prediction_path:
+            print("   ERROR: prediction.py not found")
+            return False
+        
         # Run prediction.py as subprocess
         result = subprocess.run(
-            [PY, "prediction.py"], 
+            [PY, str(prediction_path)], 
             capture_output=True, 
             text=True, 
             timeout=300,  # 5 minute timeout
@@ -339,7 +373,7 @@ def record_pipeline_status(engine, task, status, message):
 
 def main():
     """Main pipeline execution with better error handling"""
-    print("BETTR BOT CLOUD PIPELINE - FIXED VERSION")  # Removed Unicode
+    print("BETTR BOT CLOUD PIPELINE - FIXED VERSION")
     print("=" * 50)
     
     # Setup database

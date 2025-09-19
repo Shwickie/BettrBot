@@ -1512,28 +1512,55 @@ def dashboard():
 # ==================
 # API: /api/rankings
 # ==================
+# REPLACE the api_rankings function in mobile_dashboard.py with this fixed version
+
 @app.get("/api/rankings")
+@db_retry()
 def api_rankings():
+    """Fixed rankings API that works with both SQLite and PostgreSQL"""
     season = request.args.get("season", type=int) or date.today().year
     try:
-        conn = get_db()
-        
-        # Get power and records
-        power = pd.read_sql_query(
-            "SELECT season, team, power_score AS power FROM team_season_summary WHERE season = ?",
-            conn, params=[season]
-        )
-        
-        # Get live records
-        rec = compute_live_records(conn, season)
-        
-        # Get injury data
-        try:
-            injuries_df = load_injury_impact_from_detail(conn)[['team','injury_impact']]
-            injuries_df["team"] = injuries_df["team"].map(to_full)
-        except Exception as e:
-            print(f"Error loading injury data: {e}")
-            injuries_df = pd.DataFrame(columns=["team","injury_impact"])
+        # Use the global ENGINE instead of get_db() to avoid OptionEngine issues
+        with ENGINE.connect() as conn:
+            
+            if USE_CLOUD_DB:
+                # PostgreSQL queries
+                power = pd.read_sql_query(
+                    text("SELECT season, team, power_score AS power FROM team_season_summary WHERE season = :season"),
+                    conn, params={"season": season}
+                )
+                
+                # Get live records using compute_live_records function
+                rec = compute_live_records(conn, season)
+                
+                # Get injury data
+                try:
+                    injuries_df = load_injury_impact_from_detail(conn)[['team','injury_impact']]
+                    injuries_df["team"] = injuries_df["team"].map(to_full)
+                except Exception as e:
+                    print(f"Error loading injury data: {e}")
+                    injuries_df = pd.DataFrame(columns=["team","injury_impact"])
+            else:
+                # SQLite queries - use raw sqlite3 connection
+                sqlite_conn = sqlite3.connect(DB_PATH)
+                try:
+                    power = pd.read_sql_query(
+                        "SELECT season, team, power_score AS power FROM team_season_summary WHERE season = ?",
+                        sqlite_conn, params=[season]
+                    )
+                    
+                    # Get live records
+                    rec = compute_live_records(sqlite_conn, season)
+                    
+                    # Get injury data
+                    try:
+                        injuries_df = load_injury_impact_from_detail(sqlite_conn)[['team','injury_impact']]
+                        injuries_df["team"] = injuries_df["team"].map(to_full)
+                    except Exception as e:
+                        print(f"Error loading injury data: {e}")
+                        injuries_df = pd.DataFrame(columns=["team","injury_impact"])
+                finally:
+                    sqlite_conn.close()
         
         if rec.empty:
             return jsonify({"ok": True, "rankings": []})
@@ -1574,7 +1601,40 @@ def api_rankings():
         
     except Exception as e:
         print(f"Rankings error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"ok": False, "rankings": [], "error": str(e)})
+
+# Also add this database connection helper near the top of mobile_dashboard.py
+def get_proper_connection():
+    """Get the right type of connection for database operations"""
+    if USE_CLOUD_DB:
+        return ENGINE.connect()
+    else:
+        return sqlite3.connect(DB_PATH)
+
+@app.route('/api/debug/cloud-connection')
+def debug_cloud_connection():
+    try:
+        with ENGINE.connect() as conn:
+            games_count = conn.execute(text("SELECT COUNT(*) FROM games")).scalar()
+            today = datetime.utcnow().date()
+            recent_games = conn.execute(text("""
+                SELECT COUNT(*) FROM games 
+                WHERE game_date >= :today
+            """), {"today": today}).scalar()
+            
+            return jsonify({
+                'connection': 'success',
+                'total_games': games_count,
+                'future_games': recent_games,
+                'database_type': 'cloud'
+            })
+    except Exception as e:
+        return jsonify({
+            'connection': 'failed',
+            'error': str(e)
+        })
 
 @app.route('/api/debug/games-check')
 @login_required
