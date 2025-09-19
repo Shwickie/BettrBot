@@ -175,7 +175,7 @@ def safe_query_with_fallback(query, params=None):
 
 def compute_live_records(conn, season: int) -> pd.DataFrame:
     """
-    FIXED VERSION: Removed 'week' column completely for PostgreSQL compatibility
+    FIXED VERSION: Completely removed 'week' column references
     """
     is_sqlite_raw = hasattr(conn, 'execute') and not hasattr(conn, 'engine')
     is_sqlalchemy = hasattr(conn, 'engine')
@@ -185,7 +185,7 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
     else:
         USE_CLOUD_DB = False
 
-    # FIXED: Removed 'week' from ALL SELECT statements
+    # CRITICAL: No 'week' column anywhere
     if USE_CLOUD_DB:
         games = pd.read_sql_query(text("""
             WITH g AS (
@@ -205,7 +205,6 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
               AND home_score IS NOT NULL AND away_score IS NOT NULL
         """), conn, params={"season": season})
     else:
-        # SQLite version (also without week)
         if is_sqlite_raw:
             games = pd.read_sql_query("""
                 WITH g AS (
@@ -249,10 +248,9 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
             "points_for","points_against","point_diff"
         ])
 
-    # Rest of function stays exactly the same...
+    # Rest stays the same...
     games["home_team"] = games["home_team"].apply(to_full)
     games["away_team"] = games["away_team"].apply(to_full)
-
     games["game_id"] = games["game_id"].fillna("").astype(str).str.strip()
     games["gid_fallback"] = (
         pd.to_datetime(games["game_date"]).dt.strftime("%Y%m%d") + "_" +
@@ -272,21 +270,15 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
     games["tie"] = (games["home_score"] == games["away_score"]).astype(int)
 
     home_stats = games.groupby("home_team").agg(
-        wins=("home_win", "sum"),
-        losses=("away_win", "sum"), 
-        ties=("tie", "sum"),
-        games_played=("home_win", "size"),
-        points_for=("home_score", "sum"),
+        wins=("home_win", "sum"), losses=("away_win", "sum"), ties=("tie", "sum"),
+        games_played=("home_win", "size"), points_for=("home_score", "sum"),
         points_against=("away_score", "sum"),
     ).reset_index()
     home_stats.rename(columns={"home_team": "team"}, inplace=True)
 
     away_stats = games.groupby("away_team").agg(
-        wins=("away_win", "sum"),
-        losses=("home_win", "sum"),
-        ties=("tie", "sum"), 
-        games_played=("away_win", "size"),
-        points_for=("away_score", "sum"),
+        wins=("away_win", "sum"), losses=("home_win", "sum"), ties=("tie", "sum"),
+        games_played=("away_win", "size"), points_for=("away_score", "sum"),
         points_against=("home_score", "sum"),
     ).reset_index()
     away_stats.rename(columns={"away_team": "team"}, inplace=True)
@@ -325,19 +317,13 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
             win_pct = 0.0
             
         records.append({
-            "team": team,
-            "wins": total_wins,
-            "losses": total_losses, 
-            "ties": total_ties,
-            "games_played": total_games,
-            "win_pct": win_pct,
-            "points_for": total_pf,
-            "points_against": total_pa,
-            "point_diff": total_pf - total_pa
+            "team": team, "wins": total_wins, "losses": total_losses, "ties": total_ties,
+            "games_played": total_games, "win_pct": win_pct, "points_for": total_pf,
+            "points_against": total_pa, "point_diff": total_pf - total_pa
         })
 
-    result = pd.DataFrame(records)
-    return result
+    return pd.DataFrame(records)
+
 
 
 def test_fixed_function():
@@ -3192,8 +3178,9 @@ def unified_before_request():
 @app.route('/api/admin/add-test-odds', methods=['POST'])
 @admin_required
 def admin_add_test_odds():
-    """Add test odds for upcoming games"""
+    """FIXED: Add test odds using proper connection"""
     try:
+        # CRITICAL: Use ENGINE.connect() not get_db()
         with ENGINE.connect() as conn:
             # Get upcoming games without odds
             upcoming_games = safe_query("""
@@ -3225,7 +3212,7 @@ def admin_add_test_odds():
                 if home_odds > 0 and away_odds > 0:
                     home_odds = -home_odds
                 
-                # Insert odds for both teams
+                # Insert odds for both teams using the connection directly
                 conn.execute(text("""
                     INSERT INTO odds (game_id, team, sportsbook, odds, market, timestamp)
                     VALUES (:game_id, :team, :sportsbook, :odds, :market, :timestamp)
@@ -3262,14 +3249,16 @@ def admin_add_test_odds():
             })
             
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/admin/check-data-status')
 @admin_required  
 def admin_check_data_status():
-    """Check what data exists in the database"""
+    """FIXED: Check data status using proper connection"""
     try:
+        # CRITICAL: Use ENGINE.connect() not get_db()
         with ENGINE.connect() as conn:
             # Check games
             total_games = conn.execute(text("SELECT COUNT(*) FROM games")).scalar()
@@ -3286,7 +3275,7 @@ def admin_check_data_status():
                 WHERE timestamp >= CURRENT_DATE - INTERVAL '7 days'
             """)).scalar()
             
-            # Check games with odds
+            # Check games with odds using actual game_id matching
             games_with_odds = conn.execute(text("""
                 SELECT COUNT(DISTINCT g.game_id) 
                 FROM games g
@@ -3306,11 +3295,17 @@ def admin_check_data_status():
                 },
                 'issues': {
                     'games_without_odds': int(future_games) - int(games_with_odds),
-                    'needs_odds_data': int(total_odds) == 0
+                    'needs_odds_data': int(games_with_odds) == 0
+                },
+                'debug_info': {
+                    'connection_type': 'ENGINE.connect()',
+                    'database_type': 'PostgreSQL'
                 }
             })
             
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 # ALSO ADD: Debug route to manually trigger user data fix
