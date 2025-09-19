@@ -175,22 +175,18 @@ def safe_query_with_fallback(query, params=None):
 
 def compute_live_records(conn, season: int) -> pd.DataFrame:
     """
-    FIXED VERSION: Removed 'week' column and improved PostgreSQL compatibility
+    FIXED VERSION: Removed 'week' column completely
     """
-    # Check what type of connection we have
     is_sqlite_raw = hasattr(conn, 'execute') and not hasattr(conn, 'engine')
     is_sqlalchemy = hasattr(conn, 'engine')
     
     if is_sqlalchemy:
-        # SQLAlchemy connection - check if it's PostgreSQL
         USE_CLOUD_DB = 'postgresql' in str(conn.engine.url)
     else:
-        # Raw SQLite connection
         USE_CLOUD_DB = False
 
-    # Get games with proper database handling - REMOVED 'week' column
+    # FIXED: Removed 'week' from SELECT statements
     if USE_CLOUD_DB:
-        # PostgreSQL with SQLAlchemy
         games = pd.read_sql_query(text("""
             WITH g AS (
                 SELECT
@@ -209,9 +205,8 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
               AND home_score IS NOT NULL AND away_score IS NOT NULL
         """), conn, params={"season": season})
     else:
-        # SQLite - works with both raw connections and SQLAlchemy
+        # SQLite version (also without week)
         if is_sqlite_raw:
-            # Raw sqlite3.Connection
             games = pd.read_sql_query("""
                 WITH g AS (
                     SELECT
@@ -230,7 +225,6 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
                   AND home_score IS NOT NULL AND away_score IS NOT NULL
             """, conn, params=[season])
         else:
-            # SQLAlchemy connection to SQLite
             games = pd.read_sql_query(text("""
                 WITH g AS (
                     SELECT
@@ -255,12 +249,10 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
             "points_for","points_against","point_diff"
         ])
 
-    # Rest of the function stays the same...
-    # Normalize team names to full names BEFORE any processing
+    # Rest of function stays exactly the same...
     games["home_team"] = games["home_team"].apply(to_full)
     games["away_team"] = games["away_team"].apply(to_full)
 
-    # Handle duplicate games with fallback game_id
     games["game_id"] = games["game_id"].fillna("").astype(str).str.strip()
     games["gid_fallback"] = (
         pd.to_datetime(games["game_date"]).dt.strftime("%Y%m%d") + "_" +
@@ -269,19 +261,16 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
     )
     games["gid"] = games["game_id"].where(games["game_id"] != "", games["gid_fallback"])
 
-    # Remove duplicates (keeping most recent)
     keep_col = "updated_at" if "updated_at" in games.columns else ("id" if "id" in games.columns else None)
     if keep_col:
         games = games.sort_values(keep_col).drop_duplicates("gid", keep="last")
     else:
         games = games.drop_duplicates("gid", keep="last")
 
-    # Calculate win/loss indicators
     games["home_win"] = (games["home_score"] > games["away_score"]).astype(int)
     games["away_win"] = (games["away_score"] > games["home_score"]).astype(int)
     games["tie"] = (games["home_score"] == games["away_score"]).astype(int)
 
-    # Aggregate home stats
     home_stats = games.groupby("home_team").agg(
         wins=("home_win", "sum"),
         losses=("away_win", "sum"), 
@@ -292,7 +281,6 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
     ).reset_index()
     home_stats.rename(columns={"home_team": "team"}, inplace=True)
 
-    # Aggregate away stats  
     away_stats = games.groupby("away_team").agg(
         wins=("away_win", "sum"),
         losses=("home_win", "sum"),
@@ -303,7 +291,6 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
     ).reset_index()
     away_stats.rename(columns={"away_team": "team"}, inplace=True)
 
-    # Combine home and away stats
     all_teams = set(home_stats["team"].unique()) | set(away_stats["team"].unique())
     
     records = []
@@ -311,7 +298,6 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
         home_row = home_stats[home_stats["team"] == team]
         away_row = away_stats[away_stats["team"] == team]
         
-        # Get stats or default to 0
         home_wins = home_row["wins"].iloc[0] if not home_row.empty else 0
         home_losses = home_row["losses"].iloc[0] if not home_row.empty else 0
         home_ties = home_row["ties"].iloc[0] if not home_row.empty else 0
@@ -326,7 +312,6 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
         away_pf = away_row["points_for"].iloc[0] if not away_row.empty else 0
         away_pa = away_row["points_against"].iloc[0] if not away_row.empty else 0
         
-        # Combine totals
         total_wins = int(home_wins + away_wins)
         total_losses = int(home_losses + away_losses)
         total_ties = int(home_ties + away_ties)
@@ -334,7 +319,6 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
         total_pf = int(home_pf + away_pf)
         total_pa = int(home_pa + away_pa)
         
-        # Calculate win percentage
         if total_games > 0:
             win_pct = (total_wins + 0.5 * total_ties) / total_games
         else:
@@ -2773,48 +2757,47 @@ def api_delete_bet():
 # Simple games + odds preview (now includes per-book breakdown)
 @app.route('/api/games')
 def api_games():
-    """FIXED VERSION - Searches odds by team names, not game_id"""
+    """Fixed version that shows upcoming games properly"""
     try:
-        conn = get_db()
         today = datetime.utcnow().date()
-        end = today + timedelta(days=60)
+        end = today + timedelta(days=21)
         
-        # Get games
-        games = pd.read_sql_query("""
+        # Get upcoming games
+        games = safe_query("""
             SELECT game_id, away_team AS away, home_team AS home, game_date, start_time_local AS game_time
             FROM games
-            WHERE date(game_date) BETWEEN date(?) AND date(?)
+            WHERE game_date BETWEEN :start_date AND :end_date
             AND game_id IS NOT NULL AND game_id != ''
-            ORDER BY date(game_date), time(start_time_local)
-        """, conn, params=[today, end])
+            ORDER BY game_date, start_time_local
+        """, {"start_date": today, "end_date": end})
 
-        print(f"DEBUG: Found {len(games)} games with valid game_ids")
+        print(f"DEBUG: Found {len(games)} upcoming games")
 
         if games.empty:
             return jsonify([])
 
-        # Get ALL recent odds (not filtered by game_id since they don't match)
-        odds = pd.read_sql_query("""
-            SELECT team, sportsbook, odds, timestamp
+        # Get odds for these games
+        odds = safe_query("""
+            SELECT game_id, team, sportsbook, odds, timestamp
             FROM odds 
             WHERE market = 'h2h'
             AND odds IS NOT NULL
-            AND timestamp >= datetime('now', '-7 days')
+            AND timestamp >= CURRENT_DATE - INTERVAL '7 days'
             ORDER BY timestamp DESC
-        """, conn)
+        """)
 
         print(f"DEBUG: Found {len(odds)} recent odds records")
 
-        # Process each game
         result = []
         for _, game in games.iterrows():
             teams = []
             
             for team_name in [game['away'], game['home']]:
-                # Search odds by team name directly
-                team_odds = odds[odds['team'] == team_name]
-                
-                print(f"DEBUG: Team {team_name} has {len(team_odds)} odds records")
+                # Find odds for this team and game
+                team_odds = odds[
+                    (odds['game_id'] == game['game_id']) & 
+                    (odds['team'] == team_name)
+                ]
                 
                 if team_odds.empty:
                     teams.append({
@@ -2849,17 +2832,13 @@ def api_games():
                             continue
                     
                     if valid_odds:
-                        # Find best odds (highest for positive, closest to 0 for negative)
                         best_odds_entry = max(valid_odds, key=lambda x: x['odds'])
-                        
                         teams.append({
                             "team": to_full(team_name),
                             "odds": best_odds_entry['odds'],
                             "sportsbook": best_odds_entry['sportsbook'],
                             "by_book": valid_odds
                         })
-                        
-                        print(f"DEBUG: {team_name} -> {best_odds_entry['odds']} @ {best_odds_entry['sportsbook']}")
                     else:
                         teams.append({
                             "team": to_full(team_name),
@@ -2876,21 +2855,11 @@ def api_games():
                 "teams": teams
             })
 
-        print(f"DEBUG: Returning {len(result)} games")
+        print(f"DEBUG: Returning {len(result)} games for Place Bet")
         return jsonify(result)
 
     except Exception as e:
         print(f"api_games error: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify([])
-
-    except Exception as e:
-        print(f"api_games error: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify([])
-
 
 # Activity + betting endpoints
 @app.route('/api/recent-activity')
@@ -3220,6 +3189,130 @@ def unified_before_request():
             session.clear()
             return jsonify({'error': 'Session expired - user not found'}), 401
         
+@app.route('/api/admin/add-test-odds', methods=['POST'])
+@admin_required
+def admin_add_test_odds():
+    """Add test odds for upcoming games"""
+    try:
+        with ENGINE.connect() as conn:
+            # Get upcoming games without odds
+            upcoming_games = safe_query("""
+                SELECT DISTINCT g.game_id, g.home_team, g.away_team, g.game_date
+                FROM games g
+                LEFT JOIN odds o ON g.game_id = o.game_id
+                WHERE g.game_date >= CURRENT_DATE
+                AND g.game_date <= CURRENT_DATE + INTERVAL '21 days'
+                AND o.game_id IS NULL
+                ORDER BY g.game_date
+                LIMIT 30
+            """)
+            
+            if upcoming_games.empty:
+                return jsonify({'message': 'No games need odds', 'games_checked': 0})
+            
+            import random
+            from datetime import datetime
+            
+            added_count = 0
+            timestamp = datetime.utcnow()
+            
+            for _, game in upcoming_games.iterrows():
+                # Create realistic odds around even money
+                home_odds = random.randint(-180, 150)
+                away_odds = random.randint(-180, 150)
+                
+                # Make sure they're not both positive
+                if home_odds > 0 and away_odds > 0:
+                    home_odds = -home_odds
+                
+                # Insert odds for both teams
+                conn.execute(text("""
+                    INSERT INTO odds (game_id, team, sportsbook, odds, market, timestamp)
+                    VALUES (:game_id, :team, :sportsbook, :odds, :market, :timestamp)
+                """), {
+                    'game_id': game['game_id'],
+                    'team': game['home_team'],
+                    'sportsbook': 'DraftKings',
+                    'odds': home_odds,
+                    'market': 'h2h',
+                    'timestamp': timestamp
+                })
+                
+                conn.execute(text("""
+                    INSERT INTO odds (game_id, team, sportsbook, odds, market, timestamp)
+                    VALUES (:game_id, :team, :sportsbook, :odds, :market, :timestamp)
+                """), {
+                    'game_id': game['game_id'],
+                    'team': game['away_team'],
+                    'sportsbook': 'DraftKings',
+                    'odds': away_odds,
+                    'market': 'h2h',
+                    'timestamp': timestamp
+                })
+                
+                added_count += 2
+                
+            conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': f'Added odds for {len(upcoming_games)} games',
+                'odds_records_added': added_count,
+                'games_updated': upcoming_games[['game_id', 'home_team', 'away_team', 'game_date']].to_dict('records')
+            })
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/check-data-status')
+@admin_required  
+def admin_check_data_status():
+    """Check what data exists in the database"""
+    try:
+        with ENGINE.connect() as conn:
+            # Check games
+            total_games = conn.execute(text("SELECT COUNT(*) FROM games")).scalar()
+            future_games = conn.execute(text("""
+                SELECT COUNT(*) FROM games 
+                WHERE game_date >= CURRENT_DATE 
+                AND game_date <= CURRENT_DATE + INTERVAL '21 days'
+            """)).scalar()
+            
+            # Check odds
+            total_odds = conn.execute(text("SELECT COUNT(*) FROM odds")).scalar()
+            recent_odds = conn.execute(text("""
+                SELECT COUNT(*) FROM odds 
+                WHERE timestamp >= CURRENT_DATE - INTERVAL '7 days'
+            """)).scalar()
+            
+            # Check games with odds
+            games_with_odds = conn.execute(text("""
+                SELECT COUNT(DISTINCT g.game_id) 
+                FROM games g
+                INNER JOIN odds o ON g.game_id = o.game_id
+                WHERE g.game_date >= CURRENT_DATE
+            """)).scalar()
+            
+            return jsonify({
+                'games': {
+                    'total': int(total_games),
+                    'upcoming_21_days': int(future_games),
+                    'with_odds': int(games_with_odds)
+                },
+                'odds': {
+                    'total': int(total_odds),
+                    'recent_7_days': int(recent_odds)
+                },
+                'issues': {
+                    'games_without_odds': int(future_games) - int(games_with_odds),
+                    'needs_odds_data': int(total_odds) == 0
+                }
+            })
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # ALSO ADD: Debug route to manually trigger user data fix
 @app.route('/api/debug/fix-user-data')
 @login_required
