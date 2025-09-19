@@ -175,7 +175,7 @@ def safe_query_with_fallback(query, params=None):
 
 def compute_live_records(conn, season: int) -> pd.DataFrame:
     """
-    FIXED VERSION: Removed 'week' column completely
+    FIXED VERSION: Removed 'week' column completely for PostgreSQL compatibility
     """
     is_sqlite_raw = hasattr(conn, 'execute') and not hasattr(conn, 'engine')
     is_sqlalchemy = hasattr(conn, 'engine')
@@ -185,7 +185,7 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
     else:
         USE_CLOUD_DB = False
 
-    # FIXED: Removed 'week' from SELECT statements
+    # FIXED: Removed 'week' from ALL SELECT statements
     if USE_CLOUD_DB:
         games = pd.read_sql_query(text("""
             WITH g AS (
