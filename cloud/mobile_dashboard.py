@@ -175,8 +175,10 @@ def safe_query_with_fallback(query, params=None):
 
 def compute_live_records(conn, season: int) -> pd.DataFrame:
     """
-    FIXED VERSION: Completely removed 'week' column references
+    FIXED VERSION: Completely removed 'week' column references that were causing PostgreSQL errors
     """
+    
+    # Determine if this is SQLite or PostgreSQL
     is_sqlite_raw = hasattr(conn, 'execute') and not hasattr(conn, 'engine')
     is_sqlalchemy = hasattr(conn, 'engine')
     
@@ -185,7 +187,7 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
     else:
         USE_CLOUD_DB = False
 
-    # CRITICAL: No 'week' column anywhere
+    # CRITICAL: Removed 'week' from all SELECT statements
     if USE_CLOUD_DB:
         games = pd.read_sql_query(text("""
             WITH g AS (
@@ -248,7 +250,7 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
             "points_for","points_against","point_diff"
         ])
 
-    # Rest stays the same...
+    # Rest of the function remains the same
     games["home_team"] = games["home_team"].apply(to_full)
     games["away_team"] = games["away_team"].apply(to_full)
     games["game_id"] = games["game_id"].fillna("").astype(str).str.strip()
@@ -3180,10 +3182,9 @@ def unified_before_request():
 def admin_add_test_odds():
     """FIXED: Add test odds using proper connection"""
     try:
-        # CRITICAL: Use ENGINE.connect() not get_db()
         with ENGINE.connect() as conn:
-            # Get upcoming games without odds
-            upcoming_games = safe_query("""
+            # Get upcoming games without odds - FIXED query
+            upcoming_games = pd.read_sql(text("""
                 SELECT DISTINCT g.game_id, g.home_team, g.away_team, g.game_date
                 FROM games g
                 LEFT JOIN odds o ON g.game_id = o.game_id
@@ -3192,7 +3193,7 @@ def admin_add_test_odds():
                 AND o.game_id IS NULL
                 ORDER BY g.game_date
                 LIMIT 30
-            """)
+            """), conn)
             
             if upcoming_games.empty:
                 return jsonify({'message': 'No games need odds', 'games_checked': 0})
@@ -3204,21 +3205,19 @@ def admin_add_test_odds():
             timestamp = datetime.utcnow()
             
             for _, game in upcoming_games.iterrows():
-                # Create realistic odds around even money
+                # Create realistic odds
                 home_odds = random.randint(-180, 150)
                 away_odds = random.randint(-180, 150)
-                
-                # Make sure they're not both positive
                 if home_odds > 0 and away_odds > 0:
                     home_odds = -home_odds
                 
-                # Insert odds for both teams using the connection directly
+                # CRITICAL: Use exact team names from games table
                 conn.execute(text("""
                     INSERT INTO odds (game_id, team, sportsbook, odds, market, timestamp)
                     VALUES (:game_id, :team, :sportsbook, :odds, :market, :timestamp)
                 """), {
                     'game_id': game['game_id'],
-                    'team': game['home_team'],
+                    'team': game['home_team'],  # Exact match
                     'sportsbook': 'DraftKings',
                     'odds': home_odds,
                     'market': 'h2h',
@@ -3230,7 +3229,7 @@ def admin_add_test_odds():
                     VALUES (:game_id, :team, :sportsbook, :odds, :market, :timestamp)
                 """), {
                     'game_id': game['game_id'],
-                    'team': game['away_team'],
+                    'team': game['away_team'],  # Exact match
                     'sportsbook': 'DraftKings',
                     'odds': away_odds,
                     'market': 'h2h',
@@ -3244,8 +3243,7 @@ def admin_add_test_odds():
             return jsonify({
                 'success': True,
                 'message': f'Added odds for {len(upcoming_games)} games',
-                'odds_records_added': added_count,
-                'games_updated': upcoming_games[['game_id', 'home_team', 'away_team', 'game_date']].to_dict('records')
+                'odds_records_added': added_count
             })
             
     except Exception as e:
