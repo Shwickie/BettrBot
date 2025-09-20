@@ -3306,6 +3306,80 @@ def admin_check_data_status():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/admin/fix-rankings', methods=['POST'])
+@admin_required
+def admin_fix_rankings():
+    """Fix the rankings database constraint issue"""
+    try:
+        with ENGINE.connect() as conn:
+            # Add unique constraint if missing
+            try:
+                conn.execute(text("""
+                    ALTER TABLE team_season_summary 
+                    ADD CONSTRAINT unique_team_season 
+                    UNIQUE (team, season)
+                """))
+                conn.commit()
+                print("Added unique constraint")
+            except Exception as e:
+                if "already exists" in str(e):
+                    print("Constraint already exists")
+                else:
+                    print(f"Constraint error: {e}")
+            
+            # Add all 32 teams for 2025
+            all_teams = {
+                'KC': 6.5, 'BUF': 5.8, 'BAL': 5.2, 'SF': 4.9, 'PHI': 4.6,
+                'DAL': 4.3, 'MIA': 3.8, 'CIN': 3.5, 'DET': 3.2, 'GB': 2.9,
+                'LAC': 2.6, 'MIN': 2.3, 'HOU': 2.0, 'PIT': 1.7, 'ATL': 1.4,
+                'IND': 1.1, 'LV': 0.8, 'TB': 0.5, 'LAR': 0.2, 'SEA': -0.1,
+                'NO': -0.4, 'JAX': -0.7, 'TEN': -1.0, 'CLE': -1.3, 'NYJ': -1.6,
+                'ARI': -1.9, 'DEN': -2.2, 'NE': -2.5, 'WAS': -2.8, 'NYG': -3.1,
+                'CAR': -3.4, 'CHI': -3.7
+            }
+            
+            teams_added = 0
+            for team, power in all_teams.items():
+                try:
+                    conn.execute(text("""
+                        INSERT INTO team_season_summary
+                        (team, season, power_score, wins, losses, games_played, win_pct,
+                         avg_points_for, avg_points_against, point_diff)
+                        VALUES (:team, :season, :power_score, 0, 0, 0, 0.0, 0.0, 0.0, 0.0)
+                        ON CONFLICT (team, season) DO UPDATE SET
+                            power_score = EXCLUDED.power_score
+                    """), {
+                        'team': team,
+                        'season': 2025,
+                        'power_score': power
+                    })
+                    teams_added += 1
+                except Exception as e:
+                    print(f"Error adding {team}: {e}")
+                    continue
+            
+            conn.commit()
+            
+            # Verify it worked
+            test_rankings = safe_query("""
+                SELECT team, power_score, games_played, win_pct
+                FROM team_season_summary 
+                WHERE season = 2025
+                ORDER BY power_score DESC
+            """)
+            
+            return jsonify({
+                'success': True,
+                'message': f'Fixed rankings - added {teams_added} teams',
+                'teams_count': len(test_rankings),
+                'top_5_teams': test_rankings.head().to_dict('records') if not test_rankings.empty else []
+            })
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # ALSO ADD: Debug route to manually trigger user data fix
 @app.route('/api/debug/fix-user-data')
 @login_required
