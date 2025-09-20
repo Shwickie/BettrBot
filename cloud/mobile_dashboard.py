@@ -1091,9 +1091,15 @@ def load_injury_impact_from_detail(conn):
     try:
         if USE_CLOUD_DB:
             with ENGINE.connect() as db_conn:
-                table_check = conn.execute(
-                    text("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_injury_validation_detail'")
-                ).fetchone()  # if using SQLAlchemy Connection
+                # FIXED: Use PostgreSQL system tables instead of sqlite_master
+                table_check = db_conn.execute(text("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name = 'ai_injury_validation_detail'
+                    )
+                """)).scalar()
+                
                 if not table_check:
                     print("ai_injury_validation_detail table not found")
                     return pd.DataFrame(columns=['team','injury_impact','total_injuries','qb_risk','skill_position_risk'])
@@ -3378,6 +3384,8 @@ def admin_fix_rankings():
             
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
 
 
 # ALSO ADD: Debug route to manually trigger user data fix
