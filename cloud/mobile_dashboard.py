@@ -327,7 +327,6 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
-
 def test_fixed_function():
     """Test the fixed function with your database"""
     import os
