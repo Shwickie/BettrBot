@@ -1,132 +1,114 @@
-# simple_rankings_fix.py - Simple fix for rankings without constraint changes
+# restore_real_rankings.py - Restore real power rankings from SQLite
 """
-This script fixes rankings by directly updating/inserting team data without
-modifying database constraints, avoiding timeout issues.
+Your cloud rankings got overwritten with fake data by fix_cloud_rankings.py
+This restores the real rankings from your SQLite database.
 """
 
 import os
 import pandas as pd
+import sqlite3
 from sqlalchemy import create_engine, text
-from datetime import date
 
-# Database setup
+# Database connections
+SQLITE_PATH = r"E:\Bettr Bot\betting-bot\data\betting.db"
 DATABASE_URL = os.environ.get("DATABASE_URL") or "postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres?sslmode=require"
 
 if DATABASE_URL.startswith('postgres://'):
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
 
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    pool_recycle=280,
-    pool_timeout=30,
-    connect_args={
-        "sslmode": "require",
-        "connect_timeout": 30,
-        "application_name": "bettrbot_simple_fix"
-    }
-)
-
 def main():
-    """Simple fix for rankings without constraint modifications"""
-    print("SIMPLE RANKINGS FIX")
-    print("=" * 30)
+    """Restore real power rankings from SQLite to cloud"""
+    print("RESTORING REAL POWER RANKINGS")
+    print("=" * 40)
     
     try:
-        current_season = 2025
+        # Connect to SQLite (your real data)
+        sqlite_conn = sqlite3.connect(SQLITE_PATH)
         
-        # All 32 teams with proper power rankings
-        all_teams_power = {
-            'KC': 6.5, 'BUF': 5.8, 'BAL': 5.2, 'SF': 4.9, 'PHI': 4.6,
-            'DAL': 4.3, 'MIA': 3.8, 'CIN': 3.5, 'DET': 3.2, 'GB': 2.9,
-            'LAC': 2.6, 'MIN': 2.3, 'HOU': 2.0, 'PIT': 1.7, 'ATL': 1.4,
-            'IND': 1.1, 'LV': 0.8, 'TB': 0.5, 'LAR': 0.2, 'SEA': -0.1,
-            'NO': -0.4, 'JAX': -0.7, 'TEN': -1.0, 'CLE': -1.3, 'NYJ': -1.6,
-            'ARI': -1.9, 'DEN': -2.2, 'NE': -2.5, 'WAS': -2.8, 'NYG': -3.1,
-            'CAR': -3.4, 'CHI': -3.7
-        }
+        # Connect to cloud database
+        cloud_engine = create_engine(
+            DATABASE_URL,
+            pool_pre_ping=True,
+            pool_recycle=280,
+            pool_timeout=30,
+            connect_args={
+                "sslmode": "require",
+                "connect_timeout": 30,
+                "application_name": "restore_rankings"
+            }
+        )
         
-        print(f"Updating {len(all_teams_power)} teams for season {current_season}...")
+        # Read REAL rankings from SQLite
+        print("Reading real rankings from SQLite...")
+        real_rankings = pd.read_sql_query("""
+            SELECT team, season, power_score, wins, losses, games_played, win_pct,
+                   avg_points_for, avg_points_against, point_diff
+            FROM team_season_summary
+            WHERE season = 2025
+        """, sqlite_conn)
         
-        teams_updated = 0
-        teams_inserted = 0
+        print(f"Found {len(real_rankings)} real team records for 2025")
         
-        # Process each team individually to avoid transaction issues
-        for team, power in all_teams_power.items():
-            try:
-                with engine.connect() as conn:
-                    with conn.begin():  # Each team gets its own transaction
-                        # Check if team exists for this season
-                        existing = conn.execute(text("""
-                            SELECT COUNT(*) FROM team_season_summary 
-                            WHERE team = :team AND season = :season
-                        """), {'team': team, 'season': current_season}).scalar()
-                        
-                        if existing > 0:
-                            # Update existing record
-                            conn.execute(text("""
-                                UPDATE team_season_summary 
-                                SET power_score = :power_score,
-                                    wins = 0,
-                                    losses = 0, 
-                                    games_played = 0,
-                                    win_pct = 0.0,
-                                    avg_points_for = 0.0,
-                                    avg_points_against = 0.0,
-                                    point_diff = 0.0
-                                WHERE team = :team AND season = :season
-                            """), {
-                                'team': team,
-                                'season': current_season,
-                                'power_score': power
-                            })
-                            teams_updated += 1
-                            print(f"  Updated {team}: {power}")
-                            
-                        else:
-                            # Insert new record
-                            conn.execute(text("""
-                                INSERT INTO team_season_summary
-                                (team, season, power_score, wins, losses, games_played, win_pct,
-                                 avg_points_for, avg_points_against, point_diff)
-                                VALUES (:team, :season, :power_score, 0, 0, 0, 0.0, 0.0, 0.0, 0.0)
-                            """), {
-                                'team': team,
-                                'season': current_season,
-                                'power_score': power
-                            })
-                            teams_inserted += 1
-                            print(f"  Inserted {team}: {power}")
-                            
-            except Exception as e:
-                print(f"  Error with {team}: {e}")
-                continue
+        if real_rankings.empty:
+            print("No 2025 data in SQLite, checking 2024...")
+            real_rankings = pd.read_sql_query("""
+                SELECT team, 2025 as season, power_score, 0 as wins, 0 as losses, 
+                       0 as games_played, 0.0 as win_pct, 0.0 as avg_points_for, 
+                       0.0 as avg_points_against, 0.0 as point_diff
+                FROM team_season_summary
+                WHERE season = 2024
+            """, sqlite_conn)
+            print(f"Using {len(real_rankings)} teams from 2024 as baseline")
         
-        print(f"\nResults:")
-        print(f"  Teams updated: {teams_updated}")
-        print(f"  Teams inserted: {teams_inserted}")
-        print(f"  Total teams processed: {teams_updated + teams_inserted}")
+        if real_rankings.empty:
+            print("ERROR: No team data found in SQLite")
+            return False
         
-        # Verify the results
-        with engine.connect() as conn:
+        # Show sample of real data
+        print("\nSample of REAL power rankings:")
+        top_5 = real_rankings.nlargest(5, 'power_score')
+        for _, row in top_5.iterrows():
+            print(f"  {row['team']}: {row['power_score']:.1f} power")
+        
+        # Clear fake data and restore real data
+        print("\nReplacing fake rankings with real data...")
+        with cloud_engine.begin() as conn:
+            # Delete 2025 fake data
+            deleted = conn.execute(text("""
+                DELETE FROM team_season_summary WHERE season = 2025
+            """)).rowcount
+            print(f"Deleted {deleted} fake records")
+            
+            # Insert real data
+            real_rankings.to_sql(
+                'team_season_summary',
+                conn,
+                if_exists='append',
+                index=False,
+                method='multi'
+            )
+            print(f"Restored {len(real_rankings)} real team records")
+        
+        # Verify restoration
+        with cloud_engine.connect() as conn:
             verification = pd.read_sql_query(text("""
                 SELECT team, power_score, wins, losses, games_played
                 FROM team_season_summary 
-                WHERE season = :season
+                WHERE season = 2025
                 ORDER BY power_score DESC
                 LIMIT 10
-            """), conn, params={"season": current_season})
+            """), conn)
             
-            print(f"\nTop 10 teams verification:")
+            print(f"\nTop 10 teams after restoration:")
             for i, row in verification.iterrows():
                 print(f"  {i+1}. {row['team']}: {row['power_score']:.1f} power, {row['wins']}-{row['losses']} record")
         
+        sqlite_conn.close()
+        
         print("\n" + "=" * 50)
-        print("SUCCESS: Rankings data updated!")
-        print("\nNext steps:")
-        print("1. Your rankings should now show proper power scores")
-        print("2. KC should be at the top, CHI at the bottom")
-        print("3. No need to redeploy - check your dashboard now")
+        print("SUCCESS: Real power rankings restored!")
+        print("\nYour dashboard should now show correct rankings")
+        print("The fake Indianapolis Colts #1 ranking is gone")
         
         return True
         
