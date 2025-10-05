@@ -29,29 +29,33 @@ while not (REPO_ROOT / '.git').exists() and REPO_ROOT.parent != REPO_ROOT:
 # Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
+# Remove any DATABASE_URL= prefix
 if DATABASE_URL.startswith("DATABASE_URL="):
     DATABASE_URL = DATABASE_URL[13:]
 
-# CRITICAL FIX: Use the pooler connection as-is
+# FIX: Convert postgres:// to postgresql://
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Don't modify pooler connections - use them exactly as provided
-USE_CLOUD_DB = DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg2://"))
+# FIX: For pooler connections, fix the username format
+if "pooler.supabase.com" in DATABASE_URL and "postgres." in DATABASE_URL:
+    # Change postgres.bmfwrdsastxbsbubuuhs to just postgres
+    DATABASE_URL = DATABASE_URL.replace("postgres.bmfwrdsastxbsbubuuhs:", "postgres:")
+
+# Add psycopg2 driver
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+USE_CLOUD_DB = DATABASE_URL.startswith("postgresql+psycopg2://")
 
 if USE_CLOUD_DB:
-    # Extract the actual connection string (remove any DATABASE_URL= prefix)
-    clean_url = DATABASE_URL
-    if clean_url.startswith("DATABASE_URL="):
-        clean_url = clean_url[13:]
-    
-    print(f"Using cloud database: {clean_url[:60]}...")
+    print(f"Using cloud database: {DATABASE_URL[:80]}...")
     
     ENGINE = create_engine(
-        clean_url,
+        DATABASE_URL,
         pool_pre_ping=True,
         pool_recycle=280,
-        pool_size=2,  # Smaller pool for Render free tier
+        pool_size=2,
         max_overflow=3,
         connect_args={
             "sslmode": "require",
