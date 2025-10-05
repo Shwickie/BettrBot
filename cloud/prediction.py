@@ -26,6 +26,16 @@ REPO_ROOT = Path(__file__).parent
 while not (REPO_ROOT / '.git').exists() and REPO_ROOT.parent != REPO_ROOT:
     REPO_ROOT = REPO_ROOT.parent
 
+
+import socket
+
+# Force IPv4 DNS resolution for Supabase
+original_getaddrinfo = socket.getaddrinfo
+
+def ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    return original_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+socket.getaddrinfo = ipv4_only_getaddrinfo
 # Database configuration
 # SIMPLIFIED DATABASE SETUP
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
