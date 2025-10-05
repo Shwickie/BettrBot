@@ -27,22 +27,26 @@ while not (REPO_ROOT / '.git').exists() and REPO_ROOT.parent != REPO_ROOT:
     REPO_ROOT = REPO_ROOT.parent
 
 
-import socket
 
-# Force IPv4 DNS resolution for Supabase
-original_getaddrinfo = socket.getaddrinfo
-
-def ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-    return original_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
-
-socket.getaddrinfo = ipv4_only_getaddrinfo
 # Database configuration
 # SIMPLIFIED DATABASE SETUP
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+# FIXED: Use Transaction Pooler (IPv4 compatible)
+DATABASE_URL = "postgresql+psycopg2://postgres.bmfwrdsastxbsbubuuhs:ApeNuts123!@aws-1-us-east-2.pooler.supabase.com:6543/postgres?sslmode=require"
 
-# Remove prefix if present
-if DATABASE_URL.startswith("DATABASE_URL="):
-    DATABASE_URL = DATABASE_URL[13:].strip()
+if DATABASE_URL.startswith("postgresql+psycopg2://"):
+    ENGINE = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_recycle=280,
+        pool_size=2,
+        max_overflow=3,
+        connect_args={
+            "sslmode": "require",
+            "connect_timeout": 15,
+            "application_name": "bettr-bot",
+            "options": "-c statement_timeout=30000"  # Transaction pooler setting
+        }
+    )
 
 # Ensure proper protocol
 if DATABASE_URL.startswith("postgres://"):
