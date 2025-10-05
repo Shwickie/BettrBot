@@ -35,7 +35,12 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 # robust import so Windows path works when running from /dashboard
 # FIXED DATABASE SETUP - Robust PostgreSQL connection handling
+# FIXED DATABASE SETUP - Robust PostgreSQL connection handling
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+# CRITICAL: Remove any accidental prefix
+if DATABASE_URL.startswith("DATABASE_URL="):
+    DATABASE_URL = DATABASE_URL[13:]  # Remove "DATABASE_URL=" prefix
 
 # Handle Render's postgres:// URLs
 if DATABASE_URL.startswith("postgres://"):
@@ -44,6 +49,7 @@ if DATABASE_URL.startswith("postgres://"):
 USE_CLOUD_DB = DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg2://"))
 
 if USE_CLOUD_DB:
+    # Only print the cleaned URL
     print(f"Using cloud database: {DATABASE_URL[:50]}...")
     
     # CRITICAL: More robust connection settings for Render PostgreSQL
@@ -52,16 +58,13 @@ if USE_CLOUD_DB:
         pool_pre_ping=True,
         pool_recycle=280,
         pool_timeout=30,
-        pool_size=5,  # Smaller pool
+        pool_size=5,
         max_overflow=10,
         connect_args={
             "sslmode": "require",
             "connect_timeout": 30,
             "application_name": "bettrbot_dashboard",
         },
-        pool_reset_on_return=None,
-        echo=False,
-        # Add these parameters to handle SSL issues better
         isolation_level="AUTOCOMMIT"
     )
     
