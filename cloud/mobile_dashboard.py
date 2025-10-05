@@ -39,33 +39,35 @@ if PROJECT_ROOT not in sys.path:
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 # CRITICAL: Remove any accidental prefix
-if DATABASE_URL.startswith("DATABASE_URL="):
-    DATABASE_URL = DATABASE_URL[13:]  # Remove "DATABASE_URL=" prefix
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
-# Handle Render's postgres:// URLs
+# CRITICAL FIX: Use direct connection, not pooler
+if DATABASE_URL.startswith("DATABASE_URL="):
+    DATABASE_URL = DATABASE_URL[13:]
+
+# Replace pooler with direct connection
+if "pooler.supabase.com" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace(
+        "aws-0-us-east-1.pooler.supabase.com:6543",
+        "db.bmfwrdsastxbsbubuuhs.supabase.co:5432"
+    )
+
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
 
 USE_CLOUD_DB = DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg2://"))
 
 if USE_CLOUD_DB:
-    # Only print the cleaned URL
     print(f"Using cloud database: {DATABASE_URL[:50]}...")
     
-    # CRITICAL: More robust connection settings for Render PostgreSQL
     ENGINE = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
         pool_recycle=280,
-        pool_timeout=30,
-        pool_size=5,
-        max_overflow=10,
         connect_args={
             "sslmode": "require",
-            "connect_timeout": 30,
-            "application_name": "bettrbot_dashboard",
-        },
-        isolation_level="AUTOCOMMIT"
+            "connect_timeout": 30
+        }
     )
     
     # Add connection event to handle SSL disconnections
@@ -178,74 +180,58 @@ def safe_query_with_fallback(query, params=None):
 
 def compute_live_records(conn, season: int) -> pd.DataFrame:
     """
-    FIXED VERSION: Completely removed 'week' column references that were causing PostgreSQL errors
+    FIXED: Properly handles both SQLAlchemy and raw SQLite connections
     """
     
-    # Determine if this is SQLite or PostgreSQL
-    is_sqlite_raw = hasattr(conn, 'execute') and not hasattr(conn, 'engine')
-    is_sqlalchemy = hasattr(conn, 'engine')
+    # Determine connection type FIRST
+    is_sqlalchemy = hasattr(conn, 'execute') and hasattr(conn, 'engine')
     
     if is_sqlalchemy:
         USE_CLOUD_DB = 'postgresql' in str(conn.engine.url)
     else:
         USE_CLOUD_DB = False
 
-    # CRITICAL: Removed 'week' from all SELECT statements
+    # Get games with proper query for each database type
     if USE_CLOUD_DB:
+        # PostgreSQL via SQLAlchemy
         games = pd.read_sql_query(text("""
-            WITH g AS (
-                SELECT
-                    game_id, home_team, away_team,
-                    home_score, away_score, id, game_date,
-                    CASE
-                      WHEN EXTRACT(MONTH FROM game_date) >= 8
-                        THEN EXTRACT(YEAR FROM game_date)::int
-                      ELSE (EXTRACT(YEAR FROM game_date)::int) - 1
-                    END AS season_year
-                FROM games
-            )
-            SELECT game_id, home_team, away_team, home_score, away_score, id, game_date
-            FROM g
-            WHERE season_year = :season
-              AND home_score IS NOT NULL AND away_score IS NOT NULL
+            SELECT 
+                game_id, home_team, away_team,
+                home_score, away_score, game_date,
+                CASE
+                    WHEN EXTRACT(MONTH FROM game_date) >= 8
+                    THEN EXTRACT(YEAR FROM game_date)::int
+                    ELSE (EXTRACT(YEAR FROM game_date)::int) - 1
+                END AS season_year
+            FROM games
+            WHERE CASE
+                    WHEN EXTRACT(MONTH FROM game_date) >= 8
+                    THEN EXTRACT(YEAR FROM game_date)::int
+                    ELSE (EXTRACT(YEAR FROM game_date)::int) - 1
+                  END = :season
+              AND home_score IS NOT NULL 
+              AND away_score IS NOT NULL
         """), conn, params={"season": season})
     else:
-        if is_sqlite_raw:
-            games = pd.read_sql_query("""
-                WITH g AS (
-                    SELECT
-                        game_id, home_team, away_team,
-                        home_score, away_score, id, game_date,
-                        CASE
-                          WHEN CAST(strftime('%m', game_date) AS INT) >= 8
-                            THEN CAST(strftime('%Y', game_date) AS INT)
-                          ELSE CAST(strftime('%Y', game_date) AS INT) - 1
-                        END AS season_year
-                    FROM games
-                )
-                SELECT game_id, home_team, away_team, home_score, away_score, id, game_date
-                FROM g
-                WHERE season_year = ?
-                  AND home_score IS NOT NULL AND away_score IS NOT NULL
-            """, conn, params=[season])
-        else:
-            games = pd.read_sql_query(text("""
-                WITH g AS (
-                    SELECT
-                        game_id, home_team, away_team,
-                        home_score, away_score, id, game_date,
-                        CASE
-                          WHEN CAST(strftime('%m', game_date) AS INT) >= 8
-                            THEN CAST(strftime('%Y', game_date) AS INT)
-                          ELSE CAST(strftime('%Y', game_date) AS INT) - 1
-                        END AS season_year
-                    FROM games
-                )
-                SELECT game_id, home_team, away_team, home_score, away_score, id, game_date
-                FROM g
-                WHERE season_year = :season
-                  AND home_score IS NOT NULL AND away_score IS NOT NULL
-            """), conn, params={"season": season})
+        # SQLite (raw connection or SQLAlchemy)
+        games = pd.read_sql_query("""
+            SELECT 
+                game_id, home_team, away_team,
+                home_score, away_score, game_date,
+                CASE
+                    WHEN CAST(strftime('%m', game_date) AS INT) >= 8
+                    THEN CAST(strftime('%Y', game_date) AS INT)
+                    ELSE CAST(strftime('%Y', game_date) AS INT) - 1
+                END AS season_year
+            FROM games
+            WHERE CASE
+                    WHEN CAST(strftime('%m', game_date) AS INT) >= 8
+                    THEN CAST(strftime('%Y', game_date) AS INT)
+                    ELSE CAST(strftime('%Y', game_date) AS INT) - 1
+                  END = ?
+              AND home_score IS NOT NULL 
+              AND away_score IS NOT NULL
+        """, conn, params=[season])
 
     if games.empty:
         return pd.DataFrame(columns=[
@@ -253,41 +239,36 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
             "points_for","points_against","point_diff"
         ])
 
-    # Rest of the function remains the same
+    # Normalize team names
     games["home_team"] = games["home_team"].apply(to_full)
     games["away_team"] = games["away_team"].apply(to_full)
-    games["game_id"] = games["game_id"].fillna("").astype(str).str.strip()
-    games["gid_fallback"] = (
-        pd.to_datetime(games["game_date"]).dt.strftime("%Y%m%d") + "_" +
-        games["away_team"].str.replace(" ", "") + "_" +
-        games["home_team"].str.replace(" ", "")
-    )
-    games["gid"] = games["game_id"].where(games["game_id"] != "", games["gid_fallback"])
-
-    keep_col = "updated_at" if "updated_at" in games.columns else ("id" if "id" in games.columns else None)
-    if keep_col:
-        games = games.sort_values(keep_col).drop_duplicates("gid", keep="last")
-    else:
-        games = games.drop_duplicates("gid", keep="last")
-
+    
+    # Calculate wins/losses/ties
     games["home_win"] = (games["home_score"] > games["away_score"]).astype(int)
     games["away_win"] = (games["away_score"] > games["home_score"]).astype(int)
     games["tie"] = (games["home_score"] == games["away_score"]).astype(int)
 
+    # Aggregate home stats
     home_stats = games.groupby("home_team").agg(
-        wins=("home_win", "sum"), losses=("away_win", "sum"), ties=("tie", "sum"),
-        games_played=("home_win", "size"), points_for=("home_score", "sum"),
+        wins=("home_win", "sum"),
+        losses=("away_win", "sum"),
+        ties=("tie", "sum"),
+        games_played=("home_win", "size"),
+        points_for=("home_score", "sum"),
         points_against=("away_score", "sum"),
-    ).reset_index()
-    home_stats.rename(columns={"home_team": "team"}, inplace=True)
+    ).reset_index().rename(columns={"home_team": "team"})
 
+    # Aggregate away stats
     away_stats = games.groupby("away_team").agg(
-        wins=("away_win", "sum"), losses=("home_win", "sum"), ties=("tie", "sum"),
-        games_played=("away_win", "size"), points_for=("away_score", "sum"),
+        wins=("away_win", "sum"),
+        losses=("home_win", "sum"),
+        ties=("tie", "sum"),
+        games_played=("away_win", "size"),
+        points_for=("away_score", "sum"),
         points_against=("home_score", "sum"),
-    ).reset_index()
-    away_stats.rename(columns={"away_team": "team"}, inplace=True)
+    ).reset_index().rename(columns={"away_team": "team"})
 
+    # Combine stats
     all_teams = set(home_stats["team"].unique()) | set(away_stats["team"].unique())
     
     records = []
@@ -295,40 +276,44 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
         home_row = home_stats[home_stats["team"] == team]
         away_row = away_stats[away_stats["team"] == team]
         
-        home_wins = home_row["wins"].iloc[0] if not home_row.empty else 0
-        home_losses = home_row["losses"].iloc[0] if not home_row.empty else 0
-        home_ties = home_row["ties"].iloc[0] if not home_row.empty else 0
-        home_games = home_row["games_played"].iloc[0] if not home_row.empty else 0
-        home_pf = home_row["points_for"].iloc[0] if not home_row.empty else 0
-        home_pa = home_row["points_against"].iloc[0] if not home_row.empty else 0
+        # Extract values safely
+        h_wins = int(home_row["wins"].iloc[0]) if not home_row.empty else 0
+        h_losses = int(home_row["losses"].iloc[0]) if not home_row.empty else 0
+        h_ties = int(home_row["ties"].iloc[0]) if not home_row.empty else 0
+        h_games = int(home_row["games_played"].iloc[0]) if not home_row.empty else 0
+        h_pf = int(home_row["points_for"].iloc[0]) if not home_row.empty else 0
+        h_pa = int(home_row["points_against"].iloc[0]) if not home_row.empty else 0
         
-        away_wins = away_row["wins"].iloc[0] if not away_row.empty else 0
-        away_losses = away_row["losses"].iloc[0] if not away_row.empty else 0
-        away_ties = away_row["ties"].iloc[0] if not away_row.empty else 0
-        away_games = away_row["games_played"].iloc[0] if not away_row.empty else 0
-        away_pf = away_row["points_for"].iloc[0] if not away_row.empty else 0
-        away_pa = away_row["points_against"].iloc[0] if not away_row.empty else 0
+        a_wins = int(away_row["wins"].iloc[0]) if not away_row.empty else 0
+        a_losses = int(away_row["losses"].iloc[0]) if not away_row.empty else 0
+        a_ties = int(away_row["ties"].iloc[0]) if not away_row.empty else 0
+        a_games = int(away_row["games_played"].iloc[0]) if not away_row.empty else 0
+        a_pf = int(away_row["points_for"].iloc[0]) if not away_row.empty else 0
+        a_pa = int(away_row["points_against"].iloc[0]) if not away_row.empty else 0
         
-        total_wins = int(home_wins + away_wins)
-        total_losses = int(home_losses + away_losses)
-        total_ties = int(home_ties + away_ties)
-        total_games = int(home_games + away_games)
-        total_pf = int(home_pf + away_pf)
-        total_pa = int(home_pa + away_pa)
+        # Calculate totals
+        total_wins = h_wins + a_wins
+        total_losses = h_losses + a_losses
+        total_ties = h_ties + a_ties
+        total_games = h_games + a_games
+        total_pf = h_pf + a_pf
+        total_pa = h_pa + a_pa
         
-        if total_games > 0:
-            win_pct = (total_wins + 0.5 * total_ties) / total_games
-        else:
-            win_pct = 0.0
+        win_pct = (total_wins + 0.5 * total_ties) / total_games if total_games > 0 else 0.0
             
         records.append({
-            "team": team, "wins": total_wins, "losses": total_losses, "ties": total_ties,
-            "games_played": total_games, "win_pct": win_pct, "points_for": total_pf,
-            "points_against": total_pa, "point_diff": total_pf - total_pa
+            "team": team,
+            "wins": total_wins,
+            "losses": total_losses,
+            "ties": total_ties,
+            "games_played": total_games,
+            "win_pct": win_pct,
+            "points_for": total_pf,
+            "points_against": total_pa,
+            "point_diff": total_pf - total_pa
         })
 
     return pd.DataFrame(records)
-
 
 def test_fixed_function():
     """Test the fixed function with your database"""
