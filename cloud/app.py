@@ -16,12 +16,13 @@ os.environ.setdefault('FLASK_ENV', 'production')
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 if DATABASE_URL:
+    if "pooler.supabase.com" in DATABASE_URL:
+        DATABASE_URL = DATABASE_URL.replace("postgres.bmfwrdsastxbsbubuuhs:", "postgres:")
+    
     if DATABASE_URL.startswith('postgres://'):
         DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    
     os.environ['DATABASE_URL'] = DATABASE_URL
-    print(f"Using cloud database: {DATABASE_URL[:50]}...")
-else:
-    print("Using local SQLite database")
 
 # Add paths for proper imports
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
