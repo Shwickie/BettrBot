@@ -35,23 +35,20 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 # robust import so Windows path works when running from /dashboard
 # FIXED DATABASE SETUP - Robust PostgreSQL connection handling
-# FIXED DATABASE SETUP - Robust PostgreSQL connection handling
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
-# CRITICAL: Remove any accidental prefix
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-
-# CRITICAL FIX: Use direct connection, not pooler
+# Remove accidental prefix
 if DATABASE_URL.startswith("DATABASE_URL="):
     DATABASE_URL = DATABASE_URL[13:]
 
-# Replace pooler with direct connection
+# Replace pooler URL with direct connection
 if "pooler.supabase.com" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace(
         "aws-0-us-east-1.pooler.supabase.com:6543",
         "db.bmfwrdsastxbsbubuuhs.supabase.co:5432"
     )
 
+# Fix postgres:// to postgresql://
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
 
@@ -66,7 +63,9 @@ if USE_CLOUD_DB:
         pool_recycle=280,
         connect_args={
             "sslmode": "require",
-            "connect_timeout": 30
+            "connect_timeout": 30,
+            # CRITICAL: Force IPv4
+            "options": "-c jit=off"
         }
     )
     

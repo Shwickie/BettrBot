@@ -27,32 +27,30 @@ while not (REPO_ROOT / '.git').exists() and REPO_ROOT.parent != REPO_ROOT:
     REPO_ROOT = REPO_ROOT.parent
 
 # Database configuration
-# Database configuration - FIXED
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
-# Remove any accidental prefix
 if DATABASE_URL.startswith("DATABASE_URL="):
-    DATABASE_URL = DATABASE_URL[13:]  # Strip the prefix
+    DATABASE_URL = DATABASE_URL[13:]
 
-# Handle Render's postgres:// URLs
+if "pooler.supabase.com" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace(
+        "aws-0-us-east-1.pooler.supabase.com:6543",
+        "db.bmfwrdsastxbsbubuuhs.supabase.co:5432"
+    )
+
 if DATABASE_URL.startswith('postgres://'):
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql+psycopg2://', 1)
 
 if DATABASE_URL and DATABASE_URL.startswith(('postgresql://', 'postgresql+psycopg2://')):
-    print(f"Connecting to cloud database: {DATABASE_URL[:30]}...")
     engine = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
         pool_recycle=300,
-        connect_args={"sslmode": "require"}
+        connect_args={
+            "sslmode": "require",
+            "options": "-c jit=off"  # Force IPv4
+        }
     )
-else:
-    # Local SQLite fallback
-    DEFAULT_DB = r"E:/Bettr Bot/betting-bot/data/betting.db"
-    DB_PATH = os.getenv("BETTR_DB_PATH", DEFAULT_DB)
-    engine = create_engine(f"sqlite:///{DB_PATH}")
-    print(f"Using local SQLite: {DB_PATH}")
-
 # Model path configuration
 MODEL_PATH = None
 model_candidates = [
