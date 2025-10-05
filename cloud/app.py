@@ -13,16 +13,27 @@ logger = logging.getLogger(__name__)
 
 # Environment setup for cloud
 os.environ.setdefault('FLASK_ENV', 'production')
-DATABASE_URL = os.environ.get('DATABASE_URL')
+# SIMPLIFIED DATABASE SETUP
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
-if DATABASE_URL:
-    if "pooler.supabase.com" in DATABASE_URL:
-        DATABASE_URL = DATABASE_URL.replace("postgres.bmfwrdsastxbsbubuuhs:", "postgres:")
-    
-    if DATABASE_URL.startswith('postgres://'):
-        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-    
-    os.environ['DATABASE_URL'] = DATABASE_URL
+# Remove prefix if present
+if DATABASE_URL.startswith("DATABASE_URL="):
+    DATABASE_URL = DATABASE_URL[13:].strip()
+
+# Ensure proper protocol
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Add psycopg2 driver if not present
+if DATABASE_URL.startswith("postgresql://") and "+psycopg2" not in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+# Ensure SSL mode
+if "sslmode=" not in DATABASE_URL and DATABASE_URL.startswith("postgresql"):
+    separator = "&" if "?" in DATABASE_URL else "?"
+    DATABASE_URL += f"{separator}sslmode=require"
+
+USE_CLOUD_DB = DATABASE_URL.startswith("postgresql+psycopg2://")
 
 # Add paths for proper imports
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
