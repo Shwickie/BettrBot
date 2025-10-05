@@ -32,23 +32,34 @@ DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 if DATABASE_URL.startswith("DATABASE_URL="):
     DATABASE_URL = DATABASE_URL[13:]
 
+# CRITICAL FIX: Use the pooler connection as-is
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
 
+# Don't modify pooler connections - use them exactly as provided
 USE_CLOUD_DB = DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg2://"))
 
 if USE_CLOUD_DB:
-    print(f"Using cloud database (pooler): {DATABASE_URL[:50]}...")
+    # Extract the actual connection string (remove any DATABASE_URL= prefix)
+    clean_url = DATABASE_URL
+    if clean_url.startswith("DATABASE_URL="):
+        clean_url = clean_url[13:]
+    
+    print(f"Using cloud database: {clean_url[:60]}...")
     
     ENGINE = create_engine(
-        DATABASE_URL,
+        clean_url,
         pool_pre_ping=True,
         pool_recycle=280,
-        pool_size=3,
-        max_overflow=5,
+        pool_size=2,  # Smaller pool for Render free tier
+        max_overflow=3,
         connect_args={
             "sslmode": "require",
-            "connect_timeout": 10,
+            "connect_timeout": 15,
+            "keepalives": 1,
+            "keepalives_idle": 30,
+            "keepalives_interval": 10,
+            "keepalives_count": 5,
         }
     )
 # Model path configuration
