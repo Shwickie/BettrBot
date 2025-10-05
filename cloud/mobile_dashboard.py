@@ -37,35 +37,26 @@ if PROJECT_ROOT not in sys.path:
 # FIXED DATABASE SETUP - Robust PostgreSQL connection handling
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
-# Remove accidental prefix
 if DATABASE_URL.startswith("DATABASE_URL="):
     DATABASE_URL = DATABASE_URL[13:]
 
-# Replace pooler URL with direct connection
-if "pooler.supabase.com" in DATABASE_URL:
-    DATABASE_URL = DATABASE_URL.replace(
-        "aws-0-us-east-1.pooler.supabase.com:6543",
-        "db.bmfwrdsastxbsbubuuhs.supabase.co:5432"
-    )
-
-# Fix postgres:// to postgresql://
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
 
 USE_CLOUD_DB = DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg2://"))
 
 if USE_CLOUD_DB:
-    print(f"Using cloud database: {DATABASE_URL[:50]}...")
+    print(f"Using cloud database (pooler): {DATABASE_URL[:50]}...")
     
     ENGINE = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
         pool_recycle=280,
+        pool_size=3,
+        max_overflow=5,
         connect_args={
             "sslmode": "require",
-            "connect_timeout": 30,
-            # CRITICAL: Force IPv4
-            "options": "-c jit=off"
+            "connect_timeout": 10,
         }
     )
     
