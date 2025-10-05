@@ -423,6 +423,44 @@ def run_migrate_odds():
         print(f"   WARNING: migrate_odds failed: {e}")
         return True  # Don't fail pipeline for odds issues
 
+def ensure_schema():
+    """Ensure games table has required columns"""
+    try:
+        engine = setup_cloud_environment()
+        with engine.connect() as conn:
+            # Check if season column exists
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'games' 
+                AND column_name IN ('season', 'week')
+            """)).fetchall()
+            
+            existing_cols = [r[0] for r in result]
+            
+            if 'season' not in existing_cols:
+                print("  Adding season column...")
+                conn.execute(text("ALTER TABLE games ADD COLUMN season INTEGER"))
+                conn.execute(text("""
+                    UPDATE games SET season = 
+                    CASE 
+                        WHEN EXTRACT(MONTH FROM game_date) >= 8 
+                        THEN EXTRACT(YEAR FROM game_date)::int
+                        ELSE EXTRACT(YEAR FROM game_date)::int - 1
+                    END
+                """))
+                conn.commit()
+            
+            if 'week' not in existing_cols:
+                print("  Adding week column...")
+                conn.execute(text("ALTER TABLE games ADD COLUMN week INTEGER"))
+                conn.commit()
+                
+        return True
+    except Exception as e:
+        print(f"  Schema check failed: {e}")
+        return True  # Don't block pipeline
+
 def run_model_training():
     """Optional: Run model training if needed"""
     print("TASK: Running model training (optional)...")
@@ -493,6 +531,7 @@ def main():
     
     # Define pipeline tasks - COMPLETE with team fixes and model training
     tasks = [
+        ("ensure_schema", ensure_schema),
         ("update_scores", run_update_scores),
         ("team_name_fix", run_team_name_fix),      # NEW: Fix team names
         ("team_season_summary", run_team_season_summary),

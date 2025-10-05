@@ -334,11 +334,15 @@ def test_fixed_function():
     from sqlalchemy import create_engine
     
     # Database setup (same as your mobile_dashboard.py)
-    DATABASE_URL = os.environ.get("DATABASE_URL")
-    if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
-        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-    
-    USE_CLOUD_DB = bool(DATABASE_URL)
+    DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+    # CRITICAL FIX: Use direct connection, not pooler
+    if DATABASE_URL:
+        # Remove pooler reference and use direct port
+        DATABASE_URL = "postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres"
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+
+    USE_CLOUD_DB = DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg2://"))
     SEASON = 2025
     
     if USE_CLOUD_DB:
@@ -1514,123 +1518,90 @@ def dashboard():
 @app.get("/api/rankings")
 @db_retry()
 def api_rankings():
-    """Fixed rankings API that works with both SQLite and PostgreSQL"""
+    """Fixed rankings API with tie support"""
     season = request.args.get("season", type=int) or date.today().year
     try:
-        # Use the global ENGINE instead of get_db() to avoid OptionEngine issues
         with ENGINE.connect() as conn:
             
             if USE_CLOUD_DB:
-                # PostgreSQL queries
-                power = pd.read_sql_query(
-                    text("SELECT season, team, power_score AS power FROM team_season_summary WHERE season = :season"),
+                # PostgreSQL - get power scores with ties
+                rankings = pd.read_sql_query(
+                    text("""
+                        SELECT 
+                            team, 
+                            power_score AS power,
+                            wins,
+                            losses,
+                            ties,
+                            games_played,
+                            win_pct
+                        FROM team_season_summary 
+                        WHERE season = :season
+                        ORDER BY wins DESC, ties DESC, power_score DESC
+                    """),
                     conn, params={"season": season}
                 )
-                
-                # Get live records using compute_live_records function
-                rec = compute_live_records(conn, season)
-                
             else:
-                # SQLite queries - use raw sqlite3 connection
+                # SQLite version
                 sqlite_conn = sqlite3.connect(DB_PATH)
                 try:
-                    power = pd.read_sql_query(
-                        "SELECT season, team, power_score AS power FROM team_season_summary WHERE season = ?",
+                    rankings = pd.read_sql_query(
+                        """
+                        SELECT 
+                            team, 
+                            power_score AS power,
+                            wins,
+                            losses,
+                            ties,
+                            games_played,
+                            win_pct
+                        FROM team_season_summary 
+                        WHERE season = ?
+                        ORDER BY wins DESC, ties DESC, power_score DESC
+                        """,
                         sqlite_conn, params=[season]
                     )
-                    
-                    # Get live records
-                    rec = compute_live_records(sqlite_conn, season)
-                    
                 finally:
                     sqlite_conn.close()
         
-        # CRITICAL FIX: Handle empty records gracefully
-        if rec.empty:
-            # If no live records, create rankings from power data only
-            try:
-                if power.empty:
-                    # No power data either - return all teams with defaults
-                    all_teams = ['KC', 'BUF', 'BAL', 'SF', 'PHI', 'DAL', 'MIA', 'CIN', 
-                               'DET', 'GB', 'LAC', 'MIN', 'HOU', 'PIT', 'ATL', 'IND',
-                               'LV', 'TB', 'LAR', 'SEA', 'NO', 'JAX', 'TEN', 'CLE',
-                               'NYJ', 'ARI', 'DEN', 'NE', 'WAS', 'NYG', 'CAR', 'CHI']
-                    
-                    rankings_data = []
-                    for i, team in enumerate(all_teams):
-                        rankings_data.append({
-                            "team": to_full(team),
-                            "record": "0-0",
-                            "power": 6.0 - (i * 0.3),  # Descending power scores
-                            "wins": 0,
-                            "losses": 0,
-                            "ties": 0,
-                            "games_played": 0,
-                            "win_pct": 0.0,
-                            "point_diff": 0,
-                            "injury_impact": 0.0
-                        })
-                    
-                    return jsonify({"ok": True, "rankings": rankings_data})
-                
-                # Use power data to create baseline rankings
-                power["team"] = power["team"].map(to_full)
-                rankings_data = []
-                for _, row in power.iterrows():
-                    rankings_data.append({
-                        "team": row["team"],
-                        "record": "0-0",
-                        "power": float(row["power"]),
-                        "wins": 0,
-                        "losses": 0,
-                        "ties": 0,
-                        "games_played": 0,
-                        "win_pct": 0.0,
-                        "point_diff": 0,
-                        "injury_impact": 0.0
-                    })
-                
-                # Sort by power
-                rankings_data.sort(key=lambda x: x["power"], reverse=True)
-                return jsonify({"ok": True, "rankings": rankings_data})
-                
-            except Exception as e:
-                print(f"Error creating power-only rankings: {e}")
-                return jsonify({"ok": True, "rankings": []})
+        if rankings.empty:
+            return jsonify({"ok": True, "rankings": []})
 
         # Normalize team names
-        power["team"] = power["team"].map(to_full) if not power.empty else []
-        rec["team"] = rec["team"].map(to_full)
-
-        # Merge all data
-        df = pd.merge(rec, power[["team","power"]], on="team", how="left") if not power.empty else rec.copy()
-        df["power"] = df["power"].fillna(0.0) if "power" in df.columns else 0.0
+        rankings["team"] = rankings["team"].map(to_full)
         
-        # SAFE injury data merge - don't let this break rankings
+        # SAFE injury data merge
         try:
             injuries_df = load_injury_impact_from_detail(conn)[['team','injury_impact']]
             injuries_df["team"] = injuries_df["team"].map(to_full)
-            df = df.merge(injuries_df, on="team", how="left")
-            df["injury_impact"] = df["injury_impact"].fillna(0.0)
+            rankings = rankings.merge(injuries_df, on="team", how="left")
+            rankings["injury_impact"] = rankings["injury_impact"].fillna(0.0)
         except Exception as e:
-            print(f"Injury data unavailable, using zeros: {e}")
-            df["injury_impact"] = 0.0
+            print(f"Injury data unavailable: {e}")
+            rankings["injury_impact"] = 0.0
 
-        # Create record string
+        # Create record string WITH TIES
         def _rec_str(r):
             w = int(r.get("wins", 0) or 0)
             l = int(r.get("losses", 0) or 0)
             t = int(r.get("ties", 0) or 0)
-            return f"{w}-{l}" + (f"-{t}" if t > 0 else "")
+            
+            if t > 0:
+                return f"{w}-{l}-{t}"  # Show ties if they exist
+            else:
+                return f"{w}-{l}"
 
-        df["record_str"] = df.apply(_rec_str, axis=1)
+        rankings["record_str"] = rankings.apply(_rec_str, axis=1)
 
-        # Sort by power DESC, then win pct
-        df = df.sort_values(["power","win_pct","point_diff"], ascending=[False, False, False])
+        # Sort by wins, then ties, then power
+        rankings = rankings.sort_values(
+            ["wins", "ties", "power"], 
+            ascending=[False, False, False]
+        )
 
-        out = df[[
+        out = rankings[[
             "team","record_str","power","wins","losses","ties",
-            "games_played","win_pct","point_diff","injury_impact"
+            "games_played","win_pct","injury_impact"
         ]].rename(columns={
             "record_str":"record"
         })
@@ -1642,13 +1613,7 @@ def api_rankings():
         print(f"Rankings error: {e}")
         import traceback
         traceback.print_exc()
-        # Return fallback rankings instead of empty
-        fallback_teams = [
-            {"team": "Kansas City Chiefs", "record": "0-0", "power": 6.5, "wins": 0, "losses": 0, "ties": 0, "games_played": 0, "win_pct": 0.0, "point_diff": 0, "injury_impact": 0.0},
-            {"team": "Buffalo Bills", "record": "0-0", "power": 5.8, "wins": 0, "losses": 0, "ties": 0, "games_played": 0, "win_pct": 0.0, "point_diff": 0, "injury_impact": 0.0},
-            {"team": "Baltimore Ravens", "record": "0-0", "power": 5.2, "wins": 0, "losses": 0, "ties": 0, "games_played": 0, "win_pct": 0.0, "point_diff": 0, "injury_impact": 0.0}
-        ]
-        return jsonify({"ok": True, "rankings": fallback_teams, "error": str(e)})
+        return jsonify({"ok": False, "error": str(e)})
     
 @app.route('/api/debug/games-check')
 @login_required
