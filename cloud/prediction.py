@@ -31,7 +31,8 @@ while not (REPO_ROOT / '.git').exists() and REPO_ROOT.parent != REPO_ROOT:
 # Database configuration
 # SIMPLIFIED DATABASE SETUP
 # FIXED: Use Transaction Pooler (IPv4 compatible)
-DATABASE_URL = "postgresql+psycopg2://postgres.bmfwrdsastxbsbubuuhs:ApeNuts123!@aws-1-us-east-2.pooler.supabase.com:6543/postgres?sslmode=require"
+# FIXED: Use Session Pooler (IPv4 + port 5432)
+DATABASE_URL = "postgresql+psycopg2://postgres.bmfwrdsastxbsbubuuhs:ApeNuts123!@aws-1-us-east-2.pooler.supabase.com:5432/postgres?sslmode=require"
 
 if DATABASE_URL.startswith("postgresql+psycopg2://"):
     ENGINE = create_engine(
@@ -42,12 +43,10 @@ if DATABASE_URL.startswith("postgresql+psycopg2://"):
         max_overflow=3,
         connect_args={
             "sslmode": "require",
-            "connect_timeout": 15,
-            "application_name": "bettr-bot",
-            "options": "-c statement_timeout=30000"  # Transaction pooler setting
+            "connect_timeout": 20,
+            "application_name": "bettr-bot-prediction"
         }
     )
-
 # Ensure proper protocol
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
