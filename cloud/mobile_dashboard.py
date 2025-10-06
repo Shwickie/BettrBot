@@ -39,30 +39,29 @@ if PROJECT_ROOT not in sys.path:
 # SIMPLIFIED DATABASE SETUP
 # FIXED: Use Transaction Pooler (IPv4 compatible)
 # FIXED: Use Session Pooler (IPv4 + port 5432)
-DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
-USE_CLOUD_DB = DATABASE_URL.startswith("postgresql+psycopg2://")
+# SIMPLIFIED DATABASE SETUP
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway")
+
+# CRITICAL: Force cloud database usage
+USE_CLOUD_DB = True
 
 if USE_CLOUD_DB:
-    print(f"Using cloud database: {DATABASE_URL[:80]}...")
+    print(f"Using Railway database: {DATABASE_URL[:60]}...")
     
     ENGINE = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
         pool_recycle=280,
-        pool_size=2,          # Smaller for transaction pooler
+        pool_size=2,
         max_overflow=3,
         connect_args={
-            "sslmode": "require",
             "connect_timeout": 20,
             "application_name": "bettr-bot",
         }
     )
     
-    print("✅ Using Supabase Transaction Pooler (port 6543)")
-    
-    print("✅ Using Supabase Session Pooler (IPv4 compatible)")
-    
-    print("Using Supabase Session Pooler (IPv4 compatible)")
+    print("✅ Using Railway PostgreSQL")
+
     
     # Add connection event to handle SSL disconnections
     from sqlalchemy import event
@@ -714,6 +713,7 @@ app.secret_key = 'bettr-bot-enhanced-2025'
 def ensure_indexes():
     if USE_CLOUD_DB:
         return 
+    
     con = sqlite3.connect(DB_PATH)
     try:
         con.execute("PRAGMA journal_mode=WAL;")

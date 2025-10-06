@@ -32,24 +32,28 @@ while not (REPO_ROOT / '.git').exists() and REPO_ROOT.parent != REPO_ROOT:
 # SIMPLIFIED DATABASE SETUP
 # FIXED: Use Transaction Pooler (IPv4 compatible)
 # FIXED: Use Session Pooler (IPv4 + port 5432)
-DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
+# SIMPLIFIED DATABASE SETUP
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway")
 
+# CRITICAL: Force cloud database usage
 USE_CLOUD_DB = True
 
-ENGINE = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    pool_recycle=280,
-    pool_size=2,
-    max_overflow=3,
-    connect_args={
-        "sslmode": "require",
-        "connect_timeout": 20,
-        "application_name": "bettr-bot-prediction"
-    }
-)
-
-print(f"✅ Prediction.py using Transaction Pooler: {DATABASE_URL[:60]}...")
+if USE_CLOUD_DB:
+    print(f"Using Railway database: {DATABASE_URL[:60]}...")
+    
+    ENGINE = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_recycle=280,
+        pool_size=2,
+        max_overflow=3,
+        connect_args={
+            "connect_timeout": 20,
+            "application_name": "bettr-bot",
+        }
+    )
+    
+    print("✅ Using Railway PostgreSQL")
 
 # Model path configuration
 MODEL_PATH = None
