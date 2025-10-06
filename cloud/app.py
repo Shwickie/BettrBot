@@ -15,8 +15,7 @@ logger = logging.getLogger(__name__)
 os.environ.setdefault('FLASK_ENV', 'production')
 # SIMPLIFIED DATABASE SETUP
 # FIXED: Use Session Pooler (IPv4 compatible, port 5432)
-DATABASE_URL = "postgresql+psycopg2://postgres.bmfwrdsastxbsbubuuhs:ApeNuts123!@aws-1-us-east-2.pooler.supabase.com:5432/postgres?sslmode=require"
-
+DATABASE_URL = "postgresql+psycopg2://postgres.bmfwrdsastxbsbubuuhs:ApeNuts123!@aws-1-us-east-2.pooler.supabase.com:6543/postgres?sslmode=require"
 # Remove prefix if present
 if DATABASE_URL.startswith("DATABASE_URL="):
     DATABASE_URL = DATABASE_URL[13:].strip()

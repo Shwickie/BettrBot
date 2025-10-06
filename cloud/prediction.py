@@ -33,21 +33,24 @@ while not (REPO_ROOT / '.git').exists() and REPO_ROOT.parent != REPO_ROOT:
 # FIXED: Use Transaction Pooler (IPv4 compatible)
 # FIXED: Use Session Pooler (IPv4 + port 5432)
 # FIXED: Use Session Pooler (IPv4 compatible, port 5432)
-DATABASE_URL = "postgresql+psycopg2://postgres.bmfwrdsastxbsbubuuhs:ApeNuts123!@aws-1-us-east-2.pooler.supabase.com:5432/postgres?sslmode=require"
+DATABASE_URL = "postgresql+psycopg2://postgres.bmfwrdsastxbsbubuuhs:ApeNuts123!@aws-1-us-east-2.pooler.supabase.com:6543/postgres?sslmode=require"
 
-if DATABASE_URL.startswith("postgresql+psycopg2://"):
-    ENGINE = create_engine(
-        DATABASE_URL,
-        pool_pre_ping=True,
-        pool_recycle=280,
-        pool_size=2,
-        max_overflow=3,
-        connect_args={
-            "sslmode": "require",
-            "connect_timeout": 20,
-            "application_name": "bettr-bot-prediction"
-        }
-    )
+USE_CLOUD_DB = True
+
+ENGINE = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_recycle=280,
+    pool_size=2,
+    max_overflow=3,
+    connect_args={
+        "sslmode": "require",
+        "connect_timeout": 20,
+        "application_name": "bettr-bot-prediction"
+    }
+)
+
+print(f"✅ Prediction.py using Transaction Pooler: {DATABASE_URL[:60]}...")
 
 # Model path configuration
 MODEL_PATH = None
