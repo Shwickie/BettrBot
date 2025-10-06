@@ -14,7 +14,7 @@ from sqlalchemy import create_engine, text
 def check_database_health():
     """Check if database is accessible and has recent data"""
     try:
-        DATABASE_URL = os.environ.get("DATABASE_URL")
+        DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
         if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
             DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
         

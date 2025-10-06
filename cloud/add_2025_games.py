@@ -12,8 +12,7 @@ import nfl_data_py as nfl
 
 def setup_cloud_database():
     """Setup cloud database connection"""
-    DATABASE_URL = os.environ.get("DATABASE_URL") or "postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres?sslmode=require"
-    
+    DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
     # Fix postgres:// URLs
     if DATABASE_URL.startswith('postgres://'):
         DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)

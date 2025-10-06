@@ -12,8 +12,7 @@ def diagnose_cloud_odds():
     """Check what's wrong with cloud odds data"""
     
     # Connect to cloud PostgreSQL  
-    DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres?sslmode=require")
-    
+    DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
     if DATABASE_URL.startswith('postgres://'):
         DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
     

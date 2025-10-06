@@ -17,7 +17,7 @@ REGIONS = 'us'
 ODDS_FORMAT = 'american'
 
 # Database Configuration
-DATABASE_URL = "postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres"
+DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
 
 # Team name mapping
 TEAM_MAPPING = {

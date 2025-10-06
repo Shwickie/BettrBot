@@ -24,7 +24,7 @@ SQLITE_PATH = r"E:\Bettr Bot\betting-bot\data\betting.db"
 POSTGRES_URL = os.getenv(
     "POSTGRES_URL",
     # keep the default but ALWAYS set POSTGRES_URL on Render
-    "postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres?sslmode=require",
+    "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway",
 )
 
 ESSENTIAL_TABLES: Sequence[str] = (

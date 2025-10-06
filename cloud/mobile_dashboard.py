@@ -39,11 +39,7 @@ if PROJECT_ROOT not in sys.path:
 # SIMPLIFIED DATABASE SETUP
 # FIXED: Use Transaction Pooler (IPv4 compatible)
 # FIXED: Use Session Pooler (IPv4 + port 5432)
-DATABASE_URL = "postgresql+psycopg2://postgres.bmfwrdsastxbsbubuuhs:ApeNuts123!@aws-1-us-east-2.pooler.supabase.com:5432/postgres?sslmode=require"
-
-# FIXED: Use Session Pooler (IPv4 compatible, port 5432)
-DATABASE_URL = "postgresql+psycopg2://postgres.bmfwrdsastxbsbubuuhs:ApeNuts123!@aws-1-us-east-2.pooler.supabase.com:6543/postgres?sslmode=require"
-
+DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
 USE_CLOUD_DB = DATABASE_URL.startswith("postgresql+psycopg2://")
 
 if USE_CLOUD_DB:

@@ -6,7 +6,7 @@ Debug why Eagles/other teams show double the games
 from sqlalchemy import create_engine, text
 import pandas as pd
 
-DATABASE_URL = "postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres"
+DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
 
 def debug_duplicates():
     print("DEBUGGING DUPLICATE GAME COUNT")

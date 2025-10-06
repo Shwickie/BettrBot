@@ -8,7 +8,7 @@ import sys
 from sqlalchemy import create_engine, text
 
 # Set the database URL
-DATABASE_URL = "postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres"
+DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
 
 def test_connection():
     print("Testing cloud database connection...")

@@ -21,7 +21,7 @@ if str(ROOT) not in sys.path:
 def setup_cloud_environment():
     """Setup for cloud deployment with database connection"""
     try:
-        DATABASE_URL = "postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres"
+        DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
         
         print(f"Connecting to database...")
         

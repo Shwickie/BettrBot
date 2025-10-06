@@ -2,7 +2,7 @@
 from sqlalchemy import create_engine, text
 import pandas as pd
 
-DATABASE_URL = "postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres"
+DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
