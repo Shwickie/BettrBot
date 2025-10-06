@@ -48,46 +48,7 @@ if DATABASE_URL.startswith("postgresql+psycopg2://"):
             "application_name": "bettr-bot-prediction"
         }
     )
-# Ensure proper protocol
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Add psycopg2 driver if not present
-if DATABASE_URL.startswith("postgresql://") and "+psycopg2" not in DATABASE_URL:
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
-
-# Ensure SSL mode
-if "sslmode=" not in DATABASE_URL and DATABASE_URL.startswith("postgresql"):
-    separator = "&" if "?" in DATABASE_URL else "?"
-    DATABASE_URL += f"{separator}sslmode=require"
-
-USE_CLOUD_DB = DATABASE_URL.startswith("postgresql+psycopg2://")
-
-if USE_CLOUD_DB:
-    print(f"Using cloud database: {DATABASE_URL[:80]}...")
-    
-    # Detect if using pooler
-    is_pooler = ":6543" in DATABASE_URL or "pooler" in DATABASE_URL
-    
-    ENGINE = create_engine(
-        DATABASE_URL,
-        pool_pre_ping=True,
-        pool_recycle=280,
-        pool_size=2,
-        max_overflow=3,
-        connect_args={
-            "sslmode": "require",
-            "connect_timeout": 15,
-            "application_name": "bettr-bot",
-            # Pooler mode settings
-            **({"options": "-c statement_timeout=30000"} if is_pooler else {
-                "keepalives": 1,
-                "keepalives_idle": 30,
-                "keepalives_interval": 10,
-                "keepalives_count": 5,
-            })
-        }
-    )
 # Model path configuration
 MODEL_PATH = None
 model_candidates = [
