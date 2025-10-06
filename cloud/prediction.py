@@ -32,6 +32,7 @@ while not (REPO_ROOT / '.git').exists() and REPO_ROOT.parent != REPO_ROOT:
 # SIMPLIFIED DATABASE SETUP
 # FIXED: Use Transaction Pooler (IPv4 compatible)
 # FIXED: Use Session Pooler (IPv4 + port 5432)
+# FIXED: Use Session Pooler (IPv4 compatible, port 5432)
 DATABASE_URL = "postgresql+psycopg2://postgres.bmfwrdsastxbsbubuuhs:ApeNuts123!@aws-1-us-east-2.pooler.supabase.com:5432/postgres?sslmode=require"
 
 if DATABASE_URL.startswith("postgresql+psycopg2://"):

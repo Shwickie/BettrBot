@@ -41,6 +41,9 @@ if PROJECT_ROOT not in sys.path:
 # FIXED: Use Session Pooler (IPv4 + port 5432)
 DATABASE_URL = "postgresql+psycopg2://postgres.bmfwrdsastxbsbubuuhs:ApeNuts123!@aws-1-us-east-2.pooler.supabase.com:5432/postgres?sslmode=require"
 
+# FIXED: Use Session Pooler (IPv4 compatible, port 5432)
+DATABASE_URL = "postgresql+psycopg2://postgres.bmfwrdsastxbsbubuuhs:ApeNuts123!@aws-1-us-east-2.pooler.supabase.com:5432/postgres?sslmode=require"
+
 USE_CLOUD_DB = DATABASE_URL.startswith("postgresql+psycopg2://")
 
 if USE_CLOUD_DB:
@@ -50,15 +53,16 @@ if USE_CLOUD_DB:
         DATABASE_URL,
         pool_pre_ping=True,
         pool_recycle=280,
-        pool_size=3,          # Slightly larger for session pooler
+        pool_size=3,          # Session pooler can handle slightly more
         max_overflow=5,
         connect_args={
             "sslmode": "require",
             "connect_timeout": 20,
             "application_name": "bettr-bot",
-            # Session pooler settings (no statement_timeout in options)
         }
     )
+    
+    print("✅ Using Supabase Session Pooler (IPv4 compatible)")
     
     print("Using Supabase Session Pooler (IPv4 compatible)")
     

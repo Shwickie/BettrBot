@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 # Environment setup for cloud
 os.environ.setdefault('FLASK_ENV', 'production')
 # SIMPLIFIED DATABASE SETUP
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+# FIXED: Use Session Pooler (IPv4 compatible, port 5432)
+DATABASE_URL = "postgresql+psycopg2://postgres.bmfwrdsastxbsbubuuhs:ApeNuts123!@aws-1-us-east-2.pooler.supabase.com:5432/postgres?sslmode=require"
 
 # Remove prefix if present
 if DATABASE_URL.startswith("DATABASE_URL="):
