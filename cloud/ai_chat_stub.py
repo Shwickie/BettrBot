@@ -77,6 +77,12 @@ try:
     from model.ai_tools import list_value_bets
 except ImportError:
     list_value_bets = None
+
+
+print(f"🔑 OpenAI API Key present: {bool(os.getenv('OPENAI_API_KEY'))}")
+if os.getenv("OPENAI_API_KEY"):
+    key = os.getenv("OPENAI_API_KEY")
+    print(f"🔑 Key starts with: {key[:10]}...")
 # ---------------------------
 # Logging
 # ---------------------------
@@ -2210,12 +2216,16 @@ USER MESSAGE: {message}"""
             }
 
     def _generate_conversational_response(
-        self, 
-        analysis: GameAnalysis, 
-        user_message: str, 
-        context: str
-    ) -> str:
+    self, 
+    analysis: GameAnalysis, 
+    user_message: str, 
+    context: str
+) -> str:
         """Generate a REAL conversational AI response using OpenAI."""
+        
+        if not self.openai_client:
+            print("❌ OpenAI client not initialized - using fallback")
+            return self._generate_detailed_fallback_commentary(analysis, user_message)
         
         try:
             # Build a conversational prompt
@@ -2250,6 +2260,8 @@ USER MESSAGE: {message}"""
 
     Keep it natural - you're chatting, not writing a formal report."""
 
+            print(f"🔄 Calling OpenAI with model: gpt-4o-mini")
+            
             response = self.openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
@@ -2260,12 +2272,23 @@ USER MESSAGE: {message}"""
                 temperature=0.7,
             )
             
-            return response.choices[0].message.content.strip()
+            ai_response = response.choices[0].message.content.strip()
+            print(f"✅ Got OpenAI response ({len(ai_response)} chars)")
+            return ai_response
             
         except Exception as e:
+            print(f"❌ OpenAI conversation failed: {e}")
             logger.exception("OpenAI conversation failed")
+            
+            # Check specific error types
+            if "api_key" in str(e).lower():
+                print("💡 API Key issue detected")
+            elif "rate_limit" in str(e).lower():
+                print("💡 Rate limit hit")
+            elif "model" in str(e).lower():
+                print("💡 Model access issue")
+            
             return self._generate_detailed_fallback_commentary(analysis, user_message)
-
 
 
     def _handle_game_analysis(self, game_id: str, message: str, context: str) -> Dict[str, Any]:
@@ -2734,3 +2757,32 @@ def get_ai_status():
     })
 
 __all__ = ["comprehensive_ai_bp", "ai_system", "ComprehensiveAI"]
+
+@comprehensive_ai_bp.route("/api/test-openai", methods=["GET"])
+def test_openai():
+    """Test OpenAI connection"""
+    if not ai_system.openai_client:
+        return jsonify({
+            "ok": False,
+            "error": "OpenAI client not initialized",
+            "api_key_set": bool(os.getenv("OPENAI_API_KEY"))
+        })
+    
+    try:
+        response = ai_system.openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": "Say 'test successful' if you can read this"}],
+            max_tokens=50
+        )
+        
+        return jsonify({
+            "ok": True,
+            "response": response.choices[0].message.content,
+            "model": response.model
+        })
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "error_type": type(e).__name__
+        })
