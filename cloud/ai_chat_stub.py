@@ -2042,17 +2042,247 @@ USER MESSAGE: {message}"""
             
         return "\n".join(lines)
 
+
+    def _build_rich_context(self, analysis: GameAnalysis, user_question: str) -> str:
+        """Build comprehensive context for AI to understand the betting situation."""
+        
+        context = f"""
+    GAME ANALYSIS REQUEST
+    User Question: "{user_question}"
+
+    MATCHUP: {analysis.away_team} @ {analysis.home_team}
+    Date: {analysis.game_date}
+
+    MODEL PREDICTIONS:
+    - Home Win Probability: {analysis.home_probability:.1%}
+    - Away Win Probability: {analysis.away_probability:.1%}
+    - Model Confidence: {analysis.confidence_score:.1%}
+
+    BETTING OPPORTUNITIES:
+    """
+        
+        if analysis.best_bet:
+            context += f"""
+    - Best Bet Found: {analysis.best_bet.get('team')}
+    - Odds: {analysis.best_bet.get('odds')}
+    - Edge: {analysis.best_bet.get('edge_pct', 0):.1f}%
+    - Sportsbook: {analysis.best_bet.get('sportsbook', 'N/A')}
+    """
+        else:
+            context += "- No significant betting edge detected\n"
+        
+        context += f"""
+    KEY FACTORS:
+    """
+        for factor in analysis.key_factors[:5]:
+            context += f"- {factor}\n"
+        
+        context += f"""
+    INJURY SITUATION:
+    - {analysis.home_team} Impact: {analysis.injury_impact.get('home', {}).get('total', 0):.1f}
+    - {analysis.away_team} Impact: {analysis.injury_impact.get('away', {}).get('total', 0):.1f}
+    """
+        
+        if analysis.injury_impact.get('home', {}).get('QB', 0) > 0:
+            context += f"- ⚠️ {analysis.home_team} has QB injury concerns\n"
+        if analysis.injury_impact.get('away', {}).get('QB', 0) > 0:
+            context += f"- ⚠️ {analysis.away_team} has QB injury concerns\n"
+        
+        return context
+
+
+    def _handle_general_chat(self, message: str, context: str) -> Dict[str, Any]:
+        """Handle general betting questions with REAL AI conversation."""
+        
+        if not self.openai_client:
+            return {
+                "ok": True,
+                "intent": "general_chat",
+                "success": True,
+                "result": {
+                    "message": "I can help analyze specific games, find value bets, or explain betting strategies. What would you like to know?"
+                }
+            }
+        
+        try:
+            system_prompt = f"""You are an expert NFL betting analyst having a casual conversation.
+
+    CONTEXT:
+    {context}
+
+    Your personality:
+    - Friendly and conversational
+    - Honest about risks ("betting is hard, no guarantees")
+    - Give specific examples when possible
+    - Admit when you need more info
+    - Keep responses concise (2-3 paragraphs max)
+
+    TOPICS YOU KNOW ABOUT:
+    - NFL teams, players, matchups
+    - Betting strategies (value betting, bankroll management)
+    - Reading odds and finding edges
+    - How betting markets work
+    - Statistical analysis
+
+    If the user asks about a specific game, tell them to select it from the sidebar first.
+    If they ask for value bets, explain you can search for those.
+    """
+
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": message}
+                ],
+                max_tokens=600,
+                temperature=0.7
+            )
+            
+            ai_message = response.choices[0].message.content.strip()
+            
+            return {
+                "ok": True,
+                "intent": "general_chat",
+                "success": True,
+                "result": {"message": ai_message}
+            }
+            
+        except Exception as e:
+            logger.exception("_handle_general_chat failed")
+            return {
+                "ok": False,
+                "intent": "general_chat",
+                "success": False,
+                "message": "I'm having trouble responding right now. Try asking about a specific game or value bets."
+            }
+
+    def process_message(self, message: str, game_id: Optional[str] = None, user_context: Optional[Dict] = None,conversation_history: Optional[List[Dict]] = None  ) -> Dict[str, Any]:
+        """Enhanced message processing with conversation history."""
+        
+        intent = self._classify_intent(message)
+        context = self._build_context(game_id, user_context)
+        
+        # Store current game context for injury filtering
+        if game_id:
+            try:
+                conn = self.db_manager.get_connection()
+                game_info = query_df(
+                    conn, 
+                    "SELECT home_team, away_team FROM games WHERE game_id = :gid", 
+                    {"gid": game_id}
+                )
+                if not game_info.empty:
+                    self.current_game_context = {
+                        'home_team': game_info.iloc[0]['home_team'],
+                        'away_team': game_info.iloc[0]['away_team']
+                    }
+                conn.close()
+            except Exception:
+                pass
+
+        try:
+            # Route to appropriate handler
+            if intent == MessageIntent.GAME_ANALYSIS:
+                if game_id:
+                    return self._handle_game_analysis(game_id, message, context)
+                return self._request_game_selection()
+                
+            elif intent == MessageIntent.VALUE_BETS:
+                return self._handle_value_bets(message, context)
+                
+            elif intent == MessageIntent.INJURY_REPORT:
+                return self._handle_injury_report(message, context)
+                
+            elif intent == MessageIntent.GENERAL_CHAT:
+                # This now uses OpenAI for real conversation
+                return self._handle_general_chat(message, context)
+                
+            return self._handle_fallback(message, intent, context)
+            
+        except Exception as e:
+            logger.exception("process_message failed")
+            return {
+                "ok": False,
+                "intent": intent.value,
+                "success": False,
+                "error": str(e),
+                "message": "Something went wrong. Please try again."
+            }
+
+    def _generate_conversational_response(
+        self, 
+        analysis: GameAnalysis, 
+        user_message: str, 
+        context: str
+    ) -> str:
+        """Generate a REAL conversational AI response using OpenAI."""
+        
+        try:
+            # Build a conversational prompt
+            system_prompt = f"""You are an expert NFL betting analyst having a conversation with a user.
+
+    You have deep knowledge of:
+    - NFL teams, players, and matchups
+    - Betting markets and finding value
+    - Statistical analysis and ML models
+    - Injury impacts and game dynamics
+
+    Your personality:
+    - Friendly and conversational (like talking to a knowledgeable friend)
+    - Direct and honest about betting risks
+    - Use casual language but stay professional
+    - Give specific, actionable advice
+    - Admit when you're uncertain
+
+    CRITICAL DATA FOR THIS CONVERSATION:
+    {context}
+
+    The user is asking about this game. Answer their specific question naturally, 
+    like you're having a real conversation. Don't just list stats - explain what 
+    they MEAN for betting this game.
+    """
+
+            user_prompt = f"""User asks: "{user_message}"
+
+    Please respond conversationally. If they asked "Analyze this game", give your 
+    honest take on whether it's a good bet. If they asked something specific, 
+    answer that directly.
+
+    Keep it natural - you're chatting, not writing a formal report."""
+
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                max_tokens=800,
+                temperature=0.7,
+            )
+            
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            logger.exception("OpenAI conversation failed")
+            return self._generate_detailed_fallback_commentary(analysis, user_message)
+
+
+
     def _handle_game_analysis(self, game_id: str, message: str, context: str) -> Dict[str, Any]:
-        """Enhanced game analysis handler that always calls LLM for detailed explanations."""
+        """Enhanced game analysis with REAL AI conversation."""
         try:
             # Get the core analysis from your model
             analysis = self.analyzer.analyze_game_comprehensive(game_id)
             
-            # Always generate AI commentary for game analysis requests
+            # Build rich context for the AI
+            context_data = self._build_rich_context(analysis, message)
+            
+            # ALWAYS generate AI commentary using OpenAI
             if self.openai_client:
-                ai_commentary = self._generate_detailed_analysis_commentary(analysis, message, context)
+                ai_commentary = self._generate_conversational_response(
+                    analysis, message, context_data
+                )
             else:
-                # Fallback with more detailed explanation when OpenAI not available
                 ai_commentary = self._generate_detailed_fallback_commentary(analysis, message)
 
             return {
@@ -2062,13 +2292,16 @@ USER MESSAGE: {message}"""
                 "result": {
                     "game": f"{analysis.away_team} @ {analysis.home_team}",
                     "date": analysis.game_date,
-                    "probabilities": {"home": round(analysis.home_probability, 3), "away": round(analysis.away_probability, 3)},
+                    "probabilities": {
+                        "home": round(analysis.home_probability, 3), 
+                        "away": round(analysis.away_probability, 3)
+                    },
                     "best_bet": analysis.best_bet,
                     "key_factors": analysis.key_factors,
                     "injury_impact": analysis.injury_impact,
                     "confidence_score": round(analysis.confidence_score, 2),
                     "recommendation": analysis.recommendation,
-                    "summary": ai_commentary,  # This is the detailed LLM response
+                    "summary": ai_commentary,  # <-- Real AI response
                     "injuries": {
                         "home": {"qb": analysis.injury_impact.get("home", {}).get("QB", 0)},
                         "away": {"qb": analysis.injury_impact.get("away", {}).get("QB", 0)}
@@ -2081,9 +2314,11 @@ USER MESSAGE: {message}"""
                 "ok": False,
                 "intent": "analysis",
                 "success": False,
-                "error": str(e) or "Game analysis error",
+                "error": str(e),
                 "message": "Failed to analyze game."
             }
+
+
 
     def _generate_detailed_analysis_commentary(self, analysis: GameAnalysis, user_message: str, context: str) -> str:
         """ENHANCED: Generate insightful AI commentary using OpenAI with richer prompts."""
@@ -2363,51 +2598,7 @@ USER MESSAGE: {message}"""
                 "message": "Failed to get injury report."
             }
 
-    def process_message(self, message: str, game_id: Optional[str] = None, user_context: Optional[Dict] = None) -> Dict[str, Any]:
-        """Enhanced message processing that maintains game context."""
-        intent = self._classify_intent(message)
-        context = self._build_context(game_id, user_context)
-        
-        # Store current game context for injury filtering
-        if game_id:
-            try:
-                conn = self.db_manager.get_connection()
-                game_info = query_df(conn, "SELECT home_team, away_team FROM games WHERE game_id = :gid", {"gid": game_id})
-                if not game_info.empty:
-                    self.current_game_context = {
-                        'home_team': game_info.iloc[0]['home_team'],
-                        'away_team': game_info.iloc[0]['away_team']
-                    }
-                conn.close()
-            except Exception:
-                pass
-
-        try:
-            if intent == MessageIntent.GAME_ANALYSIS:
-                if game_id:
-                    return self._handle_game_analysis(game_id, message, context)
-                return self._request_game_selection()
-                
-            elif intent == MessageIntent.VALUE_BETS:
-                return self._handle_value_bets(message, context)
-                
-            elif intent == MessageIntent.INJURY_REPORT:
-                return self._handle_injury_report(message, context)
-                
-            elif intent == MessageIntent.GENERAL_CHAT:
-                return self._handle_general_chat(message, context)
-                
-            return self._handle_fallback(message, intent, context)
-            
-        except Exception as e:
-            logger.exception("process_message failed")
-            return {
-                "ok": False,
-                "intent": intent.value,
-                "success": False,
-                "error": str(e) or "Unhandled error",
-                "message": "Operation failed. See server logs for details."
-            }
+    
 # ---------------------------
 # Flask Blueprint
 # ---------------------------
