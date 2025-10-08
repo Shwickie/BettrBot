@@ -173,7 +173,7 @@ def safe_query_with_fallback(query, params=None):
 
 def compute_live_records(conn, season: int) -> pd.DataFrame:
     """
-    FIXED: Properly handles both SQLAlchemy and raw SQLite connections
+    FIXED: Properly handles both SQLAlchemy and raw SQLite connections with LAR standardization
     """
     
     # Determine connection type FIRST
@@ -232,9 +232,16 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
             "points_for","points_against","point_diff"
         ])
 
-    # Normalize team names
-    games["home_team"] = games["home_team"].apply(to_full)
-    games["away_team"] = games["away_team"].apply(to_full)
+    # CRITICAL FIX: Ensure team names are consistent (use abbreviations)
+    # This handles the Rams LA/LAR issue
+    def normalize_to_abbr(team):
+        if team in ['LA', 'Los Angeles Rams', 'L.A. Rams']:
+            return 'LAR'
+        # Add other normalizations as needed
+        return team
+    
+    games["home_team"] = games["home_team"].apply(normalize_to_abbr)
+    games["away_team"] = games["away_team"].apply(normalize_to_abbr)
     
     # Calculate wins/losses/ties
     games["home_win"] = (games["home_score"] > games["away_score"]).astype(int)
@@ -292,6 +299,7 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
         total_pf = h_pf + a_pf
         total_pa = h_pa + a_pa
         
+        # NFL tie handling: ties count as 0.5 wins for win percentage
         win_pct = (total_wins + 0.5 * total_ties) / total_games if total_games > 0 else 0.0
             
         records.append({
@@ -1500,7 +1508,7 @@ def dashboard():
 @app.get("/api/rankings")
 @db_retry()
 def api_rankings():
-    """Fixed rankings API with tie support"""
+    """Fixed rankings API with proper tie support"""
     season = request.args.get("season", type=int) or date.today().year
     try:
         with ENGINE.connect() as conn:
@@ -1514,7 +1522,7 @@ def api_rankings():
                             power_score AS power,
                             wins,
                             losses,
-                            ties,
+                            COALESCE(ties, 0) as ties,  -- Handle missing ties column
                             games_played,
                             win_pct
                         FROM team_season_summary 
@@ -1534,7 +1542,7 @@ def api_rankings():
                             power_score AS power,
                             wins,
                             losses,
-                            ties,
+                            COALESCE(ties, 0) as ties,
                             games_played,
                             win_pct
                         FROM team_season_summary 
@@ -1549,31 +1557,71 @@ def api_rankings():
         if rankings.empty:
             return jsonify({"ok": True, "rankings": []})
 
-        # Normalize team names
-        rankings["team"] = rankings["team"].map(to_full)
+        # Convert LAR to full name for display
+        def team_display_name(team):
+            if team == 'LAR':
+                return 'Los Angeles Rams'
+            # Add other abbreviations as needed
+            team_map = {
+                'KC': 'Kansas City Chiefs',
+                'BUF': 'Buffalo Bills',
+                'BAL': 'Baltimore Ravens',
+                'SF': 'San Francisco 49ers',
+                'PHI': 'Philadelphia Eagles',
+                'DAL': 'Dallas Cowboys',
+                'MIA': 'Miami Dolphins',
+                'CIN': 'Cincinnati Bengals',
+                'DET': 'Detroit Lions',
+                'GB': 'Green Bay Packers',
+                'LAC': 'Los Angeles Chargers',
+                'MIN': 'Minnesota Vikings',
+                'HOU': 'Houston Texans',
+                'PIT': 'Pittsburgh Steelers',
+                'ATL': 'Atlanta Falcons',
+                'IND': 'Indianapolis Colts',
+                'LV': 'Las Vegas Raiders',
+                'TB': 'Tampa Bay Buccaneers',
+                'SEA': 'Seattle Seahawks',
+                'NO': 'New Orleans Saints',
+                'JAX': 'Jacksonville Jaguars',
+                'TEN': 'Tennessee Titans',
+                'CLE': 'Cleveland Browns',
+                'NYJ': 'New York Jets',
+                'ARI': 'Arizona Cardinals',
+                'DEN': 'Denver Broncos',
+                'NE': 'New England Patriots',
+                'WAS': 'Washington Commanders',
+                'NYG': 'New York Giants',
+                'CAR': 'Carolina Panthers',
+                'CHI': 'Chicago Bears'
+            }
+            return team_map.get(team, team)
+        
+        rankings["team"] = rankings["team"].apply(team_display_name)
         
         # SAFE injury data merge
         try:
             injuries_df = load_injury_impact_from_detail(conn)[['team','injury_impact']]
-            injuries_df["team"] = injuries_df["team"].map(to_full)
+            injuries_df["team"] = injuries_df["team"].apply(team_display_name)
             rankings = rankings.merge(injuries_df, on="team", how="left")
             rankings["injury_impact"] = rankings["injury_impact"].fillna(0.0)
         except Exception as e:
             print(f"Injury data unavailable: {e}")
             rankings["injury_impact"] = 0.0
 
-        # Create record string WITH TIES
-        def _rec_str(r):
-            w = int(r.get("wins", 0) or 0)
-            l = int(r.get("losses", 0) or 0)
-            t = int(r.get("ties", 0) or 0)
+        # Create record string WITH TIES (FIXED VERSION)
+        def create_record_string(row):
+            w = int(row.get("wins", 0) or 0)
+            l = int(row.get("losses", 0) or 0)
+            t = int(row.get("ties", 0) or 0)
             
+            # Show ties if they exist
             if t > 0:
-                return f"{w}-{l}-{t}"  # Show ties if they exist
+                return f"{w}-{l}-{t}"
             else:
                 return f"{w}-{l}"
 
-        rankings["record_str"] = rankings.apply(_rec_str, axis=1)
+        rankings["record_str"] = rankings.apply(create_record_string, axis=1)
 
         # Sort by wins, then ties, then power
         rankings = rankings.sort_values(
@@ -1581,6 +1629,7 @@ def api_rankings():
             ascending=[False, False, False]
         )
 
+        # Return with proper column names
         out = rankings[[
             "team","record_str","power","wins","losses","ties",
             "games_played","win_pct","injury_impact"
@@ -1596,6 +1645,7 @@ def api_rankings():
         import traceback
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)})
+
     
 @app.route('/api/debug/games-check')
 @login_required
@@ -1805,12 +1855,23 @@ def to_full(name: str | None) -> str:
     s = str(name).strip()
     if not s:
         return "Unknown"
-    # already a full name?
+    
+    # CRITICAL FIX: Handle abbreviations first
+    su = s.upper()
+    
+    # Apply canonical mappings (LA->LAR, etc.)
+    su = CANON.get(su, su)
+    
+    # If it's an abbreviation, convert to full name
+    if su in ABBR_TO_FULL:
+        return ABBR_TO_FULL[su]
+    
+    # Already a full name? Return it
     if s in FULL_NAMES:
         return s
-    su = s.upper()
-    su = CANON.get(su, su)         # LA->LAR, WSH->WAS, etc.
-    return ABBR_TO_FULL.get(su, s) # fallback to original if unknown
+    
+    # Fallback
+    return s
 
 
 

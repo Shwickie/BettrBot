@@ -21,7 +21,16 @@ USE_CLOUD_DB = bool(DATABASE_URL)
 def get_engine():
     """Get database engine for cloud or local"""
     if USE_CLOUD_DB:
-        return create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
+        engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
+        with engine.connect() as conn:
+            # Update to use ABBREVIATIONS not full names
+            conn.execute(text("""
+                UPDATE team_season_summary 
+                SET team = 'LAR' 
+                WHERE team = 'Los Angeles Rams'
+            """))
+        return engine
+        
     else:
         # Local SQLite fallback
         local_db = r"E:/Bettr Bot/betting-bot/data/betting.db"
