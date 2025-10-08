@@ -57,13 +57,21 @@ except Exception:
     SQLALCHEMY_AVAILABLE = False
     text = None  # type: ignore
 
+# Better OpenAI import with error details
 try:
     from openai import OpenAI
-    import openai as _openai  # noqa
+    import openai as _openai
     OPENAI_AVAILABLE = True
-except Exception:
+    print("✅ OpenAI library imported successfully")
+except ImportError as e:
     OPENAI_AVAILABLE = False
-    OpenAI = None  # type: ignore
+    OpenAI = None
+    print(f"❌ OpenAI import failed: {e}")
+    print("💡 Install with: pip install openai")
+except Exception as e:
+    OPENAI_AVAILABLE = False
+    OpenAI = None
+    print(f"❌ Unexpected error importing OpenAI: {e}")
 sys.path.insert(0, os.path.dirname(__file__))
 
 try:
@@ -1506,14 +1514,40 @@ class ComprehensiveAI:
         return mapping.get(abbr, abbr)
 
     def _init_openai(self) -> Optional[OpenAI]:
+        """Initialize OpenAI client with detailed error logging."""
+        
+        # Check if library is available
         if not OPENAI_AVAILABLE:
+            print("❌ OpenAI library not available - install with: pip install openai")
             logger.warning("OpenAI not available - AI responses will be limited")
             return None
+        
+        # Check for API key
         key = os.getenv("OPENAI_API_KEY")
-        if key:
-            return OpenAI(api_key=key)
-        logger.warning("No OpenAI API key found - AI responses will be limited")
-        return None
+        if not key:
+            print("❌ OPENAI_API_KEY environment variable not set")
+            logger.warning("No OpenAI API key found - AI responses will be limited")
+            return None
+        
+        # Try to initialize client
+        try:
+            client = OpenAI(api_key=key)
+            print(f"✅ OpenAI client initialized (key: {key[:15]}...)")
+            
+            # Test the connection
+            test_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": "test"}],
+                max_tokens=5
+            )
+            print(f"✅ OpenAI connection verified (model: {test_response.model})")
+            
+            return client
+        
+        except Exception as e:
+            print(f"❌ Failed to initialize OpenAI client: {e}")
+            logger.error(f"OpenAI initialization failed: {e}")
+            return None
 
     
     
@@ -2633,6 +2667,19 @@ except Exception as e:
     logger.warning("ComprehensiveAI bootstrap failed; running without ML.", exc_info=True)
     ai_system = None  # routes should handle None by using fallback
 
+# At the bottom of ai_chat_stub.py, before the blueprint routes:
+
+print("\n" + "="*60)
+print("🔍 AI SYSTEM DIAGNOSTICS")
+print("="*60)
+print(f"OpenAI Available: {OPENAI_AVAILABLE}")
+print(f"API Key Set: {bool(os.getenv('OPENAI_API_KEY'))}")
+if ai_system:
+    print(f"OpenAI Client: {ai_system.openai_client is not None}")
+    print(f"Model Pack Loaded: {ai_system.analyzer.model_pack is not None}")
+else:
+    print("⚠️ AI System not initialized")
+print("="*60 + "\n")
 
 @comprehensive_ai_bp.route("/api/ai-chat", methods=["POST"])
 def ai_chat_compat():
