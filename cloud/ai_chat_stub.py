@@ -21,10 +21,27 @@ from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime, timedelta
 from pathlib import Path
+from sqlalchemy import create_engine, text
 import pandas as pd
+import sqlite3, os, json, threading, time
 import numpy as np
 from flask import Blueprint, request, jsonify, session
 
+import pandas as pd
+from sqlalchemy import create_engine, text
+from datetime import datetime, timedelta, date
+import sqlite3, os, json, threading, time
+import numpy as np
+import math
+from templates import LOGIN_TEMPLATE, HTML_TEMPLATE, AI_CHAT_TEMPLATE
+import sys
+import os
+from flask import Blueprint
+import os, sys
+from sqlalchemy import create_engine, text
+import sqlite3
+import time
+import datetime as dt
 # ---------------------------
 # Optional deps (safe import)
 # ---------------------------
@@ -78,6 +95,26 @@ try:
 except Exception as e:
     logger.warning(f"ai_tools import error (ignored): {e}")
     list_value_bets = None  # noqa: F401
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway")
+
+# CRITICAL: Force cloud database usage
+USE_CLOUD_DB = True
+
+if USE_CLOUD_DB:
+    print(f"Using Railway database: {DATABASE_URL[:60]}...")
+    
+    ENGINE = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_recycle=280,
+        pool_size=2,
+        max_overflow=3,
+        connect_args={
+            "connect_timeout": 20,
+            "application_name": "bettr-bot",
+        }
+    )
 
 # near the top of ai_chat_stub.py with other imports
 import os, pickle
@@ -1228,37 +1265,113 @@ class AdvancedBettingAnalyzer:
         return None
 
     def _identify_key_factors(self, conn, game) -> List[str]:
-        out: List[str] = []
+        """ENHANCED: Extract meaningful insights from the actual data."""
+        factors: List[str] = []
+        
         try:
             season = dt.datetime.now().year
-            q = """
-                SELECT team, power_score 
+            home_team = game["home_team"]
+            away_team = game["away_team"]
+            
+            # Get power ratings - FIXED: Use query_df directly
+            power_sql = """
+                SELECT team, power_score, win_pct, games_played,
+                    avg_points_for as ppg, avg_points_against as papg,
+                    wins, losses
                 FROM team_season_summary 
-                WHERE season = :season AND team IN (:t1, :t2)
+                WHERE season = :season AND team IN (:home, :away)
             """
-            df = query_df(conn, q, {"season": season, "t1": game["home_team"], "t2": game["away_team"]})
-            if len(df) == 2:
-                hp = float(df.loc[df["team"] == game["home_team"], "power_score"].iloc[0])
-                ap = float(df.loc[df["team"] == game["away_team"], "power_score"].iloc[0])
+            power_df = query_df(conn, power_sql, {"season": season, "home": home_team, "away": away_team})
+            
+            if len(power_df) == 2:
+                home_row = power_df[power_df['team'] == home_team].iloc[0]
+                away_row = power_df[power_df['team'] == away_team].iloc[0]
+                
+                hp = float(home_row['power_score'])
+                ap = float(away_row['power_score'])
                 diff = abs(hp - ap)
-                if diff > 5.0:
-                    stronger = game["home_team"] if hp > ap else game["away_team"]
-                    out.append(f"Large talent gap favoring {stronger} ({diff:.1f}-pt diff).")
-                elif diff < 1.0:
-                    out.append("Very evenly matched by power ratings.")
-
-            ii = self._get_basic_injury_impact(conn, game["home_team"], game["away_team"])
-            if ii.get("home", 0.0) > 3.0:
-                out.append(f"Notable injury concerns for {game['home_team']}.")
-            if ii.get("away", 0.0) > 3.0:
-                out.append(f"Notable injury concerns for {game['away_team']}.")
-
-            if not out:
-                out.append("Standard matchup; no major external flags.")
-            return out
-        except Exception:
-            logger.warning("key factor derivation fell back")
-            return ["Analysis data unavailable."]
+                
+                # Power rating insights
+                if diff > 8.0:
+                    stronger = home_team if hp > ap else away_team
+                    factors.append(f"🔥 **Major mismatch:** {stronger} has {diff:.1f} point power advantage - this should be a dominant performance")
+                elif diff > 4.0:
+                    stronger = home_team if hp > ap else away_team
+                    factors.append(f"💪 **Clear edge:** {stronger} holds {diff:.1f} point power advantage")
+                elif diff < 1.5:
+                    factors.append(f"⚖️ **Evenly matched:** Teams separated by only {diff:.1f} power points - expect a close game")
+                
+                # Record-based insights
+                h_wins = int(home_row.get('wins', 0) or 0)
+                h_losses = int(home_row.get('losses', 0) or 0)
+                a_wins = int(away_row.get('wins', 0) or 0)
+                a_losses = int(away_row.get('losses', 0) or 0)
+                
+                h_rec = f"{h_wins}-{h_losses}" if home_row['games_played'] > 0 else "N/A"
+                a_rec = f"{a_wins}-{a_losses}" if away_row['games_played'] > 0 else "N/A"
+                
+                home_wpct = float(home_row.get('win_pct', 0) or 0)
+                away_wpct = float(away_row.get('win_pct', 0) or 0)
+                
+                if home_wpct > 0.65:
+                    factors.append(f"🏆 {home_team} ({h_rec}) is playing excellent football with {home_wpct:.1%} win rate")
+                elif home_wpct < 0.35:
+                    factors.append(f"📉 {home_team} ({h_rec}) struggling this season at {home_wpct:.1%}")
+                
+                if away_wpct > 0.65:
+                    factors.append(f"🏆 {away_team} ({a_rec}) is elite competition with {away_wpct:.1%} win rate")
+                elif away_wpct < 0.35:
+                    factors.append(f"📉 {away_team} ({a_rec}) having a tough season at {away_wpct:.1%}")
+                
+                # Offensive/Defensive insights
+                home_ppg = float(home_row.get('ppg', 0) or 0)
+                away_ppg = float(away_row.get('ppg', 0) or 0)
+                home_papg = float(home_row.get('papg', 0) or 0)
+                away_papg = float(away_row.get('papg', 0) or 0)
+                
+                if home_ppg > 28:
+                    factors.append(f"⚡ {home_team} explosive offense averaging {home_ppg:.1f} PPG")
+                if away_ppg > 28:
+                    factors.append(f"⚡ {away_team} explosive offense averaging {away_ppg:.1f} PPG")
+                
+                if home_papg < 18:
+                    factors.append(f"🛡️ {home_team} stingy defense allowing just {home_papg:.1f} PPG")
+                if away_papg < 18:
+                    factors.append(f"🛡️ {away_team} stingy defense allowing just {away_papg:.1f} PPG")
+                
+                # Matchup analysis
+                if home_ppg > away_papg + 7:
+                    factors.append(f"🎯 {home_team}'s offense ({home_ppg:.1f} PPG) should exploit {away_team}'s defense ({away_papg:.1f} allowed)")
+                if away_ppg > home_papg + 7:
+                    factors.append(f"🎯 {away_team}'s offense ({away_ppg:.1f} PPG) should exploit {home_team}'s defense ({home_papg:.1f} allowed)")
+            
+            # Injury impact analysis
+            injury_data = self._get_basic_injury_impact(conn, home_team, away_team)
+            home_inj = injury_data.get("home", 0)
+            away_inj = injury_data.get("away", 0)
+            
+            if home_inj > 6.0:
+                factors.append(f"🏥 **Critical injuries:** {home_team} severely impacted (score: {home_inj:.1f}) - especially at key positions")
+            elif home_inj > 3.0:
+                factors.append(f"🏥 {home_team} dealing with notable injuries (impact: {home_inj:.1f})")
+            
+            if away_inj > 6.0:
+                factors.append(f"🏥 **Critical injuries:** {away_team} severely impacted (score: {away_inj:.1f}) - especially at key positions")
+            elif away_inj > 3.0:
+                factors.append(f"🏥 {away_team} dealing with notable injuries (impact: {away_inj:.1f})")
+            
+            # Home field advantage note
+            factors.append(f"🏟️ Home field advantage: {home_team} gets typical 2.5-3 point boost")
+            
+            # If nothing specific found, give general insight
+            if len(factors) <= 1:  # Only home field advantage
+                factors.insert(0, "📊 Standard NFL matchup - consult full analytics for detailed breakdown")
+            
+            return factors[:6]  # Limit to top 6 factors
+            
+        except Exception as e:
+            logger.warning(f"key factor extraction error: {e}")
+            return ["⚠️ Unable to extract detailed factors - check data availability"]
 
     def _find_best_bet(self, conn, game_id: str, probabilities: Dict) -> Optional[Dict]:
         try:
@@ -1732,7 +1845,7 @@ class ComprehensiveAI:
         return "\n".join(parts) if parts else "No specific context available"
 
     def _handle_value_bets(self, message: str, context: str) -> Dict[str, Any]:
-        """Handle value bet requests."""
+        """ENHANCED: Handle value bet requests with better explanations."""
         try:
             # Extract edge threshold from message
             edge_match = re.search(r'(\d+(?:\.\d+)?)%?\s*(?:edge|or higher|or better)', message.lower())
@@ -1741,9 +1854,43 @@ class ComprehensiveAI:
             # Get value bets from analyzer
             value_bets = self.analyzer.find_value_bets_advanced(min_edge=min_edge)
             
-            # Convert ValueBet objects to dicts
+            if not value_bets:
+                # Provide helpful response when no bets found
+                if min_edge > 0.05:
+                    suggestion = f"Try lowering your edge threshold (currently {min_edge*100:.0f}%) to see opportunities. The market is efficient - edges above 5% are rare."
+                else:
+                    suggestion = "The current market is very efficient. Consider:\n  • Checking again closer to game time when lines move\n  • Looking at alternate markets (spreads, totals)\n  • Waiting for injury news that might create value"
+                
+                return {
+                    "ok": True,
+                    "intent": "value_bets",
+                    "success": True,
+                    "result": [],
+                    "total_found": 0,
+                    "min_edge_used": min_edge * 100,
+                    "message": f"**No value bets found with {min_edge*100:.1f}%+ edge.**\n\n{suggestion}"
+                }
+            
+            # Convert ValueBet objects to dicts with enhanced info
             bets_data = []
             for bet in value_bets:
+                # Calculate potential profit
+                if bet.odds > 0:
+                    profit_per_100 = bet.odds
+                else:
+                    profit_per_100 = 10000 / abs(bet.odds)
+                
+                # Risk assessment based on edge and confidence
+                if bet.edge_percentage > 7 and bet.confidence_level == "High":
+                    risk = "Low"
+                    recommendation = "Strong Play"
+                elif bet.edge_percentage > 4:
+                    risk = "Medium"
+                    recommendation = "Solid Value"
+                else:
+                    risk = "Medium-High"
+                    recommendation = "Consider"
+                
                 bets_data.append({
                     "game_id": bet.game_id,
                     "team": bet.team,
@@ -1754,8 +1901,30 @@ class ComprehensiveAI:
                     "implied_prob": round(bet.implied_probability, 3),
                     "recommended_amount": round(bet.recommended_stake, 2),
                     "confidence_level": bet.confidence_level,
-                    "risk_assessment": bet.risk_assessment
+                    "risk_assessment": risk,
+                    "recommendation": recommendation,
+                    "profit_per_100": round(profit_per_100, 0),
+                    "ev_per_100": round((bet.model_probability * profit_per_100) - ((1 - bet.model_probability) * 100), 2)
                 })
+
+            # Generate summary message
+            top_bet = bets_data[0]
+            avg_edge = sum(b['edge_pct'] for b in bets_data) / len(bets_data)
+            total_stake = sum(b['recommended_amount'] for b in bets_data)
+            
+            summary = f"""**🎯 Found {len(bets_data)} Value Opportunities (≥{min_edge*100:.1f}% edge)**
+
+    **TOP PICK:** {top_bet['team']} at {top_bet['odds']} ({top_bet['sportsbook']})
+    - Edge: {top_bet['edge_pct']:.1f}%
+    - Recommended stake: ${top_bet['recommended_amount']:.2f}
+    - Confidence: {top_bet['confidence_level']}
+
+    **PORTFOLIO SUMMARY:**
+    - Average edge: {avg_edge:.1f}%
+    - Total recommended stake: ${total_stake:.2f}
+    - Risk level: {'Conservative' if avg_edge > 5 else 'Moderate'}
+
+    **NOTE:** These recommendations use Kelly Criterion (25% fraction) for proper bankroll management. Never bet more than you can afford to lose."""
 
             return {
                 "ok": True,
@@ -1763,7 +1932,8 @@ class ComprehensiveAI:
                 "success": True,
                 "result": bets_data,
                 "total_found": len(bets_data),
-                "min_edge_used": min_edge * 100
+                "min_edge_used": min_edge * 100,
+                "message": summary
             }
 
         except Exception as e:
@@ -1916,48 +2086,83 @@ USER MESSAGE: {message}"""
             }
 
     def _generate_detailed_analysis_commentary(self, analysis: GameAnalysis, user_message: str, context: str) -> str:
-        """Generate detailed AI commentary using OpenAI for game analysis."""
+        """ENHANCED: Generate insightful AI commentary using OpenAI with richer prompts."""
         try:
-            # Build comprehensive prompt with all your model's data
-            prompt = f"""You are a professional NFL betting analyst. Provide an in-depth analysis based on this data from our ML model:
+            # Extract feature importance if available (from cached features)
+            game_id = str(analysis.game_id)
+            feature_insights = ""
+            if game_id in self.analyzer.feature_cache:
+                features = self.analyzer.feature_cache[game_id]
+                feature_insights = f"""
+    DETAILED MODEL FEATURES ANALYZED:
+    - Power Rating Difference: {features.get('power_diff', 0):.1f}
+    - Win % Differential: {features.get('win_pct_diff', 0):.1%}
+    - Offensive Advantage: {features.get('offense_diff', 0):.1f} PPG
+    - Defensive Edge: {features.get('defense_diff', 0):.1f}
+    - Recent Form Difference: {features.get('form_diff', 0):.2f}
+    - Home Field Impact: {features.get('home_field_advantage', 2.5):.1f} points
+    - Injury Impacts: Home {features.get('home_injury_impact', 0):.1f}, Away {features.get('away_injury_impact', 0):.1f}
+    """
 
-GAME: {analysis.away_team} @ {analysis.home_team} ({analysis.game_date})
+            # Build comprehensive prompt
+            prompt = f"""You are an expert NFL betting analyst with 15+ years of experience. Provide a DETAILED, INSIGHTFUL analysis based on our proprietary ML model's prediction.
 
-MODEL PREDICTIONS:
-- Home win probability: {analysis.home_probability:.1%}
-- Away win probability: {analysis.away_probability:.1%}
-- Model confidence: {analysis.confidence_score:.2f}
+    GAME: {analysis.away_team} @ {analysis.home_team} ({analysis.game_date})
 
-BETTING RECOMMENDATION:
-{analysis.recommendation}
+    MODEL PREDICTION & CONFIDENCE:
+    - Win Probabilities: {analysis.home_team} {analysis.home_probability:.1%} | {analysis.away_team} {analysis.away_probability:.1%}
+    - Model Confidence Score: {analysis.confidence_score:.0%} (where >75% = high, 60-75% = moderate, <60% = low)
+    - Source: {analysis.__dict__.get('source', 'ML Model')}
 
-BEST BET DETECTED:
-{f"Team: {analysis.best_bet.get('team', 'None')}, Odds: {analysis.best_bet.get('odds', 'N/A')}, Edge: {analysis.best_bet.get('edge_pct', 0):.1f}%, Sportsbook: {analysis.best_bet.get('sportsbook', 'N/A')}" if analysis.best_bet else "No clear value bet identified"}
+    {feature_insights}
 
-KEY FACTORS:
-{chr(10).join(f"• {factor}" for factor in analysis.key_factors)}
+    BETTING MARKET ANALYSIS:
+    {f"📊 BEST BET IDENTIFIED: {analysis.best_bet.get('team')} at {analysis.best_bet.get('odds')} ({analysis.best_bet.get('sportsbook')}) - {analysis.best_bet.get('edge_pct', 0):.1f}% edge over market" if analysis.best_bet and analysis.best_bet.get('edge', 0) > 0.03 else "📉 No significant edge detected - market efficiently priced"}
 
-INJURY ANALYSIS:
-- Home team injury impact: {analysis.injury_impact.get('home', {}).get('total', 0):.1f}
-- Away team injury impact: {analysis.injury_impact.get('away', {}).get('total', 0):.1f}
+    KEY ANALYTICAL FACTORS:
+    {chr(10).join(f"• {factor}" for factor in analysis.key_factors)}
 
-USER QUESTION: "{user_message}"
+    INJURY SITUATION:
+    - {analysis.home_team} Impact Score: {analysis.injury_impact.get('home', {}).get('total', 0):.1f} (QB: {analysis.injury_impact.get('home', {}).get('QB', 0):.1f})
+    - {analysis.away_team} Impact Score: {analysis.injury_impact.get('away', {}).get('total', 0):.1f} (QB: {analysis.injury_impact.get('away', {}).get('QB', 0):.1f})
 
-CONTEXT: {context}
+    USER QUESTION: "{user_message}"
+    CONVERSATION CONTEXT: {context}
 
-Provide a detailed explanation that:
-1. Explains WHY the model favors one team
-2. Discusses the specific factors driving the prediction
-3. Addresses any injury concerns and their impact
-4. Explains the betting value (or lack thereof)
-5. Gives actionable insights for betting decisions
+    Provide a comprehensive analysis that:
 
-Be specific about the data points and explain the reasoning behind the model's confidence level."""
+    1. **OPENING VERDICT**: Start with a clear, confident prediction statement that directly answers what the model sees
+
+    2. **WHY THIS PICK** (2-3 detailed points): 
+    - Explain the SPECIFIC statistical advantages driving the prediction
+    - Reference actual numbers from the features above
+    - Discuss which factors matter most and why
+
+    3. **INJURY & SITUATIONAL IMPACT** (if relevant):
+    - How injuries are affecting the model's confidence
+    - Any QB concerns that significantly impact the outlook
+    - Context on key player absences
+
+    4. **BETTING VALUE ASSESSMENT**:
+    - If edge exists: Explain WHY the market is mispriced and where the value lies
+    - If no edge: Explain why the lines are efficient and what it would take to find value
+    - Specific betting advice based on model confidence
+
+    5. **RISK FACTORS** (what could go wrong):
+    - Identify 1-2 scenarios where the prediction could fail
+    - Acknowledge uncertainty if this is a close game
+
+    6. **ACTIONABLE RECOMMENDATION**:
+    - Clear YES/NO/MAYBE on betting this game
+    - Suggested stake sizing if it's a play (1-5% of bankroll based on edge/confidence)
+    - Alternative bets to consider if straight ML isn't ideal
+
+    Be SPECIFIC with numbers, CONFIDENT in analysis, and PRACTICAL with betting advice. Avoid generic statements - use the actual data provided. Write like an experienced handicapper talking to a serious bettor."""
 
             response = self.openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=600,
+                max_tokens=800,
                 temperature=0.7,
             )
             return response.choices[0].message.content.strip()
@@ -1965,42 +2170,81 @@ Be specific about the data points and explain the reasoning behind the model's c
         except Exception as e:
             logger.exception("OpenAI commentary generation failed")
             return self._generate_detailed_fallback_commentary(analysis, user_message)
-
+        
     def _generate_detailed_fallback_commentary(self, analysis: GameAnalysis, user_message: str) -> str:
         """Generate detailed fallback commentary when OpenAI is unavailable."""
         
         favored_team = analysis.home_team if analysis.home_probability > 0.5 else analysis.away_team
+        underdog_team = analysis.away_team if analysis.home_probability > 0.5 else analysis.home_team
         favored_prob = max(analysis.home_probability, analysis.away_probability)
+        prob_spread = abs(analysis.home_probability - analysis.away_probability)
         
         commentary = []
         
-        # Model prediction explanation
-        commentary.append(f"**Model Analysis:** Our ML model predicts {favored_team} with {favored_prob:.1%} probability to win.")
-        
-        # Confidence explanation
-        if analysis.confidence_score > 0.8:
-            commentary.append(f"**High Confidence:** The model has strong conviction ({analysis.confidence_score:.2f}/1.0) in this prediction.")
-        elif analysis.confidence_score < 0.6:
-            commentary.append(f"**Lower Confidence:** This is a closer matchup with moderate model confidence ({analysis.confidence_score:.2f}/1.0).")
+        # 1. OPENING PREDICTION with context
+        if prob_spread > 0.25:
+            commentary.append(f"**🎯 Strong Pick:** The model heavily favors **{favored_team}** ({favored_prob:.1%}) over {underdog_team} ({1-favored_prob:.1%}).")
+        elif prob_spread > 0.15:
+            commentary.append(f"**📊 Model Lean:** {favored_team} is the predicted winner with {favored_prob:.1%} win probability, but {underdog_team} has a {1-favored_prob:.1%} chance to upset.")
         else:
-            commentary.append(f"**Moderate Confidence:** Standard confidence level ({analysis.confidence_score:.2f}/1.0) for this prediction.")
+            commentary.append(f"**⚖️ Close Game:** This is a near-toss-up with {favored_team} at {favored_prob:.1%} and {underdog_team} at {1-favored_prob:.1%}.")
         
-        # Key factors
+        # 2. CONFIDENCE EXPLANATION with reasoning
+        conf = analysis.confidence_score
+        if conf > 0.75:
+            commentary.append(f"**High Confidence ({conf:.0%}):** The model has strong conviction based on clear statistical advantages and consistent team performance metrics.")
+        elif conf > 0.60:
+            commentary.append(f"**Moderate Confidence ({conf:.0%}):** Solid prediction, but some uncertainty exists due to competitive matchup factors or recent variance in team performance.")
+        else:
+            commentary.append(f"**Lower Confidence ({conf:.0%}):** This is a difficult game to predict. Both teams have similar statistical profiles, making the outcome highly uncertain.")
+        
+        # 3. KEY FACTORS - Make them actionable
         if analysis.key_factors:
-            commentary.append(f"**Key Factors:** {' '.join(analysis.key_factors)}")
+            factors_list = "\n  • ".join(analysis.key_factors)
+            commentary.append(f"**🔑 Critical Factors:**\n  • {factors_list}")
+        else:
+            # Provide default insights based on probabilities
+            if prob_spread > 0.20:
+                commentary.append(f"**🔑 Critical Factors:**\n  • {favored_team} shows significant statistical superiority in power ratings\n  • Home field advantage factored into prediction\n  • Recent form trends favor the predicted winner")
+            else:
+                commentary.append(f"**🔑 Critical Factors:**\n  • Evenly matched teams by power metrics\n  • Game could swing either way based on execution\n  • Small edges in efficiency ratings tip toward {favored_team}")
         
-        # Betting value
+        # 4. BETTING VALUE - More detailed
         if analysis.best_bet and analysis.best_bet.get('edge', 0) > 0.03:
             bet = analysis.best_bet
-            commentary.append(f"**Betting Value:** {bet['team']} at {bet['odds']} shows {bet.get('edge_pct', bet['edge']*100):.1f}% edge over the implied probability.")
+            edge_pct = bet.get('edge_pct', bet['edge']*100)
+            if edge_pct > 7:
+                commentary.append(f"**💰 Strong Value:** {bet['team']} at {bet['odds']} offers a {edge_pct:.1f}% edge. The market is undervaluing this team - this is a high-confidence betting opportunity at {bet.get('sportsbook', 'available odds')}.")
+            elif edge_pct > 4:
+                commentary.append(f"**💵 Good Value:** {bet['team']} at {bet['odds']} shows {edge_pct:.1f}% edge. Worth considering at {bet.get('sportsbook', 'current lines')}.")
+            else:
+                commentary.append(f"**📈 Slight Edge:** {bet['team']} at {bet['odds']} has a {edge_pct:.1f}% edge, but it's marginal. Only bet if you have conviction.")
         else:
-            commentary.append("**Betting Value:** No significant edge detected in current market prices.")
+            commentary.append("**📉 Market Efficiency:** Current lines are well-priced. No significant betting edge detected - the sportsbooks have this game accurately handicapped.")
         
-        # Injuries
+        # 5. INJURY IMPACT - More specific
         home_inj = analysis.injury_impact.get('home', {}).get('total', 0)
         away_inj = analysis.injury_impact.get('away', {}).get('total', 0)
-        if home_inj > 2 or away_inj > 2:
-            commentary.append(f"**Injury Impact:** Notable injury concerns factored into the analysis.")
+        home_qb = analysis.injury_impact.get('home', {}).get('QB', 0)
+        away_qb = analysis.injury_impact.get('away', {}).get('QB', 0)
+        
+        if home_qb > 0 or away_qb > 0:
+            affected_team = analysis.home_team if home_qb > 0 else analysis.away_team
+            commentary.append(f"**🏥 QB Injury Alert:** {affected_team} has quarterback concerns that significantly impact the model's prediction. This is factored into the probabilities above.")
+        elif home_inj > 4 or away_inj > 4:
+            affected_team = analysis.home_team if home_inj > away_inj else analysis.away_team
+            impact = max(home_inj, away_inj)
+            commentary.append(f"**🏥 Injury Concerns:** {affected_team} has notable injuries (impact score: {impact:.1f}) that reduce their expected performance. Model accounts for this.")
+        elif home_inj > 2 or away_inj > 2:
+            commentary.append(f"**🏥 Minor Injuries:** Some injury concerns present but not significantly impacting the prediction.")
+        
+        # 6. BETTING RECOMMENDATION - Clear action
+        if analysis.best_bet and analysis.best_bet.get('edge', 0) > 0.05 and conf > 0.65:
+            commentary.append(f"**✅ RECOMMENDED BET:** {analysis.best_bet['team']} is the play here with {analysis.best_bet.get('edge_pct', 0):.1f}% edge and {conf:.0%} model confidence.")
+        elif conf > 0.70:
+            commentary.append(f"**📊 MODEL LEAN:** Strong prediction for {favored_team}, but no market inefficiency to exploit. Consider smaller plays if you trust the model.")
+        else:
+            commentary.append(f"**⏸️ SKIP RECOMMENDATION:** This game is too close to call with confidence. Better opportunities likely exist elsewhere.")
         
         return "\n\n".join(commentary)
 

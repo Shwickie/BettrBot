@@ -387,6 +387,60 @@ def run_prediction():
         print(f"   ERROR: prediction failed: {e}")
         return False
 
+def run_injury_update():
+    """Update injury data"""
+    print("TASK: Running injury update...")
+    try:
+        import subprocess
+        script = os.path.join(os.path.dirname(__file__), "update_injuries.py")
+        result = subprocess.run([sys.executable, script], capture_output=True, text=True, timeout=120)
+        
+        if result.returncode == 0:
+            print("   SUCCESS: Injuries updated")
+            return True
+        else:
+            print("   WARNING: Injury update issues")
+            return True
+    except Exception as e:
+        print(f"   ERROR: {e}")
+        return True
+
+def run_injury_model():
+    """Run injury mapping model"""
+    print("TASK: Running injury model (mapping)...")
+    try:
+        import subprocess
+        script = os.path.join(os.path.dirname(__file__), "injury_model.py")
+        result = subprocess.run([sys.executable, script], capture_output=True, text=True, timeout=180)
+        
+        if result.returncode == 0:
+            print("   SUCCESS: Injury model complete")
+            return True
+        else:
+            print("   WARNING: Injury model issues")
+            return True
+    except Exception as e:
+        print(f"   ERROR: {e}")
+        return True
+
+def run_injury_processing():
+    """Run injury processing (impact calculation)"""
+    print("TASK: Running injury processing...")
+    try:
+        import subprocess
+        script = os.path.join(os.path.dirname(__file__), "process_injuries.py")
+        result = subprocess.run([sys.executable, script], capture_output=True, text=True, timeout=180)
+        
+        if result.returncode == 0:
+            print("   SUCCESS: Injury processing complete")
+            return True
+        else:
+            print("   WARNING: Injury processing issues")
+            return True
+    except Exception as e:
+        print(f"   ERROR: {e}")
+        return True
+
 def run_migrate_odds():
     """Run migrate_odds.py as separate process"""
     print("TASK: Running migrate_odds (separate script)...")
@@ -422,6 +476,8 @@ def run_migrate_odds():
     except Exception as e:
         print(f"   WARNING: migrate_odds failed: {e}")
         return True  # Don't fail pipeline for odds issues
+
+
 
 def ensure_schema():
     """Ensure games table has required columns"""
@@ -533,6 +589,9 @@ def main():
     tasks = [
         ("ensure_schema", ensure_schema),
         ("update_scores", run_update_scores),
+        ("injury_update", run_injury_update),
+        ("injury_model", run_injury_model),
+        ("injury_processing", run_injury_processing),
         ("team_name_fix", run_team_name_fix),      # NEW: Fix team names
         ("team_season_summary", run_team_season_summary),
         ("migrate_odds", run_migrate_odds),
