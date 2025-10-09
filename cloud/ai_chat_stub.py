@@ -1176,37 +1176,34 @@ class AdvancedBettingAnalyzer:
     
 
     def _analyze_injury_impact(self, conn, home_team: str, away_team: str) -> Dict[str, Dict[str, float]]:
-        """Summarized injury impact by team/position; tolerant to schema differences."""
+        """FIXED: Query actual injury table for game analysis."""
         try:
-            tables = query_df(conn, "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_injury_validation_detail'")
-            if tables.empty:
+            # Check table exists
+            if USE_CLOUD_DB:
+                table_check = pd.read_sql_query(text("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name = 'nfl_injuries_tracking'
+                    )
+                """), conn).iloc[0, 0]
+            else:
+                tables = query_df(conn, 
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='nfl_injuries_tracking'"
+                )
+                table_check = not tables.empty
+            
+            if not table_check:
                 return {'home': {'total': 0.0}, 'away': {'total': 0.0}}
 
-            cols = query_df(conn, "PRAGMA table_info(ai_injury_validation_detail)")
-            names = set(cols["name"].tolist())
-
-            team_col = "team_ai" if "team_ai" in names else "team_inj" if "team_inj" in names else "team" if "team" in names else None
-            pos_col = "position" if "position" in names else "pos" if "pos" in names else None
-            des_col = "designation" if "designation" in names else "status" if "status" in names else None
-
-            if not (team_col and pos_col and des_col):
-                return {'home': {'total': 0.0}, 'away': {'total': 0.0}}
-
-            where = [f"{team_col} IN (:t1, :t2)"]
-            if "inj_missing_team" in names:
-                where.append("COALESCE(inj_missing_team,0)=0")
-            if "roster_missing_team" in names:
-                where.append("COALESCE(roster_missing_team,0)=0")
-            if "team_mismatch" in names:
-                where.append("COALESCE(team_mismatch,0)=0")
-
-            sql = f"""
-                SELECT {team_col} AS team, {pos_col} AS position, {des_col} AS designation, COUNT(*) AS cnt
-                FROM ai_injury_validation_detail
-                WHERE {" AND ".join(where)}
-                GROUP BY {team_col}, {pos_col}, {des_col}
-            """
-            injuries = query_df(conn, sql, {"t1": home_team, "t2": away_team})
+            # Query actual injuries for both teams
+            injuries = query_df(conn, text("""
+                SELECT player_name, team, position, designation
+                FROM nfl_injuries_tracking
+                WHERE is_active = true
+                AND team IN (:t1, :t2)
+                ORDER BY team, position
+            """), {"t1": home_team, "t2": away_team})
 
             impact = {'home': {}, 'away': {}}
             sev_w = {'OUT': 3, 'IR': 3, 'DOUBTFUL': 2, 'QUESTIONABLE': 1}
@@ -1216,12 +1213,16 @@ class AdvancedBettingAnalyzer:
                 team_key = 'home' if str(r["team"]) == home_team else 'away'
                 severity = sev_w.get(str(r["designation"]).upper(), 0)
                 mult = pos_w.get(str(r["position"]).upper(), 1)
-                score = float(severity * mult * (r["cnt"] or 0))
-                impact[team_key][str(r["position"]).upper()] = impact[team_key].get(str(r["position"]).upper(), 0.0) + score
+                score = float(severity * mult)
+                
+                pos = str(r["position"]).upper()
+                impact[team_key][pos] = impact[team_key].get(pos, 0.0) + score
 
             impact['home']['total'] = sum(v for k, v in impact['home'].items() if k != 'total')
             impact['away']['total'] = sum(v for k, v in impact['away'].items() if k != 'total')
+            
             return impact
+            
         except Exception:
             logger.exception("injury impact failed")
             return {'home': {'total': 0.0}, 'away': {'total': 0.0}}
@@ -2541,134 +2542,184 @@ USER MESSAGE: {message}"""
         return "\n\n".join(commentary)
 
     def _handle_injury_report(self, message: str, context: str) -> Dict[str, Any]:
-        """Enhanced injury report that focuses on selected game teams when applicable."""
+        """FIXED: Query actual injury table instead of validation aggregates."""
         try:
             conn = self.db_manager.get_connection()
             
             # Check if we have a selected game to filter injuries
             game_teams = None
             if hasattr(self, 'current_game_context') and self.current_game_context:
-                game_teams = [self.current_game_context.get('home_team'), self.current_game_context.get('away_team')]
+                game_teams = [
+                    self.current_game_context.get('home_team'), 
+                    self.current_game_context.get('away_team')
+                ]
 
-            # FIXED: Check for table existence based on database type
-            if USE_CLOUD_DB:
-                # PostgreSQL - use information_schema
-                table_check = pd.read_sql_query(text("""
-                    SELECT EXISTS (
-                        SELECT FROM information_schema.tables 
-                        WHERE table_schema = 'public' 
-                        AND table_name = 'ai_injury_validation_detail'
+            # FIXED: Query the ACTUAL injury tracking table
+            try:
+                # First check if table exists
+                if USE_CLOUD_DB:
+                    # PostgreSQL
+                    table_check = pd.read_sql_query(text("""
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables 
+                            WHERE table_schema = 'public' 
+                            AND table_name = 'nfl_injuries_tracking'
+                        )
+                    """), conn).iloc[0, 0]
+                else:
+                    # SQLite
+                    tables = query_df(conn, 
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='nfl_injuries_tracking'"
                     )
-                """), conn).iloc[0, 0]
-            else:
-                # SQLite - use sqlite_master
-                tables = query_df(conn, "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_injury_validation_detail'")
-                table_check = not tables.empty
-            # Get injury data (same DB query as before)
-            tables = query_df(conn, "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_injury_validation_detail'")
-            if tables.empty:
+                    table_check = not tables.empty
+                
+                if not table_check:
+                    return {
+                        "ok": True,
+                        "intent": "injury_report",
+                        "success": True,
+                        "result": {
+                            "injuries": [],
+                            "team_impacts": {},
+                            "total_injuries": 0,
+                            "message": "Injury tracking table not found in cloud database"
+                        }
+                    }
+
+                # Build the query with optional team filter
+                team_filter = ""
+                params = {}
+                
+                if game_teams and any(game_teams):
+                    # FIXED: Use proper parameter binding for cloud database
+                    team_filter = "AND team IN :teams"
+                    params['teams'] = tuple(t for t in game_teams if t)
+                
+                # FIXED: Query actual injuries, not aggregates
+                sql = f"""
+                    SELECT 
+                        player_name,
+                        team,
+                        position,
+                        designation,
+                        notes,
+                        confidence_score,
+                        last_updated
+                    FROM nfl_injuries_tracking
+                    WHERE is_active = true
+                    {team_filter}
+                    ORDER BY 
+                        CASE designation
+                            WHEN 'OUT' THEN 1
+                            WHEN 'IR' THEN 1
+                            WHEN 'DOUBTFUL' THEN 2
+                            WHEN 'QUESTIONABLE' THEN 3
+                            ELSE 4
+                        END,
+                        CASE position
+                            WHEN 'QB' THEN 1
+                            WHEN 'RB' THEN 2
+                            WHEN 'WR' THEN 3
+                            WHEN 'TE' THEN 4
+                            ELSE 5
+                        END
+                    LIMIT 50
+                """
+                
+                injuries = query_df(conn, sql, params if params else None)
+
+                # Process injury data
+                data = []
+                team_impacts = {}
+                
+                # Impact weights
+                POS_WEIGHTS = {'QB': 3.0, 'RB': 2.0, 'WR': 2.0, 'TE': 1.5, 'CB': 1.3, 'S': 1.2, 'LB': 1.1}
+                DESIG_WEIGHTS = {'OUT': 3, 'IR': 3, 'DOUBTFUL': 2, 'QUESTIONABLE': 1}
+                
+                for _, r in injuries.iterrows():
+                    designation = str(r.get("designation", "")).upper()
+                    
+                    # Only include meaningful injuries
+                    if designation in ["OUT", "DOUBTFUL", "QUESTIONABLE", "IR"]:
+                        team = r.get("team", "UNK")
+                        pos = r.get("position", "")
+                        
+                        # Calculate impact score
+                        pos_weight = POS_WEIGHTS.get(pos, 1.0)
+                        desig_weight = DESIG_WEIGHTS.get(designation, 1)
+                        impact = pos_weight * desig_weight
+                        
+                        # Add to team totals
+                        if team not in team_impacts:
+                            team_impacts[team] = 0.0
+                        team_impacts[team] += impact
+                        
+                        # Add to results
+                        data.append({
+                            "player": r.get("player_name", "Unknown"),
+                            "team": team,
+                            "position": pos,
+                            "designation": designation,
+                            "detail": r.get("notes", ""),
+                            "impact_score": round(impact, 2),
+                            "confidence": round(float(r.get("confidence_score", 0.8)), 2),
+                            "last_updated": str(r.get("last_updated", ""))[:10]
+                        })
+
+                # Generate summary message
+                if data:
+                    if game_teams:
+                        msg = f"**🏥 Injury Report for Selected Game**\n\n"
+                        for team in game_teams:
+                            if team:
+                                team_injuries = [inj for inj in data if inj['team'] == team]
+                                if team_injuries:
+                                    msg += f"**{team}** (Impact: {team_impacts.get(team, 0):.1f}):\n"
+                                    for inj in team_injuries[:5]:
+                                        msg += f"  • {inj['player']} ({inj['position']}) - {inj['designation']}\n"
+                                    msg += "\n"
+                    else:
+                        msg = f"**🏥 League Injury Report** ({len(data)} total)\n\n"
+                        top_teams = sorted(team_impacts.items(), key=lambda x: x[1], reverse=True)[:5]
+                        for team, impact in top_teams:
+                            msg += f"**{team}** (Impact: {impact:.1f})\n"
+                else:
+                    msg = "No significant injuries found."
+
+                conn.close()
+
                 return {
                     "ok": True,
                     "intent": "injury_report",
                     "success": True,
                     "result": {
-                        "injuries": [],
-                        "team_impacts": {},
-                        "total_injuries": 0
+                        "injuries": data,
+                        "team_impacts": {k: round(v, 2) for k, v in team_impacts.items()},
+                        "total_injuries": len(data),
+                        "filtered_to_game": bool(game_teams),
+                        "message": msg
                     }
                 }
-
-            cols = query_df(conn, "PRAGMA table_info(ai_injury_validation_detail)")
-            avail = set(cols["name"].tolist())
-
-            def pick(cands, literal_default):
-                for c in cands:
-                    if c in avail:
-                        return c
-                return literal_default
-
-            name_col = pick(["player_name", "inj_name", "roster_name", "player"], "'N/A'")
-            team_col = pick(["team_ai", "team_inj", "team", "team_name"], "'N/A'")
-            pos_col = pick(["position", "pos"], "''")
-            des_col = pick(["designation", "status"], "''")
-            det_col = pick(["injury_detail", "detail", "notes"], "''")
-            imp_col = pick(["impact_score"], "0")
-            
-            filters = []
-            for c in ("inj_missing_team", "roster_missing_team", "team_mismatch"):
-                if c in avail:
-                    filters.append(f"COALESCE({c},0)=0")
-            
-            # Add team filter if we're in game context
-            if game_teams and any(game_teams):
-                team_filter = " OR ".join([f"{team_col} = '{team}'" for team in game_teams if team])
-                filters.append(f"({team_filter})")
-            
-            where_sql = ("WHERE " + " AND ".join(filters)) if filters else ""
-
-            sql = f"""
-                SELECT
-                    {name_col} AS player_name,
-                    {team_col} AS team,
-                    COALESCE({pos_col}, '') AS position,
-                    COALESCE({des_col}, '') AS designation,
-                    COALESCE({det_col}, '') AS injury_detail,
-                    COALESCE({imp_col}, 0) AS impact_score
-                FROM ai_injury_validation_detail
-                {where_sql}
-                ORDER BY COALESCE({imp_col},0) DESC,
-                         CASE COALESCE({pos_col}, '')
-                            WHEN 'QB' THEN 1 WHEN 'RB' THEN 2
-                            WHEN 'WR' THEN 3 ELSE 4 END
-                LIMIT 25
-            """
-
-            injuries = query_df(conn, sql)
-
-            data = []
-            for _, r in injuries.iterrows():
-                # Only include meaningful injuries
-                if str(r.get("designation", "")).upper() in ["OUT", "DOUBTFUL", "QUESTIONABLE", "IR"]:
-                    data.append({
-                        "player": r.get("player_name", "N/A"),
-                        "team": r.get("team", "N/A"), 
-                        "position": r.get("position", ""),
-                        "designation": r.get("designation", ""),
-                        "detail": r.get("injury_detail", ""),
-                        "impact_score": float(r.get("impact_score", 0) or 0),
-                    })
-
-            team_impacts = {}
-            if "team" in injuries.columns and "impact_score" in injuries.columns:
-                team_impacts = injuries.groupby("team")["impact_score"].sum().to_dict()
-
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-            return {
-                "ok": True,
-                "intent": "injury_report", 
-                "success": True,
-                "result": {
-                    "injuries": data,
-                    "team_impacts": team_impacts,
-                    "total_injuries": len(data),
-                    "filtered_to_game": bool(game_teams)
+                
+            except Exception as e:
+                logger.exception("Injury query failed")
+                return {
+                    "ok": False,
+                    "intent": "injury_report",
+                    "success": False,
+                    "error": str(e),
+                    "message": f"Failed to retrieve injuries: {str(e)}"
                 }
-            }
-            
+                
         except Exception as e:
             logger.exception("_handle_injury_report failed")
             return {
                 "ok": False,
                 "intent": "injury_report",
                 "success": False,
-                "error": str(e) or "Injury report error", 
+                "error": str(e),
                 "message": "Failed to get injury report."
             }
-
     
 # ---------------------------
 # Flask Blueprint
