@@ -173,7 +173,7 @@ def safe_query_with_fallback(query, params=None):
 
 def compute_live_records(conn, season: int) -> pd.DataFrame:
     """
-    FIXED: Properly handles both SQLAlchemy and raw SQLite connections with LAR standardization
+    FIXED: Properly handles ties without inflating games_played count
     """
     
     # Determine connection type FIRST
@@ -232,38 +232,36 @@ def compute_live_records(conn, season: int) -> pd.DataFrame:
             "points_for","points_against","point_diff"
         ])
 
-    # CRITICAL FIX: Ensure team names are consistent (use abbreviations)
-    # This handles the Rams LA/LAR issue
+    # Team name normalization
     def normalize_to_abbr(team):
         if team in ['LA', 'Los Angeles Rams', 'L.A. Rams']:
             return 'LAR'
-        # Add other normalizations as needed
         return team
     
     games["home_team"] = games["home_team"].apply(normalize_to_abbr)
     games["away_team"] = games["away_team"].apply(normalize_to_abbr)
     
-    # Calculate wins/losses/ties
+    # FIXED: Calculate win/loss/tie flags properly
     games["home_win"] = (games["home_score"] > games["away_score"]).astype(int)
     games["away_win"] = (games["away_score"] > games["home_score"]).astype(int)
-    games["tie"] = (games["home_score"] == games["away_score"]).astype(int)
+    games["is_tie"] = (games["home_score"] == games["away_score"]).astype(int)
 
-    # Aggregate home stats
+    # Aggregate home stats - FIXED: Count games correctly
     home_stats = games.groupby("home_team").agg(
         wins=("home_win", "sum"),
         losses=("away_win", "sum"),
-        ties=("tie", "sum"),
-        games_played=("home_win", "size"),
+        ties=("is_tie", "sum"),
+        games_played=("game_id", "count"),  # FIXED: Just count game_ids
         points_for=("home_score", "sum"),
         points_against=("away_score", "sum"),
     ).reset_index().rename(columns={"home_team": "team"})
 
-    # Aggregate away stats
+    # Aggregate away stats - FIXED: Count games correctly  
     away_stats = games.groupby("away_team").agg(
         wins=("away_win", "sum"),
         losses=("home_win", "sum"),
-        ties=("tie", "sum"),
-        games_played=("away_win", "size"),
+        ties=("is_tie", "sum"),
+        games_played=("game_id", "count"),  # FIXED: Just count game_ids
         points_for=("away_score", "sum"),
         points_against=("home_score", "sum"),
     ).reset_index().rename(columns={"away_team": "team"})
@@ -1076,98 +1074,89 @@ def load_superstars(conn) -> dict[str, float]:
 
 def load_injury_impact_from_detail(conn):
     """
-    Reads ai_injury_validation_detail and returns per-team injury metrics:
-    columns: team, injury_impact, total_injuries, qb_risk, skill_position_risk
+    FIXED: Reads actual injury data from nfl_injuries_tracking
+    Returns per-team injury metrics
     """
     import pandas as pd
 
     try:
+        # FIXED: Query the actual injury tracking table
         if USE_CLOUD_DB:
             with ENGINE.connect() as db_conn:
-                # FIXED: Use PostgreSQL system tables instead of sqlite_master
+                # Check if table exists
                 table_check = db_conn.execute(text("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables 
                         WHERE table_schema = 'public' 
-                        AND table_name = 'ai_injury_validation_detail'
+                        AND table_name = 'nfl_injuries_tracking'
                     )
                 """)).scalar()
                 
                 if not table_check:
-                    print("ai_injury_validation_detail table not found")
+                    print("nfl_injuries_tracking table not found")
                     return pd.DataFrame(columns=['team','injury_impact','total_injuries','qb_risk','skill_position_risk'])
 
+                # Get actual injuries
                 df = pd.read_sql(text("""
                     SELECT
-                        COALESCE(team_ai, team_inj)          AS team,
-                        COALESCE(position, '')               AS position,
-                        COALESCE(designation, '')            AS designation,
-                        COALESCE(inj_name, roster_name, '')  AS player,
-                        COALESCE(inj_missing_team, 0)        AS inj_missing_team,
-                        COALESCE(roster_missing_team, 0)     AS roster_missing_team,
-                        COALESCE(team_mismatch, 0)           AS team_mismatch
-                    FROM ai_injury_validation_detail
+                        team,
+                        COALESCE(position, '') AS position,
+                        COALESCE(designation, '') AS designation,
+                        COALESCE(player_name, '') AS player
+                    FROM nfl_injuries_tracking
+                    WHERE is_active = true
+                    AND team IS NOT NULL
+                    AND team != 'UNK'
+                    AND designation IN ('IR', 'OUT', 'DOUBTFUL', 'QUESTIONABLE')
                 """), db_conn)
         else:
-            # Check if table exists in SQLite (works for sqlite3 or SQLAlchemy)
-            try:
-                if isinstance(conn, sqlite3.Connection):
-                    table_check = conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_injury_validation_detail'"
-                    ).fetchone()
-                else:
-                    # SQLAlchemy Connection against SQLite
-                    table_check = conn.execute(
-                        text("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_injury_validation_detail'")
-                    ).fetchone()
-            except Exception:
-                table_check = None
-
-            if not table_check:
-                print("ai_injury_validation_detail table not found")
-                return pd.DataFrame(columns=['team','injury_impact','total_injuries','qb_risk','skill_position_risk'])
-
+            # SQLite version
             df = pd.read_sql_query("""
                 SELECT
-                    COALESCE(team_ai, team_inj)          AS team,
-                    COALESCE(position, '')               AS position,
-                    COALESCE(designation, '')            AS designation,
-                    COALESCE(inj_name, roster_name, '')  AS player,
-                    COALESCE(inj_missing_team, 0)        AS inj_missing_team,
-                    COALESCE(roster_missing_team, 0)     AS roster_missing_team,
-                    COALESCE(team_mismatch, 0)           AS team_mismatch
-                FROM ai_injury_validation_detail
+                    team,
+                    COALESCE(position, '') AS position,
+                    COALESCE(designation, '') AS designation,
+                    COALESCE(player_name, '') AS player
+                FROM nfl_injuries_tracking
+                WHERE is_active = 1
+                AND team IS NOT NULL
+                AND team != 'UNK'
+                AND designation IN ('IR', 'OUT', 'DOUBTFUL', 'QUESTIONABLE')
             """, conn)
+            
     except Exception as e:
         print(f"Error loading injury data: {e}")
         return pd.DataFrame(columns=['team','injury_impact','total_injuries','qb_risk','skill_position_risk'])
+        
     if df.empty:
         return pd.DataFrame(columns=['team','injury_impact','total_injuries','qb_risk','skill_position_risk'])
 
-    # Keep only validated rows actually on the team
-    df = df[(df['inj_missing_team'] == 0) &
-            (df['roster_missing_team'] == 0) &
-            (df['team_mismatch'] == 0)].copy()
+    # Normalize team names
+    df['team'] = df['team'].apply(lambda t: t.strip().upper() if t else 'UNK')
+    df['position'] = df['position'].apply(lambda p: p.strip().upper() if p else 'UNK')
+    df['designation'] = df['designation'].apply(lambda d: d.strip().upper() if d else '')
 
-    # ---- normalize fields ----
-    df['team'] = df['team'].map(lambda t: to_abbr((t or '').strip()))
-    df['position'] = df['position'].map(_normalize_pos)
-    df['designation'] = df['designation'].map(_normalize_desig)
-    df['player'] = df['player'].map(_normalize_text)
+    # Position weights
+    POS_W = {
+        'QB': 3.0, 'RB': 2.0, 'WR': 2.0, 'TE': 1.5,
+        'CB': 1.3, 'S': 1.2, 'LB': 1.1, 'EDGE': 1.2, 'DE': 1.2, 'DT': 1.1,
+        'T': 1.0, 'G': 0.9, 'C': 0.9, 'OL': 0.9
+    }
+    
+    # Designation weights
+    DESIG_W = {
+        'IR': 3, 'OUT': 3, 'DOUBTFUL': 2, 'QUESTIONABLE': 1
+    }
 
-    # Superstar table (optional) or defaults
-    STAR = load_superstars(conn)
-
-    # Row impact
+    # Calculate impact per injury
     def row_impact(r):
         des_w = DESIG_W.get(r['designation'], 0.30)
         pos_w = POS_W.get(r['position'], 1.0)
-        star_w = STAR.get(r['player'], 1.0)
-        return des_w * pos_w * star_w
+        return des_w * pos_w
 
     df['impact'] = df.apply(row_impact, axis=1)
 
-    # ---- remove FutureWarning: use Index.intersection, not '&' ----
+    # Aggregate by team
     qb_idx = df.index[df['position'] == 'QB']
     skill_idx = df.index[df['position'].isin(['WR','RB','TE'])]
 
@@ -1182,6 +1171,7 @@ def load_injury_impact_from_detail(conn):
         agg[c] = agg[c].fillna(0)
 
     return agg[['team','injury_impact','total_injuries','qb_risk','skill_position_risk']]
+
 
 # Per-request sqlite3 connection (same DB as SQLAlchemy)
 def get_db():
