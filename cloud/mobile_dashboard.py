@@ -3545,6 +3545,54 @@ def api_admin_reset_money():
         return jsonify({'error': str(e)}), 500
 
 
+
+@app.route('/api/debug/injury-data')
+@login_required
+def debug_injury_data():
+    if not USERS.get(session['username'], {}).get('is_admin', False):
+        return jsonify({'error': 'Admin only'}), 403
+    
+    try:
+        with ENGINE.connect() as conn:
+            # Check if table exists
+            table_exists = conn.execute(text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name = 'ai_injury_validation_detail'
+                )
+            """)).scalar()
+            
+            if not table_exists:
+                return jsonify({
+                    'table_exists': False,
+                    'message': 'ai_injury_validation_detail table does not exist'
+                })
+            
+            # Check table contents
+            sample_data = pd.read_sql(text("""
+                SELECT * FROM ai_injury_validation_detail LIMIT 10
+            """), conn)
+            
+            team_counts = pd.read_sql(text("""
+                SELECT team_ai as team, COUNT(*) as injury_count
+                FROM ai_injury_validation_detail
+                GROUP BY team_ai
+                ORDER BY injury_count DESC
+                LIMIT 10
+            """), conn)
+            
+            return jsonify({
+                'table_exists': True,
+                'total_records': len(sample_data),
+                'sample_data': sample_data.to_dict('records'),
+                'injuries_by_team': team_counts.to_dict('records'),
+                'columns': list(sample_data.columns) if not sample_data.empty else []
+            })
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # Also add this route for individual user money reset:
 @app.route('/api/admin/reset-user-money', methods=['POST'])
 @login_required

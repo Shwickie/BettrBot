@@ -2550,6 +2550,20 @@ USER MESSAGE: {message}"""
             if hasattr(self, 'current_game_context') and self.current_game_context:
                 game_teams = [self.current_game_context.get('home_team'), self.current_game_context.get('away_team')]
 
+            # FIXED: Check for table existence based on database type
+            if USE_CLOUD_DB:
+                # PostgreSQL - use information_schema
+                table_check = pd.read_sql_query(text("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name = 'ai_injury_validation_detail'
+                    )
+                """), conn).iloc[0, 0]
+            else:
+                # SQLite - use sqlite_master
+                tables = query_df(conn, "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_injury_validation_detail'")
+                table_check = not tables.empty
             # Get injury data (same DB query as before)
             tables = query_df(conn, "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_injury_validation_detail'")
             if tables.empty:
