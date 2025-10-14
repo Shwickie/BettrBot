@@ -1221,11 +1221,33 @@ def _close_db(_exc):
 # -----------------
 
 def save_user_accounts(users: dict):
+    """Save user accounts with error handling and verification"""
     try:
-        with open(USER_DATA_FILE, "w") as f:
+        # Write to a temp file first
+        temp_file = USER_DATA_FILE + '.tmp'
+        
+        with open(temp_file, 'w') as f:
             json.dump(users, f, indent=2)
+        
+        # Verify the temp file is valid JSON
+        with open(temp_file, 'r') as f:
+            json.load(f)  # Will raise exception if invalid
+        
+        # Move temp file to actual file (atomic operation)
+        import os
+        if os.path.exists(USER_DATA_FILE):
+            os.replace(temp_file, USER_DATA_FILE)
+        else:
+            os.rename(temp_file, USER_DATA_FILE)
+        
+        print(f"✓ Saved {len(users)} user accounts to {USER_DATA_FILE}")
+        return True
+        
     except Exception as e:
-        print(f"Error saving user accounts: {e}")
+        print(f"❌ Error saving user accounts: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 def _hash_if_plain(pw: str) -> str:
     # Accept WerkZeug/Bcrypt/Scrypt hashes; otherwise hash as plain text
@@ -2914,27 +2936,131 @@ def api_place_bet():
     try:
         username = session['username']
         data = request.json
+        
+        # Validate amount
         amount = float(data.get('amount', 0))
-        if amount <= 0: return jsonify({'error':'Invalid bet amount'}), 400
-        user = USERS[username]
-        if user['bankroll'] < amount: return jsonify({'error':'Insufficient bankroll'}), 400
+        if amount <= 0:
+            return jsonify({'error': 'Invalid bet amount'}), 400
+        
+        # Get fresh user data
+        user = USERS.get(username)
+        if not user:
+            return jsonify({'error': 'User not found'}), 400
+        
+        # Check bankroll
+        if user['bankroll'] < amount:
+            return jsonify({'error': f'Insufficient bankroll. You have ${user["bankroll"]:.2f}'}), 400
+        
+        # Deduct from bankroll
         user['bankroll'] -= amount
+        
+        # Create bet record with all necessary fields
         bet = {
             'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
-            'game': data.get('game',''),
-            'bet_type': data.get('bet_type',''),
+            'game': data.get('game', ''),
+            'bet_type': data.get('bet_type', ''),
             'amount': amount,
-            'odds': data.get('odds',''),
-            'sportsbook': data.get('sportsbook',''),
-            'game_id': data.get('game_id'),   # <-- add this
+            'odds': data.get('odds', ''),
+            'sportsbook': data.get('sportsbook', ''),
+            'game_id': data.get('game_id'),
             'result': 'Pending',
             'profit_loss': 0.0
         }
+        
+        # Ensure bet_history exists
+        if 'bet_history' not in user:
+            user['bet_history'] = []
+        
+        # Add bet to history
         user['bet_history'].append(bet)
+        
+        # CRITICAL: Save to disk IMMEDIATELY
         save_user_accounts(USERS)
-        return jsonify({'success': True, 'new_balance': user['bankroll']})
+        
+        # Update session bankroll
+        session['user_bankroll'] = user['bankroll']
+        
+        # Verify the save worked by reloading
+        try:
+            with open(USER_DATA_FILE, 'r') as f:
+                verify_data = json.load(f)
+                saved_bet_count = len(verify_data.get(username, {}).get('bet_history', []))
+                print(f"✓ Bet saved - {username} now has {saved_bet_count} bets")
+        except Exception as e:
+            print(f"Warning: Could not verify save: {e}")
+        
+        return jsonify({
+            'success': True,
+            'new_balance': user['bankroll'],
+            'bet_count': len(user['bet_history']),
+            'message': f'Bet placed: ${amount:.2f} on {bet["game"]}'
+        })
+        
     except Exception as e:
-        print("/api/place-bet error:", e)
+        print(f"/api/place-bet error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/debug/check-bet-save')
+@login_required
+def debug_check_bet_save():
+    """Check if bets are actually in the file"""
+    username = session['username']
+    
+    try:
+        # Check memory
+        memory_user = USERS.get(username, {})
+        memory_bets = memory_user.get('bet_history', [])
+        
+        # Check file
+        with open(USER_DATA_FILE, 'r') as f:
+            file_data = json.load(f)
+            file_user = file_data.get(username, {})
+            file_bets = file_user.get('bet_history', [])
+        
+        return jsonify({
+            'username': username,
+            'memory_bet_count': len(memory_bets),
+            'file_bet_count': len(file_bets),
+            'memory_bets': memory_bets[-5:] if memory_bets else [],
+            'file_bets': file_bets[-5:] if file_bets else [],
+            'file_path': USER_DATA_FILE,
+            'bets_match': memory_bets == file_bets,
+            'session_bankroll': session.get('user_bankroll'),
+            'memory_bankroll': memory_user.get('bankroll'),
+            'file_bankroll': file_user.get('bankroll')
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/reload-user-data', methods=['POST'])
+@login_required
+def reload_user_data():
+    """Force reload user data from disk"""
+    global USERS
+    try:
+        username = session['username']
+        
+        # Reload from disk
+        USERS = load_user_accounts()
+        
+        # Update session
+        if username in USERS:
+            session['user_bankroll'] = USERS[username]['bankroll']
+            
+            return jsonify({
+                'success': True,
+                'message': 'User data reloaded',
+                'bet_count': len(USERS[username].get('bet_history', [])),
+                'bankroll': USERS[username]['bankroll']
+            })
+        else:
+            return jsonify({'error': 'User not found after reload'}), 404
+            
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/ai/value-bets')

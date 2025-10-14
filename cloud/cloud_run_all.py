@@ -220,7 +220,7 @@ def run_team_name_fix():
         return False
 
 def run_team_season_summary():
-    """Update team season summary - FIXED version with 2025-only filter"""
+    """Update team season summary - FIXED version with TIES support"""
     print("TASK: Running team_season_summary...")
     try:
         engine = setup_cloud_environment()
@@ -228,7 +228,7 @@ def run_team_season_summary():
             return False
             
         with engine.connect() as conn:
-            current_season = 2025  # Force 2025 for now
+            current_season = 2025
             print(f"   Updating team stats for season {current_season}")
             
             # Delete existing summaries first
@@ -238,10 +238,10 @@ def run_team_season_summary():
             
             print(f"   Cleared {deleted} old summaries")
             
-            # Recalculate with 2025-only filter
+            # Recalculate with TIES support
             conn.execute(text("""
                 INSERT INTO team_season_summary (
-                    team, season, games_played, wins, losses, 
+                    team, season, games_played, wins, losses, ties,
                     win_pct, avg_points_for, avg_points_against, point_diff, power_score
                 )
                 SELECT 
@@ -250,41 +250,48 @@ def run_team_season_summary():
                     COUNT(*) as games_played,
                     SUM(wins) as wins,
                     SUM(losses) as losses,
-                    CASE WHEN COUNT(*) > 0 THEN SUM(wins)::float / COUNT(*) ELSE 0.0 END as win_pct,
+                    SUM(ties) as ties,
+                    CASE 
+                        WHEN COUNT(*) > 0 
+                        THEN (SUM(wins)::float + (SUM(ties)::float * 0.5)) / COUNT(*) 
+                        ELSE 0.0 
+                    END as win_pct,
                     AVG(points_for) as avg_points_for,
                     AVG(points_against) as avg_points_against,
                     AVG(point_diff) as point_diff,
                     AVG(point_diff) as power_score
                 FROM (
-                    -- Home games (2025 ONLY)
+                    -- Home games
                     SELECT DISTINCT
                         game_id,
                         home_team as team,
                         CASE WHEN home_score > away_score THEN 1 ELSE 0 END as wins,
                         CASE WHEN home_score < away_score THEN 1 ELSE 0 END as losses,
+                        CASE WHEN home_score = away_score THEN 1 ELSE 0 END as ties,
                         home_score as points_for,
                         away_score as points_against,
                         home_score - away_score as point_diff
                     FROM games 
                     WHERE home_score IS NOT NULL AND away_score IS NOT NULL
                     AND EXTRACT(YEAR FROM game_date) = :season
-                    AND game_date >= '2025-09-01'  -- Only actual 2025 season
+                    AND game_date >= '2025-09-01'
                     
                     UNION ALL
                     
-                    -- Away games (2025 ONLY)
+                    -- Away games
                     SELECT DISTINCT
                         game_id,
                         away_team as team,
                         CASE WHEN away_score > home_score THEN 1 ELSE 0 END as wins,
                         CASE WHEN away_score < home_score THEN 1 ELSE 0 END as losses,
+                        CASE WHEN away_score = home_score THEN 1 ELSE 0 END as ties,
                         away_score as points_for,
                         home_score as points_against,
                         away_score - home_score as point_diff
                     FROM games 
                     WHERE home_score IS NOT NULL AND away_score IS NOT NULL
                     AND EXTRACT(YEAR FROM game_date) = :season
-                    AND game_date >= '2025-09-01'  -- Only actual 2025 season
+                    AND game_date >= '2025-09-01'
                 ) team_games
                 GROUP BY team
             """), {"season": current_season})
@@ -298,20 +305,25 @@ def run_team_season_summary():
             
             print(f"   SUCCESS: Updated {count_check} teams for season {current_season}")
             
-            # Show sample of results
+            # Show sample with TIES
             sample = conn.execute(text("""
-                SELECT team, wins, losses, games_played 
+                SELECT team, wins, losses, ties, games_played 
                 FROM team_season_summary 
                 WHERE season = :season 
-                ORDER BY wins DESC, games_played DESC
+                ORDER BY wins DESC, ties DESC, games_played DESC
                 LIMIT 5
             """), {"season": current_season}).fetchall()
             
             print("   Sample team records:")
             for row in sample:
-                print(f"     {row[0]}: {row[1]}-{row[2]} ({row[3]} games)")
+                record = f"{row[1]}-{row[2]}-{row[3]}" if row[3] > 0 else f"{row[1]}-{row[2]}"
+                print(f"     {row[0]}: {record} ({row[4]} games)")
             
             return True
+            
+    except Exception as e:
+        print(f"   ERROR: team_season_summary failed: {e}")
+        return False
             
     except Exception as e:
         print(f"   ERROR: team_season_summary failed: {e}")
@@ -441,6 +453,40 @@ def run_injury_processing():
         print(f"   ERROR: {e}")
         return True
 
+
+def ensure_ties_column():
+    """Ensure ties column exists in team_season_summary table"""
+    print("TASK: Ensuring ties column exists...")
+    try:
+        engine = setup_cloud_environment()
+        if not engine:
+            return False
+            
+        with engine.connect() as conn:
+            # Check if ties column exists
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'team_season_summary' 
+                AND column_name = 'ties'
+            """)).fetchone()
+            
+            if not result:
+                print("  Adding ties column...")
+                conn.execute(text("""
+                    ALTER TABLE team_season_summary 
+                    ADD COLUMN ties INTEGER DEFAULT 0
+                """))
+                conn.commit()
+                print("  ✓ Ties column added")
+            else:
+                print("  ✓ Ties column already exists")
+            
+            return True
+            
+    except Exception as e:
+        print(f"  ERROR: Failed to ensure ties column: {e}")
+        return True  # Don't fail pipeline for this
 
 def run_fresh_odds():
     """Run fresh_odds.py to populate test odds for games without odds"""
@@ -632,6 +678,7 @@ def main():
         ("injury_model", run_injury_model),
         ("injury_processing", run_injury_processing),
         ("team_name_fix", run_team_name_fix),      # NEW: Fix team names
+        ("ensure_ties_column", ensure_ties_column),
         ("team_season_summary", run_team_season_summary),
         ("fresh_odds", run_fresh_odds),
         ("migrate_odds", run_migrate_odds),
