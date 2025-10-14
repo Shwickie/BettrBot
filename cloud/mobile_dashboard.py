@@ -2793,12 +2793,15 @@ def debug_session_full():
 @app.route('/api/delete-bet', methods=['POST'])
 @login_required
 def api_delete_bet():
+    global USERS  # Add this!
+    
     try:
         username = session['username']
         data = request.json or {}
         idx = int(data.get('bet_index', -1))
         user = USERS[username]
         hist = user.get('bet_history', [])
+        
         if idx < 0 or idx >= len(hist):
             return jsonify({'error': 'Bet not found'}), 400
 
@@ -2813,7 +2816,9 @@ def api_delete_bet():
         # remove bet
         hist.pop(idx)
         save_user_accounts(USERS)
-        return jsonify({'success': True, 'new_balance': user['bankroll']})
+        USERS = load_user_accounts()  # Reload to sync!
+        
+        return jsonify({'success': True, 'new_balance': USERS[username]['bankroll']})
     except Exception as e:
         print("/api/delete-bet error:", e)
         return jsonify({'error': str(e)}), 500
@@ -2968,6 +2973,8 @@ def api_bet_history():
 @app.route('/api/place-bet', methods=['POST'])
 @login_required
 def api_place_bet():
+    global USERS  # Add this at the top!
+    
     try:
         username = session['username']
         data = request.json
@@ -3010,24 +3017,21 @@ def api_place_bet():
         user['bet_history'].append(bet)
         
         # CRITICAL: Save to disk IMMEDIATELY
-        save_user_accounts(USERS)
+        if not save_user_accounts(USERS):
+            return jsonify({'error': 'Failed to save bet'}), 500
         
-        # Update session bankroll
-        session['user_bankroll'] = user['bankroll']
+        # CRITICAL FIX: Reload USERS from disk to sync memory
+        USERS = load_user_accounts()
         
-        # Verify the save worked by reloading
-        try:
-            with open(USER_DATA_FILE, 'r') as f:
-                verify_data = json.load(f)
-                saved_bet_count = len(verify_data.get(username, {}).get('bet_history', []))
-                print(f"✓ Bet saved - {username} now has {saved_bet_count} bets")
-        except Exception as e:
-            print(f"Warning: Could not verify save: {e}")
+        # Update session bankroll from the reloaded data
+        session['user_bankroll'] = USERS[username]['bankroll']
+        
+        print(f"✅ Bet saved and reloaded - {username} now has {len(USERS[username]['bet_history'])} bets")
         
         return jsonify({
             'success': True,
-            'new_balance': user['bankroll'],
-            'bet_count': len(user['bet_history']),
+            'new_balance': USERS[username]['bankroll'],
+            'bet_count': len(USERS[username]['bet_history']),
             'message': f'Bet placed: ${amount:.2f} on {bet["game"]}'
         })
         
@@ -3036,7 +3040,6 @@ def api_place_bet():
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/debug/check-bet-save')
 @login_required
@@ -3213,10 +3216,11 @@ def debug_raw_games():
         })
     except Exception as e:
         return jsonify({'error': str(e)})
-
 @app.route('/api/settle-bet', methods=['POST'])
 @login_required
 def api_settle_bet():
+    global USERS  # Add this!
+    
     try:
         username = session['username']
         data = request.json
@@ -3224,14 +3228,18 @@ def api_settle_bet():
         result = str(data.get('result','')).lower()
         user = USERS[username]
         hist = user.get('bet_history', [])
+        
         if idx < 0 or idx >= len(hist):
             return jsonify({'error':'Bet not found'}), 400
+            
         bet = hist[idx]
         if bet['result'] != 'Pending':
             return jsonify({'error':'Bet already settled'}), 400
+            
         bet['result'] = result.title()
         amount = float(bet['amount'])
         odds = str(bet['odds'])
+        
         if result == 'win':
             if odds.startswith('+'):
                 payout = amount * (int(odds[1:]) / 100)
@@ -3248,8 +3256,11 @@ def api_settle_bet():
         elif result == 'push':
             bet['profit_loss'] = 0
             user['bankroll'] += amount
+            
         save_user_accounts(USERS)
-        return jsonify({'success': True, 'new_balance': user['bankroll']})
+        USERS = load_user_accounts()  # Reload to sync!
+        
+        return jsonify({'success': True, 'new_balance': USERS[username]['bankroll']})
     except Exception as e:
         print("/api/settle-bet error:", e)
         return jsonify({'error': str(e)}), 500
