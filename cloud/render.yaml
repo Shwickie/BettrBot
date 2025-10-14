@@ -1,11 +1,13 @@
-# render_fixed.yaml - WORKING cloud deployment config with automated scheduling
+# render.yaml - Cloud deployment config with automated cron jobs
+# This runs cloud_run_all.py automatically in the cloud (even when PC is off)
+
 services:
+  # Main web app (your dashboard)
   - type: web
     name: bettr-bot-web
     runtime: python
     buildCommand: |
       pip install -r requirements.txt
-      python verify_deployment.py
     startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 300 --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
@@ -18,16 +20,14 @@ services:
         value: ./betting_model_fixed.pkl
       - key: BETTR_PIPELINE_MODE
         value: "false"
-      - key: ENABLE_SCHEDULER
-        value: "true"
 
-  # Cron job for pipeline updates
+  # MAIN AUTOMATED PIPELINE - Runs every 4 hours
   - type: cron
-    name: bettr-bot-pipeline
+    name: bettr-bot-pipeline-4hr
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python cloud_run_all.py
-    schedule: "0 */4 * * *"  # Every 4 hours
+    startCommand: python cloud/cloud_run_all.py
+    schedule: "0 */4 * * *"  # Every 4 hours: 12am, 4am, 8am, 12pm, 4pm, 8pm UTC
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
@@ -35,14 +35,16 @@ services:
         sync: false
       - key: BETTR_PIPELINE_MODE
         value: "true"
+      - key: PYTHONIOENCODING
+        value: "utf-8"
         
-  # Daily maintenance job
+  # DAILY MAINTENANCE - Runs once per day
   - type: cron
-    name: bettr-bot-maintenance
+    name: bettr-bot-daily-maintenance
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python automated_scheduler.py
-    schedule: "0 6 * * *"  # Daily at 6 AM UTC
+    startCommand: python cloud/cloud_run_all.py
+    schedule: "0 3 * * *"  # Daily at 3 AM UTC (11 PM EST / 10 PM EDT)
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
@@ -50,3 +52,5 @@ services:
         sync: false
       - key: BETTR_PIPELINE_MODE
         value: "true"
+      - key: PYTHONIOENCODING
+        value: "utf-8"

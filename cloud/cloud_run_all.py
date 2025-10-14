@@ -441,6 +441,45 @@ def run_injury_processing():
         print(f"   ERROR: {e}")
         return True
 
+
+def run_fresh_odds():
+    """Run fresh_odds.py to populate test odds for games without odds"""
+    print("TASK: Running fresh_odds (populate test odds)...")
+    try:
+        fresh_odds_script = ROOT / "fresh_odds.py"
+        
+        if not fresh_odds_script.exists():
+            print("   fresh_odds.py not found - skipping")
+            return True  # Not critical
+        
+        # Run fresh_odds.py
+        result = subprocess.run(
+            [sys.executable, str(fresh_odds_script)],
+            capture_output=True,
+            text=True,
+            timeout=120,  # 2 minute timeout
+            cwd=ROOT
+        )
+        
+        output = result.stdout + result.stderr
+        
+        if result.returncode == 0:
+            print("   SUCCESS: fresh_odds completed")
+            
+            # Show what was added
+            for line in output.split('\n'):
+                if 'added' in line.lower() or 'success' in line.lower():
+                    if line.strip():
+                        print(f"   {line.strip()}")
+            return True
+        else:
+            print("   WARNING: fresh_odds had issues - continuing")
+            return True  # Not critical
+            
+    except Exception as e:
+        print(f"   WARNING: fresh_odds failed: {e}")
+        return True  # Not critical
+
 def run_migrate_odds():
     """Run migrate_odds.py as separate process"""
     print("TASK: Running migrate_odds (separate script)...")
@@ -594,6 +633,7 @@ def main():
         ("injury_processing", run_injury_processing),
         ("team_name_fix", run_team_name_fix),      # NEW: Fix team names
         ("team_season_summary", run_team_season_summary),
+        ("fresh_odds", run_fresh_odds),
         ("migrate_odds", run_migrate_odds),
         ("model_training", run_model_training),    # NEW: Optional model training
         ("prediction", run_prediction)
