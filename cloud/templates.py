@@ -836,6 +836,10 @@ AI_CHAT_TEMPLATE = r"""
       text.textContent = message;
     }
 
+    async function loadBettingHistory() {
+        return loadFullHistory(); // Just call the existing function
+    }
+
     async function loadModelPicks() {
       try {
         updateStatus('loading', 'Loading model picks...');
@@ -2496,12 +2500,51 @@ HTML_TEMPLATE = """
         const team=document.getElementById('betTeam').value; const amount=parseFloat(document.getElementById('betAmount').value); let odds=document.getElementById('betOdds').value.trim(); const sb=document.getElementById('betSportsbook').value;
         if(!odds){ const t = selectedGameData.teams.find(x=>x.team===team); const line = t ? t.odds : 100; odds = (line>0?`+${line}`:`${line}`); }
         const payload={ game:selectedGameData.game, bet_type:`${team} ML`, amount, odds, sportsbook:sb, game_date:selectedGameData.date, game_time:selectedGameData.time, game_id:selectedGameData.game_id };
-        try{ const r=await fetch('/api/place-bet',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); if(r.ok){ alert('Bet placed successfully!'); closeBetModal(); loadRecentActivity(); location.reload(); } else { const err=await r.json(); alert('Error: '+(err.error||'Unknown error')); } }
+        
+        try{ 
+            const r=await fetch('/api/place-bet',{
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify(payload)
+            }); 
+            
+            if(r.ok){ 
+                const result = await r.json(); // Get the response data
+                
+                // Update UI immediately without reload
+                document.querySelectorAll('.bankroll').forEach(el => {
+                    el.textContent = `$${result.new_balance.toFixed(2)}`;
+                });
+                
+                alert(`Bet placed successfully! New balance: $${result.new_balance.toFixed(2)}`); 
+                closeBetModal(); 
+                
+                // Refresh the data displays
+                await loadRecentActivity();
+                await loadBettingHistory(); // This will update the history modal
+                
+                // DON'T reload the page - just update the displays
+                // location.reload(); // REMOVE THIS
+            } else { 
+                const err=await r.json(); 
+                alert('Error: '+(err.error||'Unknown error')); 
+            } 
+        }
         catch(err){ alert('Error placing bet: '+err.message); }
     });
 
     // ---------- HISTORY / ADMIN ----------
-    function openHistoryModal(){ document.getElementById('historyModal').style.display='block'; loadFullHistory(); }
+    async function openHistoryModal(){ 
+        document.getElementById('historyModal').style.display='block'; 
+        
+        // Force a fresh load with loading indicator
+        const historyContent = document.getElementById('historyContent');
+        if (historyContent) {
+            historyContent.innerHTML = '<div class="loading">Loading betting history...</div>';
+        }
+        
+        await loadFullHistory(); 
+    }
     function closeHistoryModal(){ document.getElementById('historyModal').style.display='none'; }
     
     async function loadFullHistory(){
