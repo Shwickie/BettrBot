@@ -1771,6 +1771,9 @@ HTML_TEMPLATE = """
     let availableGamesData = [];
     let isAdmin = {{ 'true' if user.is_admin else 'false' }};
 
+    async function loadBettingHistory() {
+        return await loadFullHistory();
+    }
 
     async function resetAllUserMoney() {
         const bankroll = parseFloat(document.getElementById('resetAllBankroll').value);
