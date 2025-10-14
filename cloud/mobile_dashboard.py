@@ -873,7 +873,7 @@ def get_unified_power_scores(conn):
     """
     season, _ = current_phase_and_season()
 
-    # 1) Base power from team_season_summary (can be preseason seeded)
+    # 1) Base power from team_season_summary
     try:
         if USE_CLOUD_DB:
             base = safe_query(
@@ -885,43 +885,78 @@ def get_unified_power_scores(conn):
                 "SELECT team, power_score, games_played, win_pct FROM team_season_summary WHERE season = ?",
                 get_db(), params=[season]
             )
-    except Exception:
+        
+        print(f"DEBUG: Got {len(base)} teams from team_season_summary for season {season}")
+        
+        if base.empty:
+            print(f"WARNING: No data in team_season_summary for season {season}")
+            # Return default power scores for all 32 teams
+            return pd.DataFrame({
+                'team': list(ABBR_TO_FULL.values()),
+                'power_score': [0.0] * len(ABBR_TO_FULL),
+                'games_played': [0] * len(ABBR_TO_FULL),
+                'win_pct': [0.5] * len(ABBR_TO_FULL),
+                'injury_impact': [0.0] * len(ABBR_TO_FULL),
+                'qb_risk': [0.0] * len(ABBR_TO_FULL),
+                'adj_power': [0.0] * len(ABBR_TO_FULL)
+            })
+            
+    except Exception as e:
+        print(f"ERROR loading team_season_summary: {e}")
         base = pd.DataFrame(columns=["team","power_score","games_played","win_pct"])
 
     # Normalize team names to FULL
-    base["team"] = base["team"].map(to_full)
+    base["team"] = base["team"].apply(lambda t: to_full(t) if t else "Unknown")
+    
+    # Remove any "Unknown" teams
+    base = base[base["team"] != "Unknown"]
 
     # 2) Live records from games (overrides games_played & win_pct)
-    live = compute_live_records(conn, season)
-    df = base.merge(live[["team","games_played","win_pct"]], on="team", how="left", suffixes=("", "_live"))
-    df["games_played"] = df["games_played_live"].fillna(df["games_played"])
-    df["win_pct"]      = df["win_pct_live"].fillna(df["win_pct"])
-    df.drop(columns=[c for c in ["games_played_live","win_pct_live"] if c in df.columns], inplace=True)
+    try:
+        live = compute_live_records(conn, season)
+        print(f"DEBUG: Got {len(live)} teams from live records")
+        
+        if not live.empty:
+            live["team"] = live["team"].apply(to_full)
+            df = base.merge(live[["team","games_played","win_pct"]], on="team", how="left", suffixes=("", "_live"))
+            df["games_played"] = df["games_played_live"].fillna(df["games_played"])
+            df["win_pct"] = df["win_pct_live"].fillna(df["win_pct"])
+            df.drop(columns=[c for c in ["games_played_live","win_pct_live"] if c in df.columns], inplace=True)
+        else:
+            df = base
+    except Exception as e:
+        print(f"ERROR loading live records: {e}")
+        df = base
 
     # 3) Injury view
     try:
         inj = load_injury_impact_from_detail(conn)[["team","injury_impact","qb_risk"]]
-        inj["team"] = inj["team"].map(to_full)
-    except Exception:
-        inj = pd.DataFrame(columns=["team","injury_impact","qb_risk"])
+        inj["team"] = inj["team"].apply(to_full)
+        df = df.merge(inj, on="team", how="left")
+    except Exception as e:
+        print(f"WARNING: Could not load injury data: {e}")
+        df["injury_impact"] = 0.0
+        df["qb_risk"] = 0.0
 
-    df = df.merge(inj, on="team", how="left")
     df["injury_impact"] = df["injury_impact"].fillna(0.0)
     df["qb_risk"] = df["qb_risk"].fillna(0.0)
 
-    # 4) Small form component from win_pct (won’t blow up preseason)
+    # 4) Small form component
     df["form_component"] = np.where(
         df["games_played"].fillna(0) > 0,
         (df["win_pct"].fillna(0.5) - 0.5) * 20,
         0.0
     )
 
-    # 5) Final adjusted power (keep your scale/weights)
+    # 5) Final adjusted power
     df["adj_power"] = (
         df["power_score"].fillna(0.0) * 1.0 +
         df["form_component"] * 0.20 -
         df["injury_impact"] * 0.05
     )
+    
+    print(f"DEBUG: Final unified power scores for {len(df)} teams")
+    print(f"  Sample: {df[['team', 'adj_power']].head(3).to_dict('records')}")
 
     return df[["team","power_score","games_played","win_pct","injury_impact","qb_risk","adj_power"]]
 
@@ -3551,7 +3586,82 @@ def debug_fix_user_data():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/debug/power-map')
+@login_required
+def debug_power_map():
+    """Check what's in the power map"""
+    if not USERS.get(session['username'], {}).get('is_admin', False):
+        return jsonify({'error': 'Admin only'}), 403
     
+    try:
+        conn = get_db()
+        
+        # Check team_season_summary data
+        season, _ = current_phase_and_season()
+        rankings = safe_query("""
+            SELECT team, power_score, games_played, win_pct
+            FROM team_season_summary 
+            WHERE season = :season
+            ORDER BY power_score DESC
+        """, {"season": season})
+        
+        # Try to build power map
+        pmap = get_power_map_cached(conn)
+        
+        return jsonify({
+            'season': season,
+            'team_season_summary_count': len(rankings),
+            'sample_rankings': rankings.head(10).to_dict('records') if not rankings.empty else [],
+            'power_map_size': len(pmap),
+            'sample_power_map': dict(list(pmap.items())[:10]) if pmap else {},
+            'power_cache_timestamp': POWER_CACHE['ts'],
+            'power_cache_age_seconds': time.time() - POWER_CACHE['ts']
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+@app.route('/api/debug/check-rankings-data')
+@login_required
+def debug_check_rankings():
+    """Check if rankings data exists"""
+    if not USERS.get(session['username'], {}).get('is_admin', False):
+        return jsonify({'error': 'Admin only'}), 403
+    
+    try:
+        with ENGINE.connect() as conn:
+            # Check what seasons have data
+            seasons = pd.read_sql(text("""
+                SELECT season, COUNT(*) as team_count
+                FROM team_season_summary
+                GROUP BY season
+                ORDER BY season DESC
+            """), conn)
+            
+            # Check 2025 specifically
+            season_2025 = pd.read_sql(text("""
+                SELECT team, power_score, wins, losses, games_played
+                FROM team_season_summary
+                WHERE season = 2025
+                ORDER BY power_score DESC
+                LIMIT 10
+            """), conn)
+            
+            return jsonify({
+                'seasons_with_data': seasons.to_dict('records'),
+                '2025_sample': season_2025.to_dict('records') if not season_2025.empty else [],
+                '2025_total_teams': len(season_2025)
+            })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/debug/check-odds-data')
 @login_required
 def debug_check_odds():
