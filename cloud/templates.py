@@ -2499,41 +2499,89 @@ HTML_TEMPLATE = """
     }
 
     document.getElementById('betForm').addEventListener('submit', async function(e){
-        e.preventDefault(); if(!selectedGameData){ alert('Please select a game first'); return; }
-        const team=document.getElementById('betTeam').value; const amount=parseFloat(document.getElementById('betAmount').value); let odds=document.getElementById('betOdds').value.trim(); const sb=document.getElementById('betSportsbook').value;
-        if(!odds){ const t = selectedGameData.teams.find(x=>x.team===team); const line = t ? t.odds : 100; odds = (line>0?`+${line}`:`${line}`); }
-        const payload={ game:selectedGameData.game, bet_type:`${team} ML`, amount, odds, sportsbook:sb, game_date:selectedGameData.date, game_time:selectedGameData.time, game_id:selectedGameData.game_id };
+        e.preventDefault(); 
+        
+        if(!selectedGameData){ 
+            alert('Please select a game first'); 
+            return; 
+        }
+        
+        const team = document.getElementById('betTeam').value; 
+        const amount = parseFloat(document.getElementById('betAmount').value); 
+        let odds = document.getElementById('betOdds').value.trim(); 
+        const sb = document.getElementById('betSportsbook').value;
+        
+        if(!odds){ 
+            const t = selectedGameData.teams.find(x=>x.team===team); 
+            const line = t ? t.odds : 100; 
+            odds = (line>0?`+${line}`:`${line}`); 
+        }
+        
+        const payload = { 
+            game: selectedGameData.game, 
+            bet_type: `${team} ML`, 
+            amount, 
+            odds, 
+            sportsbook: sb, 
+            game_date: selectedGameData.date, 
+            game_time: selectedGameData.time, 
+            game_id: selectedGameData.game_id 
+        };
         
         try{ 
-            const r=await fetch('/api/place-bet',{
-                method:'POST',
-                headers:{'Content-Type':'application/json'},
-                body:JSON.stringify(payload)
+            const r = await fetch('/api/place-bet', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify(payload)
             }); 
             
             if(r.ok){ 
-                const result = await r.json(); // Get the response data
+                const result = await r.json();
                 
-                // Update UI immediately without reload
+                console.log('✅ Bet placed successfully:', result);
+                
+                // Update all bankroll displays
                 document.querySelectorAll('.bankroll').forEach(el => {
                     el.textContent = `$${result.new_balance.toFixed(2)}`;
                 });
                 
-                alert(`Bet placed successfully! New balance: $${result.new_balance.toFixed(2)}`); 
+                // Close modal
                 closeBetModal(); 
                 
-                // Refresh the data displays
-                await loadRecentActivity();
-                await loadBettingHistory(); // This will update the history modal
+                // Show success message
+                alert(`✅ Bet placed successfully!\nNew balance: $${result.new_balance.toFixed(2)}\nTotal bets: ${result.bet_count}`); 
                 
-                // DON'T reload the page - just update the displays
-                // location.reload(); // REMOVE THIS
+                // CRITICAL: Add a small delay to ensure backend save completes
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+                // Force refresh both displays with cache busting
+                await Promise.all([
+                    fetch('/api/recent-activity?_t=' + Date.now())
+                        .then(r => r.json())
+                        .then(data => displayRecentActivity(data)),
+                        
+                    fetch('/api/bet-history?_t=' + Date.now())
+                        .then(r => r.json())
+                        .then(data => {
+                            console.log('📊 Loaded bet history:', data.length, 'bets');
+                            // If history modal is open, refresh it
+                            const historyModal = document.getElementById('historyModal');
+                            if (historyModal && historyModal.style.display === 'block') {
+                                loadFullHistory();
+                            }
+                        })
+                ]);
+                
+                console.log('✅ All displays refreshed');
+                
             } else { 
-                const err=await r.json(); 
-                alert('Error: '+(err.error||'Unknown error')); 
+                const err = await r.json(); 
+                alert('❌ Error: ' + (err.error || 'Unknown error')); 
             } 
+        } catch(err){ 
+            console.error('❌ Bet placement error:', err);
+            alert('❌ Error placing bet: ' + err.message); 
         }
-        catch(err){ alert('Error placing bet: '+err.message); }
     });
 
     // ---------- HISTORY / ADMIN ----------
@@ -2552,40 +2600,51 @@ HTML_TEMPLATE = """
     
     async function loadFullHistory(){
         try{
-            const r = await fetch('/api/bet-history');
+            // Add cache busting parameter to force fresh data
+            const r = await fetch('/api/bet-history?_t=' + Date.now());
             const data = await r.json();
+            
+            console.log('📊 Loading full history:', data.length, 'bets');
+            
             const c = document.getElementById('historyContent');
             if(!data || !data.length){
-            c.innerHTML = '<p class="loading">No betting history found</p>';
-            return;
+                c.innerHTML = '<p class="loading">No betting history found</p>';
+                return;
             }
+            
             let html = '<div class="table-viewport"><table style="width:100%;font-size:11px;"><thead><tr><th>Date</th><th>Game</th><th>Bet</th><th>Amount</th><th>Result</th><th>P&L</th><th>Actions</th></tr></thead><tbody>';
+            
             data.forEach((b,i)=>{
-            const pl = b.profit_loss>0?'positive':b.profit_loss<0?'negative':'neutral';
-            const rs = (b.result||'Pending').toLowerCase();
-            const sel = (rs==='pending')
-                ? `<select id="rslt-${i}" class="btn"><option value="pending" ${rs==='pending'?'selected':''}>Pending</option><option value="win">Win</option><option value="loss">Loss</option><option value="push">Push</option></select>`
-                : `<span>${b.result}</span>`;
-            const actions = (rs==='pending')
-                ? `<button class="btn btn-success" style="font-size:9px;padding:3px 6px;" onclick="settleBetFromRow(${i})">Save</button>
-                <button class="btn btn-danger"  style="font-size:9px;padding:3px 6px;" onclick="deleteBet(${i})">Delete</button>`
-                : '-';
-            html += `<tr>
-                <td>${b.date}</td>
-                <td>${b.game}</td>
-                <td>${b.bet_type} @ ${b.odds}</td>
-                <td>${Number(b.amount).toFixed(2)}</td>
-                <td>${sel}</td>
-                <td class="${pl}">${Number(b.profit_loss).toFixed(2)}</td>
-                <td>${actions}</td>
-            </tr>`;
+                const pl = b.profit_loss>0?'positive':b.profit_loss<0?'negative':'neutral';
+                const rs = (b.result||'Pending').toLowerCase();
+                const sel = (rs==='pending')
+                    ? `<select id="rslt-${i}" class="btn"><option value="pending" ${rs==='pending'?'selected':''}>Pending</option><option value="win">Win</option><option value="loss">Loss</option><option value="push">Push</option></select>`
+                    : `<span>${b.result}</span>`;
+                const actions = (rs==='pending')
+                    ? `<button class="btn btn-success" style="font-size:9px;padding:3px 6px;" onclick="settleBetFromRow(${i})">Save</button>
+                    <button class="btn btn-danger"  style="font-size:9px;padding:3px 6px;" onclick="deleteBet(${i})">Delete</button>`
+                    : '-';
+                html += `<tr>
+                    <td>${b.date}</td>
+                    <td>${b.game}</td>
+                    <td>${b.bet_type} @ ${b.odds}</td>
+                    <td>$${Number(b.amount).toFixed(2)}</td>
+                    <td>${sel}</td>
+                    <td class="${pl}">$${Number(b.profit_loss).toFixed(2)}</td>
+                    <td>${actions}</td>
+                </tr>`;
             });
+            
             html += '</tbody></table></div>';
             c.innerHTML = html;
+            
+            console.log('✅ History modal updated with', data.length, 'bets');
+            
         }catch(e){
+            console.error('❌ Error loading history:', e);
             document.getElementById('historyContent').innerHTML = '<div class="alert alert-error">Error loading betting history</div>';
         }
-        }
+    }
 
     async function settleBetFromRow(i){
         const sel = document.getElementById(`rslt-${i}`);
