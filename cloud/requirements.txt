@@ -13,3 +13,4 @@ psycopg2-binary==2.9.9
 nfl_data_py==0.3.2
 APScheduler==3.10.4
 openai>=1.0.0
+python-3.11.9
