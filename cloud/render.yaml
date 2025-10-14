@@ -6,6 +6,8 @@ services:
   - type: web
     name: bettr-bot-web
     runtime: python
+    repo: https://github.com/Shwickie/BettrBot
+    branch: main
     buildCommand: |
       pip install -r requirements.txt
     startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 300 --bind 0.0.0.0:$PORT
@@ -13,7 +15,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: DATABASE_URL
-        sync: false
+        value: postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway
       - key: FLASK_ENV
         value: production
       - key: BETTR_MODEL_PKL
@@ -25,6 +27,8 @@ services:
   - type: cron
     name: bettr-bot-pipeline-4hr
     runtime: python
+    repo: https://github.com/Shwickie/BettrBot
+    branch: main
     buildCommand: pip install -r requirements.txt
     startCommand: python cloud/cloud_run_all.py
     schedule: "0 */4 * * *"  # Every 4 hours: 12am, 4am, 8am, 12pm, 4pm, 8pm UTC
@@ -32,7 +36,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: DATABASE_URL
-        sync: false
+        value: postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway
       - key: BETTR_PIPELINE_MODE
         value: "true"
       - key: PYTHONIOENCODING
@@ -42,6 +46,8 @@ services:
   - type: cron
     name: bettr-bot-daily-maintenance
     runtime: python
+    repo: https://github.com/Shwickie/BettrBot
+    branch: main
     buildCommand: pip install -r requirements.txt
     startCommand: python cloud/cloud_run_all.py
     schedule: "0 3 * * *"  # Daily at 3 AM UTC (11 PM EST / 10 PM EDT)
@@ -49,7 +55,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: DATABASE_URL
-        sync: false
+        value: postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway
       - key: BETTR_PIPELINE_MODE
         value: "true"
       - key: PYTHONIOENCODING
