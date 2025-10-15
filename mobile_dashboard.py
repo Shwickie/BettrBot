@@ -12,6 +12,15 @@ import os, json
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import the prediction system
+try:
+    from model.prediction import FixedNFLSystem
+    prediction_system = FixedNFLSystem()
+    print("✅ Loaded prediction system with trained model")
+except Exception as e:
+    print(f"⚠️ Warning: Could not load prediction system: {e}")
+    prediction_system = None
+
 # Database setup
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if DATABASE_URL.startswith("postgres://"):
@@ -196,34 +205,91 @@ def api_predictions():
     try:
         today = datetime.now().date()
         future_date = today + timedelta(days=14)
-        
+
         # Simple query without parameters
         query = f"""
         SELECT game_id, home_team, away_team, game_date, start_time_local
-        FROM games 
+        FROM games
         WHERE game_date >= '{today}' AND game_date <= '{future_date}'
+        AND home_score IS NULL
         ORDER BY game_date, start_time_local
         LIMIT 20
         """
-        
+
         df = safe_query(query)
-        
+
         predictions = []
         for _, game in df.iterrows():
-            predictions.append({
-                'game_id': str(game.get('game_id', '')),
-                'matchup': f"{to_full(game.get('away_team', ''))} @ {to_full(game.get('home_team', ''))}",
-                'prediction': to_full(game.get('home_team', '')),
-                'confidence': 0.55,
-                'confidence_level': 'medium',
-                'game_date': str(game.get('game_date', '')),
-                'game_time': str(game.get('start_time_local', 'TBD'))[:5]
-            })
-        
+            home_team = game.get('home_team', '')
+            away_team = game.get('away_team', '')
+            game_date = game.get('game_date', '')
+
+            # Use the trained model if available
+            if prediction_system and prediction_system.model_data:
+                try:
+                    pred = prediction_system.predict_game(home_team, away_team, game_date)
+
+                    # Extract prediction details
+                    predicted_winner = pred['predicted_winner']
+                    confidence = pred['confidence']
+                    home_win_prob = pred['home_win_probability']
+                    away_win_prob = pred['away_win_probability']
+
+                    # Determine confidence level and recommendation
+                    if confidence >= 0.70:
+                        confidence_level = 'Strong Bet'
+                    elif confidence >= 0.60:
+                        confidence_level = 'Consider'
+                    elif confidence >= 0.55:
+                        confidence_level = 'Weak Edge'
+                    else:
+                        confidence_level = 'Skip'
+
+                    predictions.append({
+                        'game_id': str(game.get('game_id', '')),
+                        'matchup': f"{to_full(away_team)} @ {to_full(home_team)}",
+                        'prediction': to_full(predicted_winner),
+                        'confidence': round(confidence, 3),
+                        'confidence_level': confidence_level,
+                        'home_win_prob': round(home_win_prob, 3),
+                        'away_win_prob': round(away_win_prob, 3),
+                        'probabilities': f"{to_full(away_team)}: {away_win_prob:.1%} • {to_full(home_team)}: {home_win_prob:.1%}",
+                        'game_date': str(game_date),
+                        'game_time': str(game.get('start_time_local', 'TBD'))[:5],
+                        'model_used': True
+                    })
+                except Exception as pred_error:
+                    print(f"Error predicting {away_team} @ {home_team}: {pred_error}")
+                    # Fallback to placeholder
+                    predictions.append({
+                        'game_id': str(game.get('game_id', '')),
+                        'matchup': f"{to_full(away_team)} @ {to_full(home_team)}",
+                        'prediction': 'Error',
+                        'confidence': 0.5,
+                        'confidence_level': 'Error',
+                        'game_date': str(game_date),
+                        'game_time': str(game.get('start_time_local', 'TBD'))[:5],
+                        'model_used': False
+                    })
+            else:
+                # Fallback if model not loaded
+                predictions.append({
+                    'game_id': str(game.get('game_id', '')),
+                    'matchup': f"{to_full(away_team)} @ {to_full(home_team)}",
+                    'prediction': 'Model not loaded',
+                    'confidence': 0.5,
+                    'confidence_level': 'N/A',
+                    'game_date': str(game_date),
+                    'game_time': str(game.get('start_time_local', 'TBD'))[:5],
+                    'model_used': False
+                })
+
         return jsonify(predictions)
-        
+
     except Exception as e:
         print(f"Predictions error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify([])
 
 @app.route('/api/games')
