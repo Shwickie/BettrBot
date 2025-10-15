@@ -14,26 +14,74 @@ from datetime import datetime
 import warnings 
 from pathlib import Path
 import os, pickle, logging
-warnings.filterwarnings('ignore')
-
 from sqlalchemy import create_engine
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# ---------- Paths ----------
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MODEL = REPO_ROOT / "models" / "betting_model_fixed.pkl"
-MODEL_PATH = Path(os.environ.get("BETTR_MODEL_PKL", str(DEFAULT_MODEL)))
+warnings.filterwarnings('ignore')
 
-# ---------- Database ----------
-# Prefer cloud DB if provided; otherwise local SQLite
-DATABASE_URL = (
-    os.environ.get("DATABASE_URL")
-    or os.environ.get("BETTR_DB_PATH")  # optional custom local path
-    or f"sqlite:///{(REPO_ROOT / 'data' / 'betting.db')}"
-)
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
+# Get repo root
+REPO_ROOT = Path(__file__).parent
+while not (REPO_ROOT / '.git').exists() and REPO_ROOT.parent != REPO_ROOT:
+    REPO_ROOT = REPO_ROOT.parent
+
+
+
+# Database configuration
+# SIMPLIFIED DATABASE SETUP
+# FIXED: Use Transaction Pooler (IPv4 compatible)
+# FIXED: Use Session Pooler (IPv4 + port 5432)
+# SIMPLIFIED DATABASE SETUP
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway")
+
+# CRITICAL: Force cloud database usage
+USE_CLOUD_DB = True
+
+if USE_CLOUD_DB:
+    print(f"Using Railway database: {DATABASE_URL[:60]}...")
+    
+    ENGINE = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_recycle=280,
+        pool_size=2,
+        max_overflow=3,
+        connect_args={
+            "client_encoding": "utf8",
+            "client_encoding": "utf8",
+            "client_encoding": "utf8",
+            "connect_timeout": 20,
+            "application_name": "bettr-bot",
+        }
+    )
+    
+    print("✅ Using Railway PostgreSQL")
+    engine = ENGINE
+
+# Model path configuration
+MODEL_PATH = None
+model_candidates = [
+    os.environ.get("BETTR_MODEL_PKL"),
+    os.path.join(os.getcwd(), "betting_model_fixed.pkl"),
+    os.path.join(os.path.dirname(__file__), "betting_model_fixed.pkl"),
+    os.path.join(REPO_ROOT, "models", "betting_model_fixed.pkl"),
+    os.path.join(REPO_ROOT, "dashboard", "betting_model_fixed.pkl"),
+
+    # NEW: standard .pkl candidates to match your dashboard
+    os.path.join(os.getcwd(), "betting_model.pkl"),
+    os.path.join(os.path.dirname(__file__), "betting_model.pkl"),
+    os.path.join(REPO_ROOT, "models", "betting_model.pkl"),
+    os.path.join(REPO_ROOT, "dashboard", "betting_model.pkl"),
+]
+
+
+for candidate in model_candidates:
+    if candidate and os.path.exists(candidate):
+        MODEL_PATH = Path(candidate)
+        break
+
+
 
 class FixedNFLSystem:
     """Your complete prediction system with pipeline compatibility added"""
@@ -101,24 +149,53 @@ class FixedNFLSystem:
     
     def load_model(self) -> None:
         try:
-            if not MODEL_PATH.exists():
-                logger.warning(f"Model file not found at {MODEL_PATH} — running with statistical fallback.")
-                self.model_pack = None
+            if not MODEL_PATH or not MODEL_PATH.exists():
+                print(f"CRITICAL: Model file not found at {MODEL_PATH}")
+                self.model_data = None
                 return
 
+            print(f"Loading model from: {MODEL_PATH}")
             with MODEL_PATH.open("rb") as f:
-                self.model_pack = pickle.load(f)
+                self.model_data = pickle.load(f)
 
-            self.model = self.model_pack.get("model")
-            self.scaler = self.model_pack.get("scaler")
-            self.feature_cols = self.model_pack.get("feature_cols", [])
-            self.model_data = self.model_pack.get("model_data", {})
-            logger.info(f"Loaded model pack from {MODEL_PATH}")
+            # Validate required keys exist
+            if 'model' not in self.model_data:
+                print("CRITICAL: Model pack missing required key 'model'")
+                self.model_data = None
+                return
+
+            self.model  = self.model_data.get("model")
+            self.scaler = self.model_data.get("scaler")
+            self._hydrate_feature_cols()  # <- ensures feature_cols exists
+
+            
+            print(f"SUCCESS: Loaded model pack from {MODEL_PATH}")
+            print(f"  Features: {len(self.feature_cols)}")
+            print(f"  Model type: {type(self.model)}")
+            
         except Exception as e:
-            # If a pandas mismatch ever reappears, your pinned versions in requirements fix it.
-            logger.exception(f"Failed to load model from {MODEL_PATH}: {e}")
-            self.model_pack = None
-        
+            print(f"CRITICAL: Failed to load model from {MODEL_PATH}: {e}")
+            import traceback
+            traceback.print_exc()
+            self.model_data = None
+
+    def _hydrate_feature_cols(self):
+        """Guarantee self.model_data['feature_cols'] exists."""
+        md = self.model_data or {}
+        model = md.get('model')
+
+        cols = md.get('feature_cols') or md.get('features')
+        if not cols and hasattr(model, 'feature_names_in_'):
+            cols = list(model.feature_names_in_)
+        if not cols:
+            cols = []  # last-resort; we will fall back to all numeric features at predict time
+
+        md['feature_cols'] = list(cols)
+        self.model_data = md
+        self.feature_cols = md['feature_cols']
+
+
+
     def load_team_data(self):
         """Your existing team data loading logic"""
         try:
@@ -234,6 +311,8 @@ class FixedNFLSystem:
     
     def predict_game(self, home_team, away_team, game_date=None):
         """Your existing prediction logic"""
+        if not self.model_data or not self.model_data.get('model'):
+            raise RuntimeError("Model not loaded - cannot make predictions")
         as_of = pd.to_datetime(game_date) if game_date else pd.Timestamp.utcnow()
         home_features = self.get_team_features(home_team)
         away_features = self.get_team_features(away_team)
@@ -271,19 +350,21 @@ class FixedNFLSystem:
             'home_rest_days': 7, 'away_rest_days': 7, 'same_division': 0, 'same_conference': 0
         })
         
-        feature_cols = self.model_data['feature_cols']
-        X_values = []
-        
-        for col in feature_cols:
-            X_values.append(feature_dict.get(col, 0.0))
-        
-        X_df = pd.DataFrame([X_values], columns=feature_cols)
-        
-        if self.model_data.get('uses_scaled', False):
-            X_df = pd.DataFrame(
-                self.model_data['scaler'].transform(X_df),
-                columns=feature_cols
-            )
+        feature_cols = self.model_data.get('feature_cols', [])
+        if feature_cols:
+            # strict ordering; fill missing with 0.0
+            X_df = pd.DataFrame([{col: feature_dict.get(col, 0.0) for col in feature_cols}])
+        else:
+            # fallback: use whatever numeric features we have
+            X_df = pd.DataFrame([feature_dict]).select_dtypes(include=['number'])
+            feature_cols = X_df.columns.tolist()
+
+        # ensure numeric dtype
+        X_df = X_df.astype(float)
+
+        if self.model_data.get('uses_scaled', False) and self.model_data.get('scaler') is not None:
+            X_df = pd.DataFrame(self.model_data['scaler'].transform(X_df), columns=feature_cols)
+
         
         model = self.model_data['model']
         home_win_prob = float(model.predict_proba(X_df)[0, 1])
@@ -589,15 +670,22 @@ class FixedNFLSystem:
                 winner_abbrev = pred['home_team_abbrev'] if pred['predicted_winner'] == pred['home_team'] else pred['away_team_abbrev']
                 confidence = pred['confidence']
                 
-                print(f"{game['game_date'][:10]} | {away_abbrev:3} @ {home_abbrev:3} | {winner_abbrev:3} wins | {confidence:.1%} confidence")
+                # FIXED: Handle date object properly
+                game_date_str = str(game['game_date']) if hasattr(game['game_date'], 'strftime') else str(game['game_date'])[:10]
+                
+                print(f"{game_date_str[:10]} | {away_abbrev:3} @ {home_abbrev:3} | {winner_abbrev:3} wins | {confidence:.1%} confidence")
                 predictions_made += 1
                 
             except Exception as e:
-                print(f"{game['game_date'][:10]} | {game['away_team']:3} @ {game['home_team']:3} | Error: {str(e)[:30]}")
+                # FIXED: Handle date object in error case too
+                game_date_str = str(game['game_date']) if hasattr(game['game_date'], 'strftime') else str(game['game_date'])
+                away_team_str = str(game.get('away_team', 'UNK'))
+                home_team_str = str(game.get('home_team', 'UNK'))
+                
+                print(f"{game_date_str[:10]} | {away_team_str[:3]} @ {home_team_str[:3]} | Error: {str(e)[:30]}")
         
         print(f"\nMade {predictions_made} predictions")
         return True
-
 
 def is_running_in_pipeline():
     """NEW: Check if we're running in a non-interactive environment (pipeline)"""

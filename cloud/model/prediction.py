@@ -55,9 +55,22 @@ if USE_CLOUD_DB:
             "application_name": "bettr-bot",
         }
     )
+    engine = ENGINE
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_recycle=280,
+        pool_size=2,
+        max_overflow=3,
+        connect_args={
+            "client_encoding": "utf8",
+            "client_encoding": "utf8",
+            "client_encoding": "utf8",
+            "connect_timeout": 20,
+            "application_name": "bettr-bot",
+        }
+    )
     
     print("✅ Using Railway PostgreSQL")
-    engine = ENGINE
 
 # Model path configuration
 MODEL_PATH = None
