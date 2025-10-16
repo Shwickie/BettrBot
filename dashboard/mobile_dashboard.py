@@ -877,10 +877,10 @@ def api_predictions():
     for _, g in games.iterrows():
         try:
             if ml_system:
-                # Use ML model predictions - this should match your FixedNFLSystem output
+                # Use ML model predictions - convert to full team names first
                 prediction_result = ml_system.predict_game(
-                    home_team=g['home'],
-                    away_team=g['away'],
+                    home_team=to_full(g['home']),
+                    away_team=to_full(g['away']),
                     game_date=g['game_date']
                 )
                 
