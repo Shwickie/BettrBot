@@ -291,6 +291,9 @@ class FixedNFLSystem:
     def get_team_features(self, team_name, as_of=None, window=8):
         """Your existing team features logic"""
         team = self.normalize_team_name(team_name)
+        # Convert back to full name for database query since games table uses full names
+        team_full = team_name if not self.normalize_team_name(team_name) == team else team_name
+
         if as_of is None:
             as_of = pd.Timestamp.utcnow().normalize()
         else:
@@ -334,7 +337,7 @@ class FixedNFLSystem:
             }
 
         with eng.connect() as conn:
-            df = pd.read_sql(sql, conn, params={"t": team, "as_of": as_of.date(), "lim": int(window)})
+            df = pd.read_sql(sql, conn, params={"t": team_full, "as_of": as_of.date(), "lim": int(window)})
 
         if df.empty or df.isna().all().all():
             row = self.team_power_data[self.team_power_data['team'] == team]
