@@ -49,5 +49,13 @@ stats/injury_data_backup.csv
 tools/chromedriver-win64/
 tools/chromedriver-win64.zip
 
+# Model files (regenerated at build time)
+*.pkl
+models/*.pkl
+dashboard/*.pkl
+cloud/*.pkl
+cloud/dashboard/*.pkl
+cloud/models/*.pkl
+
 # misc
 Chat gpt pics/

@@ -10,8 +10,9 @@ services:
       python --version
       pip install --upgrade pip
       pip install -r requirements.txt
-      echo "Checking model compatibility..."
-      python src/fix_model_on_startup.py || echo "Model fix attempted"
+      echo "Generating production model with current pandas version..."
+      python generate_model_production.py
+      echo "Model generation complete"
     startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 300 --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
@@ -34,6 +35,7 @@ services:
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
+      python generate_model_production.py
     startCommand: python cloud/cloud_run_all.py
     schedule: "0 */4 * * *"
     envVars:
@@ -55,6 +57,7 @@ services:
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
+      python generate_model_production.py
     startCommand: python cloud/cloud_run_all.py
     schedule: "0 3 * * *"
     envVars:
