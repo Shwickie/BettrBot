@@ -1874,11 +1874,16 @@ def api_predictions():
             # 1) Try ML path
             if ml_system:
                 try:
+                    home_full = to_full(g['home'])
+                    away_full = to_full(g['away'])
+                    print(f"🔍 Attempting ML prediction: {away_full} @ {home_full}")
+
                     prediction_result = ml_system.predict_game(
-                        home_team=to_full(g['home']),
-                        away_team=to_full(g['away']),
+                        home_team=home_full,
+                        away_team=away_full,
                         game_date=str(g['game_date'])
                     )
+                    print(f"✅ ML prediction succeeded for {away_full} @ {home_full}")
                     home_win_prob = float(prediction_result.get('home_win_probability', 0.5))
                     away_win_prob = 1.0 - home_win_prob
                     pick_abbr = g['home'] if home_win_prob >= away_win_prob else g['away']
