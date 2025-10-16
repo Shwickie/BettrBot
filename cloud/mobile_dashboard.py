@@ -89,12 +89,25 @@ engine = ENGINE
 DB_PATH = DATABASE_URL if USE_CLOUD_DB else DEFAULT_DB
 
 
-try:
-    from model.prediction import FixedNFLSystem
-    print("Successfully imported FixedNFLSystem from model.prediction")
-except ImportError as e:
-    print(f"Warning: Could not import FixedNFLSystem: {e}")
-    FixedNFLSystem = None
+# Lazy-import FixedNFLSystem to avoid module-level psycopg2 issues
+FixedNFLSystem = None
+_import_attempted = False
+
+def _try_import_fixed_nfl_system():
+    """Lazy-import FixedNFLSystem to avoid module-level database connection issues"""
+    global FixedNFLSystem, _import_attempted
+    if not _import_attempted:
+        _import_attempted = True
+        try:
+            from model.prediction import FixedNFLSystem as NFL
+            FixedNFLSystem = NFL
+            print("✅ Successfully imported FixedNFLSystem from model.prediction")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not import FixedNFLSystem: {e}")
+            import traceback
+            traceback.print_exc()
+            FixedNFLSystem = None
+    return FixedNFLSystem
 
 try:
     from model.ai_tools import list_value_bets
@@ -538,19 +551,33 @@ _ml_prediction_system = None
 
 def get_ml_prediction_system():
     global _ml_prediction_system
-    if _ml_prediction_system is None and FixedNFLSystem is not None:
+
+    # First, try to lazy-import the class if not already attempted
+    nfl_class = _try_import_fixed_nfl_system()
+
+    if _ml_prediction_system is None and nfl_class is not None:
         try:
-            _ml_prediction_system = FixedNFLSystem()
+            print("🔄 Initializing ML Prediction System...")
+            _ml_prediction_system = nfl_class()
             # Harden the pack so downstream code can always use ['model'] safely
             _normalize_model_pack(_ml_prediction_system)
 
             # keep your existing prints
-            print("ML Prediction System initialized successfully")
+            print("✅ ML Prediction System initialized successfully")
             md = _ml_prediction_system.model_data or {}
             auc = md.get("model_metrics", {}).get("RandomForest", {}).get("auc", "Unknown")
             print(f"  Model AUC: {auc}")
+
+            # Verify model is actually loaded
+            if md.get("model"):
+                print(f"  ✅ Model loaded: {type(md.get('model')).__name__}")
+            else:
+                print(f"  ⚠️ Warning: model_data exists but 'model' key is missing")
+
         except Exception as e:
-            print(f"Failed to initialize ML prediction system: {e}")
+            print(f"❌ Failed to initialize ML prediction system: {e}")
+            import traceback
+            traceback.print_exc()
             _ml_prediction_system = None
     return _ml_prediction_system
 
