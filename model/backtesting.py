@@ -1,5 +1,6 @@
 import sys
 import os
+import math
 sys.path.append('E:/Bettr Bot/betting-bot/')  # Add your project root to path
 
 import sqlite3
@@ -42,9 +43,7 @@ def comprehensive_backtest(db_path, start_date, end_date, min_edge=0.03):
     
     # Try to import your BettingAI
     try:
-        # First try the direct import
-        sys.path.append('E:/Bettr Bot/betting-bot/dashboard/')
-        from ai_chat_stub import BettingAI
+        from dashboard.ai_chat_stub import BettingAI
         ai = BettingAI(db_path)
         print("✓ Using ML model from ai_chat_stub")
         use_ai_model = True
@@ -210,8 +209,7 @@ def diagnose_system_inconsistencies():
     
     # Check AI chat import
     try:
-        sys.path.append('E:/Bettr Bot/betting-bot/dashboard/')
-        from ai_chat_stub import BettingAI
+        from dashboard.ai_chat_stub import BettingAI
         print("✓ AI chat module imports successfully")
     except Exception as e:
         print(f"✗ AI chat import error: {e}")

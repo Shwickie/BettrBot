@@ -16,10 +16,11 @@ import pickle
 import json
 import time
 import logging
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pandas as pd
 import numpy as np
@@ -46,7 +47,10 @@ try:
     OPENAI_AVAILABLE = True
 except Exception:
     OPENAI_AVAILABLE = False
-    OpenAI = None  # type: ignore
+    if TYPE_CHECKING:
+        from openai import OpenAI
+    else:
+        OpenAI = None  # type: ignore
 try:
     from model.prediction import FixedNFLSystem
     FIXED_NFL_SYSTEM_AVAILABLE = True
