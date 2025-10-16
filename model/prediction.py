@@ -157,33 +157,53 @@ class FixedNFLSystem:
         try:
             if not MODEL_PATH or not MODEL_PATH.exists():
                 print(f"CRITICAL: Model file not found at {MODEL_PATH}")
+                print(f"  Searched paths: {model_candidates}")
                 self.model_data = None
+                self.model = None
                 return
 
             print(f"Loading model from: {MODEL_PATH}")
             with MODEL_PATH.open("rb") as f:
                 self.model_data = pickle.load(f)
 
+            # Debug: Print what's in model_data
+            if isinstance(self.model_data, dict):
+                print(f"  Model data keys: {list(self.model_data.keys())}")
+            else:
+                print(f"  Model data type: {type(self.model_data)}")
+
             # Validate required keys exist
-            if 'model' not in self.model_data:
+            if not isinstance(self.model_data, dict) or 'model' not in self.model_data:
                 print("CRITICAL: Model pack missing required key 'model'")
+                print(f"  Available keys: {list(self.model_data.keys()) if isinstance(self.model_data, dict) else 'Not a dict'}")
                 self.model_data = None
+                self.model = None
                 return
 
             self.model  = self.model_data.get("model")
             self.scaler = self.model_data.get("scaler")
+
+            # Critical validation: Ensure model is not None
+            if self.model is None:
+                print("CRITICAL: Model loaded but self.model is None!")
+                print(f"  model_data['model'] = {self.model_data.get('model')}")
+                self.model_data = None
+                return
+
             self._hydrate_feature_cols()  # <- ensures feature_cols exists
 
-            
-            print(f"SUCCESS: Loaded model pack from {MODEL_PATH}")
+
+            print(f"✅ SUCCESS: Loaded model pack from {MODEL_PATH}")
             print(f"  Features: {len(self.feature_cols)}")
-            print(f"  Model type: {type(self.model)}")
-            
+            print(f"  Model type: {type(self.model).__name__}")
+            print(f"  Has predict_proba: {hasattr(self.model, 'predict_proba')}")
+
         except Exception as e:
-            print(f"CRITICAL: Failed to load model from {MODEL_PATH}: {e}")
+            print(f"❌ CRITICAL: Failed to load model from {MODEL_PATH}: {e}")
             import traceback
             traceback.print_exc()
             self.model_data = None
+            self.model = None
 
     def _hydrate_feature_cols(self):
         """Guarantee self.model_data['feature_cols'] exists."""
@@ -340,8 +360,14 @@ class FixedNFLSystem:
     
     def predict_game(self, home_team, away_team, game_date=None):
         """Your existing prediction logic"""
-        if not self.model_data or not self.model_data.get('model'):
-            raise RuntimeError("Model not loaded - cannot make predictions")
+        if not self.model_data:
+            raise RuntimeError("Model data not loaded - model_data is None")
+
+        if not self.model:
+            raise RuntimeError(f"Model object is None. model_data keys: {list(self.model_data.keys()) if isinstance(self.model_data, dict) else 'Not a dict'}")
+
+        if not hasattr(self.model, 'predict_proba'):
+            raise RuntimeError(f"Model does not have predict_proba method. Model type: {type(self.model).__name__}")
         as_of = pd.to_datetime(game_date) if game_date else pd.Timestamp.utcnow()
         home_features = self.get_team_features(home_team)
         away_features = self.get_team_features(away_team)
