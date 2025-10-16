@@ -1766,22 +1766,53 @@ def debug_games_check():
         return jsonify({'error': str(e)})
     
 @app.route('/api/debug/ai-status')
-@login_required  
+@login_required
 def debug_ai_status():
     """Check AI system status"""
     try:
         ml_system = get_ml_prediction_system()
-        return jsonify({
+
+        result = {
             'ml_system_available': ml_system is not None,
             'ml_system_type': type(ml_system).__name__ if ml_system else None,
             'has_model_data': hasattr(ml_system, 'model_data') if ml_system else False,
-            'model_data_keys': list(ml_system.model_data.keys()) if ml_system and hasattr(ml_system, 'model_data') and ml_system.model_data else [],
             'error': None
-        })
+        }
+
+        if ml_system:
+            # Check model_data structure
+            if hasattr(ml_system, 'model_data') and ml_system.model_data:
+                result['model_data_keys'] = list(ml_system.model_data.keys()) if isinstance(ml_system.model_data, dict) else 'Not a dict'
+                result['model_data_type'] = str(type(ml_system.model_data))
+
+                # Check if 'model' key exists and what it contains
+                if isinstance(ml_system.model_data, dict):
+                    model_obj = ml_system.model_data.get('model')
+                    result['has_model_key'] = 'model' in ml_system.model_data
+                    result['model_obj_type'] = str(type(model_obj)) if model_obj is not None else 'None'
+                    result['model_is_none'] = model_obj is None
+
+                    if model_obj:
+                        result['model_has_predict_proba'] = hasattr(model_obj, 'predict_proba')
+            else:
+                result['model_data_keys'] = []
+                result['model_data_is_none'] = ml_system.model_data is None
+
+            # Check model attribute
+            if hasattr(ml_system, 'model'):
+                result['has_model_attr'] = True
+                result['model_attr_type'] = str(type(ml_system.model)) if ml_system.model is not None else 'None'
+                result['model_attr_is_none'] = ml_system.model is None
+            else:
+                result['has_model_attr'] = False
+
+        return jsonify(result)
     except Exception as e:
+        import traceback
         return jsonify({
             'ml_system_available': False,
-            'error': str(e)
+            'error': str(e),
+            'traceback': traceback.format_exc()
         })
 # ======================
 # API: /api/predictions
