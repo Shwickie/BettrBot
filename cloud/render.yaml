@@ -10,19 +10,9 @@ services:
       python --version
       pip install --upgrade pip
       pip install -r requirements.txt
-      python -c "
-      import pickle, numpy as np, os
-      from sklearn.ensemble import RandomForestClassifier
-      if not os.path.exists('./betting_model_fixed.pkl'):
-          print('Creating fallback model...')
-          model = RandomForestClassifier(n_estimators=10, random_state=42)
-          X = np.random.randn(50, 20)
-          y = np.random.randint(0, 2, 50)
-          model.fit(X, y)
-          with open('./betting_model_fixed.pkl', 'wb') as f:
-              pickle.dump({'model': model, 'feature_cols': [f'f{i}' for i in range(20)], 'scaler': None}, f)
-          print('Fallback model created')
-      "
+      echo "Generating production model with current pandas version..."
+      python generate_model_production.py
+      echo "Model generation complete"
     startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 300 --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
@@ -45,6 +35,7 @@ services:
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
+      python generate_model_production.py
     startCommand: python cloud/cloud_run_all.py
     schedule: "0 */4 * * *"
     envVars:
@@ -66,6 +57,7 @@ services:
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
+      python generate_model_production.py
     startCommand: python cloud/cloud_run_all.py
     schedule: "0 3 * * *"
     envVars:
