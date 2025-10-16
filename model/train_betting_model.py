@@ -21,8 +21,13 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, roc_auc_score, log_loss
 from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 
-DB_PATH   = r"E:/Bettr Bot/betting-bot/data/betting.db"
-MODEL_DIR = r"E:/Bettr Bot/betting-bot/models/"
+# Determine paths based on environment
+if os.path.exists("/opt/render/project/src"):  # Render environment
+    DB_PATH = "/opt/render/project/src/data/betting.db"
+    MODEL_DIR = "/opt/render/project/src/"
+else:  # Local development
+    DB_PATH   = r"E:/Bettr Bot/betting-bot/data/betting.db"
+    MODEL_DIR = r"E:/Bettr Bot/betting-bot/models/"
 
 # Configurable parameters
 PRICE_AGGREGATION = "median"   # "median" (conservative) or "best" (optimistic)
