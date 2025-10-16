@@ -1906,7 +1906,9 @@ def api_predictions():
                     })
                     continue  # success → next game
                 except Exception as e:
-                    print(f"FixedNFLSystem failed: {e}")
+                    print(f"FixedNFLSystem failed for {g['away']} @ {g['home']}: {e}")
+                    import traceback
+                    traceback.print_exc()
 
             # 2) Fallback path
             try:
