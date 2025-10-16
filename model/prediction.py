@@ -291,8 +291,8 @@ class FixedNFLSystem:
     def get_team_features(self, team_name, as_of=None, window=8):
         """Your existing team features logic"""
         team = self.normalize_team_name(team_name)
-        # Convert back to full name for database query since games table uses full names
-        team_full = team_name if not self.normalize_team_name(team_name) == team else team_name
+        # Use the original full team name for database queries since games table stores full names
+        team_full = team_name  # This is already the full name from the caller
 
         if as_of is None:
             as_of = pd.Timestamp.utcnow().normalize()
