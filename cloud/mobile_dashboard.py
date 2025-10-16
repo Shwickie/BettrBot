@@ -1985,26 +1985,49 @@ def to_full(name: str | None) -> str:
 def debug_predictions():
     """Debug endpoint to verify ML model integration"""
     ml_system = get_ml_prediction_system()
-    
+
     if not ml_system:
         return jsonify({"error": "ML system not available"})
-    
+
+    # Detailed model check before attempting prediction
+    debug_info = {
+        "ml_system_available": True,
+        "has_model_data": hasattr(ml_system, 'model_data'),
+        "has_model_attr": hasattr(ml_system, 'model'),
+    }
+
+    if hasattr(ml_system, 'model_data'):
+        md = ml_system.model_data
+        debug_info["model_data_is_none"] = md is None
+        if md:
+            debug_info["model_data_keys"] = list(md.keys()) if isinstance(md, dict) else "not a dict"
+            if isinstance(md, dict) and 'model' in md:
+                debug_info["model_in_dict_is_none"] = md['model'] is None
+                debug_info["model_in_dict_type"] = str(type(md['model']))
+
+    if hasattr(ml_system, 'model'):
+        debug_info["model_attr_is_none"] = ml_system.model is None
+        debug_info["model_attr_type"] = str(type(ml_system.model))
+
     # Test with a simple game prediction
     try:
         sample_prediction = ml_system.predict_game("Philadelphia Eagles", "Dallas Cowboys")
-        return jsonify({
-            "ml_system_available": True,
+        debug_info.update({
+            "prediction_success": True,
             "model_auc": ml_system.model_data.get('model_metrics', {}).get('RandomForest', {}).get('auc', 'Unknown'),
             "feature_count": len(ml_system.model_data.get('feature_cols', [])),
             "sample_prediction": sample_prediction,
             "team_power_data_count": len(ml_system.team_power_data) if ml_system.team_power_data is not None else 0
         })
+        return jsonify(debug_info)
     except Exception as e:
-        return jsonify({
+        import traceback
+        debug_info.update({
             "error": str(e),
-            "ml_system_available": True,
+            "traceback": traceback.format_exc(),
             "initialization_error": True
         })
+        return jsonify(debug_info)
 
 
 # =============================
