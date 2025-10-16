@@ -12,14 +12,27 @@ import os, json
 import warnings
 warnings.filterwarnings('ignore')
 
-# Import the prediction system
-try:
-    from model.prediction import FixedNFLSystem
-    prediction_system = FixedNFLSystem()
-    print("✅ Loaded prediction system with trained model")
-except Exception as e:
-    print(f"⚠️ Warning: Could not load prediction system: {e}")
-    prediction_system = None
+# Import the prediction system - lazy initialization
+prediction_system = None
+
+def get_prediction_system():
+    """Lazy-load the prediction system to avoid import-time errors"""
+    global prediction_system
+    if prediction_system is None:
+        try:
+            from model.prediction import FixedNFLSystem
+            print("Initializing prediction system...")
+            prediction_system = FixedNFLSystem()
+            if prediction_system.model_data:
+                print("✅ Loaded prediction system with trained model")
+            else:
+                print("⚠️ Prediction system loaded but model data is missing")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not load prediction system: {e}")
+            import traceback
+            traceback.print_exc()
+            prediction_system = None
+    return prediction_system
 
 # Database setup
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -225,9 +238,10 @@ def api_predictions():
             game_date = game.get('game_date', '')
 
             # Use the trained model if available
-            if prediction_system and prediction_system.model_data:
+            pred_sys = get_prediction_system()
+            if pred_sys and pred_sys.model_data:
                 try:
-                    pred = prediction_system.predict_game(home_team, away_team, game_date)
+                    pred = pred_sys.predict_game(home_team, away_team, game_date)
 
                     # Extract prediction details
                     predicted_winner = pred['predicted_winner']

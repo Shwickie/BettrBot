@@ -38,26 +38,32 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://postgres:QA
 # CRITICAL: Force cloud database usage
 USE_CLOUD_DB = True
 
-if USE_CLOUD_DB:
-    print(f"Using Railway database: {DATABASE_URL[:60]}...")
-    
-    ENGINE = create_engine(
-        DATABASE_URL,
-        pool_pre_ping=True,
-        pool_recycle=280,
-        pool_size=2,
-        max_overflow=3,
-        connect_args={
-            "client_encoding": "utf8",
-            "client_encoding": "utf8",
-            "client_encoding": "utf8",
-            "connect_timeout": 20,
-            "application_name": "bettr-bot",
-        }
-    )
-    
-    print("✅ Using Railway PostgreSQL")
-    engine = ENGINE
+# Lazy-load engine to avoid psycopg2 import issues
+engine = None
+
+def get_engine():
+    """Lazy-load database engine only when needed"""
+    global engine
+    if engine is None and USE_CLOUD_DB:
+        try:
+            print(f"Initializing database engine: {DATABASE_URL[:60]}...")
+            engine = create_engine(
+                DATABASE_URL,
+                pool_pre_ping=True,
+                pool_recycle=280,
+                pool_size=2,
+                max_overflow=3,
+                connect_args={
+                    "client_encoding": "utf8",
+                    "connect_timeout": 20,
+                    "application_name": "bettr-bot",
+                }
+            )
+            print("✅ Database engine initialized")
+        except Exception as e:
+            print(f"⚠️ Could not create database engine: {e}")
+            engine = None
+    return engine
 
 # Model path configuration
 MODEL_PATH = None
@@ -199,7 +205,13 @@ class FixedNFLSystem:
     def load_team_data(self):
         """Your existing team data loading logic"""
         try:
-            with engine.connect() as conn:
+            eng = get_engine()
+            if not eng:
+                print("Warning: No database engine - using defaults")
+                self._create_default_team_data()
+                return
+
+            with eng.connect() as conn:
                 query = text("""
                     SELECT team, power_score, wins, losses, win_pct,
                            avg_points_for, avg_points_against, point_diff, season
@@ -283,8 +295,25 @@ class FixedNFLSystem:
             AVG(pf - pa)                                     AS pd_pre
             FROM plays;
         """)
-        
-        with engine.connect() as conn:
+
+        eng = get_engine()
+        if not eng:
+            # Fallback to team power data if no database
+            row = self.team_power_data[self.team_power_data['team'] == team]
+            if row.empty:
+                return {'wpct_pre':0.5,'pf_pre':22.0,'pa_pre':22.0,'pd_pre':0.0,'power_pre':0.0,'form':0.5,'streak':0}
+            r = row.iloc[0]
+            return {
+                'wpct_pre': float(r.get('win_pct', 0.5)),
+                'pf_pre': float(r.get('avg_points_for', 22.0)),
+                'pa_pre': float(r.get('avg_points_against', 22.0)),
+                'pd_pre': float(r.get('point_diff', 0.0)),
+                'power_pre': float(r.get('power_score', 0.0)),
+                'form': float(r.get('win_pct', 0.5)),
+                'streak': 0
+            }
+
+        with eng.connect() as conn:
             df = pd.read_sql(sql, conn, params={"t": team, "as_of": as_of.date(), "lim": int(window)})
 
         if df.empty or df.isna().all().all():
@@ -422,7 +451,11 @@ class FixedNFLSystem:
         home_norm = self.normalize_team_name(home_team)
         away_norm = self.normalize_team_name(away_team)
 
-        with engine.connect() as conn:
+        eng = get_engine()
+        if not eng:
+            return None
+
+        with eng.connect() as conn:
             odds = pd.read_sql(text("""
                 SELECT game_id as odds_game_id, sportsbook, team, market, odds, timestamp
                 FROM odds
@@ -550,7 +583,12 @@ class FixedNFLSystem:
     def get_upcoming_games(self):
         """Your existing upcoming games logic"""
         try:
-            with engine.connect() as conn:
+            eng = get_engine()
+            if not eng:
+                print("Warning: No database engine available")
+                return pd.DataFrame()
+
+            with eng.connect() as conn:
                 query = text("""
                     SELECT game_id, home_team, away_team, game_date, start_time_utc
                     FROM games
