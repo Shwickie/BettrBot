@@ -1766,7 +1766,7 @@ def debug_games_check():
         return jsonify({'error': str(e)})
     
 @app.route('/api/debug/ai-status')
-@login_required
+# Temporarily removed @login_required for debugging
 def debug_ai_status():
     """Check AI system status"""
     try:
@@ -1981,7 +1981,7 @@ def to_full(name: str | None) -> str:
 
 
 @app.route('/api/predictions/debug')
-@login_required  # Only for testing
+# Temporarily removed @login_required for debugging
 def debug_predictions():
     """Debug endpoint to verify ML model integration"""
     ml_system = get_ml_prediction_system()

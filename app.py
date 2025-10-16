@@ -14,16 +14,23 @@ if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from mobile_dashboard import app
-    print("Dashboard imported successfully")
+    # Import the full-featured cloud dashboard
+    from cloud.mobile_dashboard import app
+    print("✅ Cloud dashboard imported successfully")
 except ImportError as e:
-    print(f"Dashboard import failed: {e}")
-    from flask import Flask, jsonify
-    app = Flask(__name__)
-    
-    @app.route('/')
-    def fallback():
-        return jsonify({'error': 'Dashboard unavailable', 'message': str(e)})
+    print(f"⚠️ Cloud dashboard import failed: {e}")
+    try:
+        # Fallback to root mobile_dashboard
+        from mobile_dashboard import app
+        print("⚠️ Using fallback root dashboard")
+    except ImportError as e2:
+        print(f"❌ All dashboard imports failed: {e2}")
+        from flask import Flask, jsonify
+        app = Flask(__name__)
+
+        @app.route('/')
+        def fallback():
+            return jsonify({'error': 'Dashboard unavailable', 'message': str(e2)})
 
 @app.route('/health')
 def health():
