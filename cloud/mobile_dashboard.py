@@ -19,7 +19,8 @@ import sqlite3, os, json, threading, time
 import numpy as np
 import math
 import traceback
-from templates import LOGIN_TEMPLATE, HTML_TEMPLATE, AI_CHAT_TEMPLATE
+# CRITICAL: Use cloud.templates to get the version with ML Model display fix
+from cloud.templates import LOGIN_TEMPLATE, HTML_TEMPLATE, AI_CHAT_TEMPLATE
 import sys
 import os
 from flask import Blueprint
