@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, date
 import sqlite3, os, json, threading, time
 import numpy as np
 import math
+import traceback
 from templates import LOGIN_TEMPLATE, HTML_TEMPLATE, AI_CHAT_TEMPLATE
 import sys
 import os
@@ -3991,6 +3992,428 @@ def api_admin_wipe_deposits_withdrawals():
 @app.route("/healthz")
 def healthz():
     return {"ok": True}, 200
+
+@app.route('/diagnostic')
+def diagnostic_page():
+    """User-friendly HTML page showing system diagnostic"""
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Bettr Bot System Diagnostic</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                margin: 0;
+                padding: 20px;
+                min-height: 100vh;
+            }
+            .container {
+                max-width: 1200px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                padding: 30px;
+            }
+            h1 {
+                color: #333;
+                margin-top: 0;
+                border-bottom: 3px solid #667eea;
+                padding-bottom: 15px;
+            }
+            .status-box {
+                background: #f8f9fa;
+                border-left: 5px solid #ddd;
+                padding: 20px;
+                margin: 20px 0;
+                border-radius: 8px;
+            }
+            .status-box.success {
+                border-left-color: #28a745;
+                background: #d4edda;
+            }
+            .status-box.warning {
+                border-left-color: #ffc107;
+                background: #fff3cd;
+            }
+            .status-box.error {
+                border-left-color: #dc3545;
+                background: #f8d7da;
+            }
+            .section {
+                margin: 30px 0;
+            }
+            .section h2 {
+                color: #667eea;
+                font-size: 1.5em;
+                margin-bottom: 15px;
+            }
+            .info-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 15px;
+                margin-top: 15px;
+            }
+            .info-item {
+                background: #f8f9fa;
+                padding: 15px;
+                border-radius: 8px;
+                border: 1px solid #dee2e6;
+            }
+            .info-label {
+                font-weight: 600;
+                color: #666;
+                font-size: 0.9em;
+                margin-bottom: 5px;
+            }
+            .info-value {
+                color: #333;
+                font-size: 1.1em;
+            }
+            .badge {
+                display: inline-block;
+                padding: 4px 12px;
+                border-radius: 12px;
+                font-size: 0.85em;
+                font-weight: 600;
+            }
+            .badge-success {
+                background: #28a745;
+                color: white;
+            }
+            .badge-warning {
+                background: #ffc107;
+                color: #333;
+            }
+            .badge-error {
+                background: #dc3545;
+                color: white;
+            }
+            .code-block {
+                background: #f4f4f4;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 15px;
+                font-family: 'Courier New', monospace;
+                font-size: 0.9em;
+                overflow-x: auto;
+                margin-top: 10px;
+            }
+            .loading {
+                text-align: center;
+                padding: 40px;
+                color: #667eea;
+            }
+            .refresh-btn {
+                background: #667eea;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 1em;
+                font-weight: 600;
+                margin-top: 20px;
+            }
+            .refresh-btn:hover {
+                background: #5568d3;
+            }
+            ul {
+                margin: 10px 0;
+                padding-left: 20px;
+            }
+            li {
+                margin: 5px 0;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🔍 Bettr Bot System Diagnostic</h1>
+            <div id="content" class="loading">
+                <p>Loading diagnostic data...</p>
+            </div>
+            <button class="refresh-btn" onclick="loadDiagnostic()">🔄 Refresh Diagnostic</button>
+        </div>
+
+        <script>
+            function loadDiagnostic() {
+                document.getElementById('content').innerHTML = '<p class="loading">Loading diagnostic data...</p>';
+
+                fetch('/api/system-diagnostic')
+                    .then(response => response.json())
+                    .then(data => {
+                        displayDiagnostic(data);
+                    })
+                    .catch(error => {
+                        document.getElementById('content').innerHTML =
+                            '<div class="status-box error"><strong>Error loading diagnostic:</strong> ' + error + '</div>';
+                    });
+            }
+
+            function displayDiagnostic(data) {
+                const statusClass = data.system_status.using_ml ? 'success' : 'warning';
+
+                let html = `
+                    <div class="status-box ${statusClass}">
+                        <h2 style="margin-top:0;">${data.system_status.overall}</h2>
+                        <p><strong>Using ML Predictions:</strong> ${data.system_status.using_ml ? '✅ Yes' : '⚠️ No (using fallback)'}</p>
+                        ${data.system_status.issues ? '<p><strong>Issues:</strong><ul>' + data.system_status.issues.map(i => '<li>' + i + '</li>').join('') + '</ul></p>' : ''}
+                        <p style="font-size:0.9em; color:#666; margin-bottom:0;">Last checked: ${new Date(data.timestamp).toLocaleString()}</p>
+                    </div>
+
+                    <div class="section">
+                        <h2>🤖 ML Model Status</h2>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <div class="info-label">Model Available</div>
+                                <div class="info-value">${data.model_status.available ?
+                                    '<span class="badge badge-success">Yes</span>' :
+                                    '<span class="badge badge-error">No</span>'}</div>
+                            </div>
+                            ${data.model_status.class ? `
+                            <div class="info-item">
+                                <div class="info-label">Model Class</div>
+                                <div class="info-value">${data.model_status.class}</div>
+                            </div>` : ''}
+                            ${data.model_status.model_object ? `
+                            <div class="info-item">
+                                <div class="info-label">Model Object</div>
+                                <div class="info-value">${data.model_status.model_object}</div>
+                            </div>` : ''}
+                            ${data.model_status.feature_count ? `
+                            <div class="info-item">
+                                <div class="info-label">Feature Count</div>
+                                <div class="info-value">${data.model_status.feature_count} features</div>
+                            </div>` : ''}
+                            ${data.model_status.team_count ? `
+                            <div class="info-item">
+                                <div class="info-label">Teams Loaded</div>
+                                <div class="info-value">${data.model_status.team_count} teams</div>
+                            </div>` : ''}
+                            ${data.model_status.top_team ? `
+                            <div class="info-item">
+                                <div class="info-label">Top Team</div>
+                                <div class="info-value">${data.model_status.top_team.name} (${data.model_status.top_team.power.toFixed(1)})</div>
+                            </div>` : ''}
+                        </div>
+                        ${data.model_status.error ? '<div class="code-block" style="margin-top:15px;"><strong>Error:</strong><br>' + data.model_status.error + '</div>' : ''}
+                    </div>
+
+                    <div class="section">
+                        <h2>💾 Database Status</h2>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <div class="info-label">Connected</div>
+                                <div class="info-value">${data.database_status.connected ?
+                                    '<span class="badge badge-success">Yes</span>' :
+                                    '<span class="badge badge-error">No</span>'}</div>
+                            </div>
+                            ${data.database_status.total_games ? `
+                            <div class="info-item">
+                                <div class="info-label">Total Games</div>
+                                <div class="info-value">${data.database_status.total_games.toLocaleString()}</div>
+                            </div>` : ''}
+                            ${data.database_status.upcoming_games !== undefined ? `
+                            <div class="info-item">
+                                <div class="info-label">Upcoming Games</div>
+                                <div class="info-value">${data.database_status.upcoming_games}</div>
+                            </div>` : ''}
+                        </div>
+                        ${data.database_status.error ? '<div class="code-block" style="margin-top:15px;"><strong>Error:</strong><br>' + data.database_status.error + '</div>' : ''}
+                    </div>
+
+                    <div class="section">
+                        <h2>🎯 Prediction Test</h2>
+                        ${data.prediction_test.success ? `
+                        <div class="status-box success">
+                            <h3 style="margin-top:0;">✅ Test Prediction Successful</h3>
+                            <p><strong>Test Matchup:</strong> Buffalo Bills @ Kansas City Chiefs</p>
+                            <div class="info-grid">
+                                <div class="info-item">
+                                    <div class="info-label">Predicted Winner</div>
+                                    <div class="info-value">${data.prediction_test.result.predicted_winner}</div>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-label">Confidence</div>
+                                    <div class="info-value">${(data.prediction_test.result.confidence * 100).toFixed(1)}%</div>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-label">KC Win Prob</div>
+                                    <div class="info-value">${(data.prediction_test.result.home_win_prob * 100).toFixed(1)}%</div>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-label">BUF Win Prob</div>
+                                    <div class="info-value">${(data.prediction_test.result.away_win_prob * 100).toFixed(1)}%</div>
+                                </div>
+                            </div>
+                        </div>` : `
+                        <div class="status-box error">
+                            <h3 style="margin-top:0;">❌ Test Prediction Failed</h3>
+                            <p><strong>Error:</strong> ${data.prediction_test.error || 'Unknown error'}</p>
+                            ${data.prediction_test.traceback ? '<div class="code-block">' + data.prediction_test.traceback + '</div>' : ''}
+                        </div>`}
+                    </div>
+                `;
+
+                document.getElementById('content').innerHTML = html;
+            }
+
+            // Load on page load
+            loadDiagnostic();
+        </script>
+    </body>
+    </html>
+    """
+    return html
+
+@app.route('/api/system-diagnostic')
+def system_diagnostic():
+    """
+    Comprehensive diagnostic endpoint to verify ML prediction system
+    This will help identify if predictions are using the ML model or fallback
+    """
+    diagnostic = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "system_status": {},
+        "model_status": {},
+        "database_status": {},
+        "prediction_test": {}
+    }
+
+    # 1. Check ML System
+    try:
+        ml_system = get_ml_prediction_system()
+
+        if ml_system is None:
+            diagnostic["model_status"]["available"] = False
+            diagnostic["model_status"]["error"] = "get_ml_prediction_system() returned None"
+        else:
+            diagnostic["model_status"]["available"] = True
+            diagnostic["model_status"]["class"] = type(ml_system).__name__
+
+            # Check model_data
+            if hasattr(ml_system, 'model_data'):
+                md = ml_system.model_data
+                if md is None:
+                    diagnostic["model_status"]["model_data"] = "None"
+                elif isinstance(md, dict):
+                    diagnostic["model_status"]["model_data_keys"] = list(md.keys())
+
+                    if 'model' in md:
+                        model = md['model']
+                        if model is None:
+                            diagnostic["model_status"]["model_object"] = "None (CRITICAL ISSUE)"
+                        else:
+                            diagnostic["model_status"]["model_object"] = type(model).__name__
+                            diagnostic["model_status"]["has_predict_proba"] = hasattr(model, 'predict_proba')
+                    else:
+                        diagnostic["model_status"]["model_object"] = "Missing 'model' key"
+
+                    if 'feature_cols' in md:
+                        diagnostic["model_status"]["feature_count"] = len(md['feature_cols'])
+                        diagnostic["model_status"]["features"] = md['feature_cols'][:10]  # First 10
+
+                    if 'model_metrics' in md:
+                        diagnostic["model_status"]["metrics"] = md['model_metrics']
+                else:
+                    diagnostic["model_status"]["model_data"] = f"Unexpected type: {type(md).__name__}"
+
+            # Check team_power_data
+            if hasattr(ml_system, 'team_power_data'):
+                tpd = ml_system.team_power_data
+                if tpd is None or (hasattr(tpd, 'empty') and tpd.empty):
+                    diagnostic["model_status"]["team_power_data"] = "Empty or None"
+                else:
+                    diagnostic["model_status"]["team_count"] = len(tpd)
+                    if not tpd.empty:
+                        top_team = tpd.iloc[0]
+                        diagnostic["model_status"]["top_team"] = {
+                            "name": str(top_team.get('team', 'Unknown')),
+                            "power": float(top_team.get('power_score', 0))
+                        }
+    except Exception as e:
+        diagnostic["model_status"]["error"] = str(e)
+        diagnostic["model_status"]["traceback"] = traceback.format_exc()
+
+    # 2. Check Database
+    try:
+        conn = get_db()
+
+        # Count games
+        if USE_CLOUD_DB:
+            games_count = safe_query("SELECT COUNT(*) as cnt FROM games", {})
+            if not games_count.empty:
+                diagnostic["database_status"]["total_games"] = int(games_count.iloc[0]['cnt'])
+
+            upcoming = safe_query("""
+                SELECT COUNT(*) as cnt FROM games
+                WHERE game_date >= :today AND home_score IS NULL
+            """, {"today": datetime.utcnow().date()})
+            if not upcoming.empty:
+                diagnostic["database_status"]["upcoming_games"] = int(upcoming.iloc[0]['cnt'])
+        else:
+            diagnostic["database_status"]["backend"] = "sqlite"
+
+        diagnostic["database_status"]["connected"] = True
+    except Exception as e:
+        diagnostic["database_status"]["connected"] = False
+        diagnostic["database_status"]["error"] = str(e)
+
+    # 3. Test prediction
+    try:
+        ml_system = get_ml_prediction_system()
+
+        if ml_system:
+            # Try predicting a game
+            test_pred = ml_system.predict_game(
+                home_team="Kansas City Chiefs",
+                away_team="Buffalo Bills",
+                game_date="2024-10-20"
+            )
+
+            diagnostic["prediction_test"]["success"] = True
+            diagnostic["prediction_test"]["result"] = {
+                "predicted_winner": test_pred.get('predicted_winner'),
+                "confidence": float(test_pred.get('confidence', 0)),
+                "home_win_prob": float(test_pred.get('home_win_probability', 0)),
+                "away_win_prob": float(test_pred.get('away_win_probability', 0)),
+                "power_difference": float(test_pred.get('power_difference', 0))
+            }
+        else:
+            diagnostic["prediction_test"]["success"] = False
+            diagnostic["prediction_test"]["error"] = "ML system not available"
+    except Exception as e:
+        diagnostic["prediction_test"]["success"] = False
+        diagnostic["prediction_test"]["error"] = str(e)
+        diagnostic["prediction_test"]["traceback"] = traceback.format_exc()
+
+    # 4. Overall status
+    if diagnostic["model_status"].get("available") and \
+       diagnostic["model_status"].get("model_object") not in [None, "None", "None (CRITICAL ISSUE)", "Missing 'model' key"] and \
+       diagnostic["prediction_test"].get("success"):
+        diagnostic["system_status"]["overall"] = "✅ HEALTHY - ML predictions working"
+        diagnostic["system_status"]["using_ml"] = True
+    else:
+        diagnostic["system_status"]["overall"] = "⚠️ DEGRADED - Using fallback predictions"
+        diagnostic["system_status"]["using_ml"] = False
+
+        # Identify specific issues
+        issues = []
+        if not diagnostic["model_status"].get("available"):
+            issues.append("ML system not available")
+        if diagnostic["model_status"].get("model_object") in [None, "None", "None (CRITICAL ISSUE)", "Missing 'model' key"]:
+            issues.append("Model object is None or missing")
+        if not diagnostic["prediction_test"].get("success"):
+            issues.append("Prediction test failed")
+
+        diagnostic["system_status"]["issues"] = issues
+
+    return jsonify(diagnostic)
+
 @app.route('/api/health')
 def api_health():
     try:
