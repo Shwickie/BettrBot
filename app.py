@@ -11,18 +11,44 @@ if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
     os.environ['DATABASE_URL'] = DATABASE_URL
 
 # Add current directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+project_root = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, project_root)
+
+# Also add cloud directory if it exists
+cloud_path = os.path.join(project_root, 'cloud')
+if os.path.exists(cloud_path):
+    sys.path.insert(0, cloud_path)
+    print(f"✅ Added cloud directory to path: {cloud_path}")
 
 try:
-    # Import the full-featured cloud dashboard
+    # Try importing from cloud.mobile_dashboard first
+    print("🔍 Attempting to import from cloud.mobile_dashboard...")
     from cloud.mobile_dashboard import app
     print("✅ Cloud dashboard imported successfully")
 except ImportError as e:
     print(f"⚠️ Cloud dashboard import failed: {e}")
+    print(f"   Current directory: {os.getcwd()}")
+    print(f"   Project root: {project_root}")
+    print(f"   sys.path: {sys.path[:3]}")
+    print(f"   Files in project root: {os.listdir(project_root)[:10]}")
+
+    # Check if cloud directory exists
+    if os.path.exists(cloud_path):
+        print(f"   ✓ cloud/ directory exists")
+        cloud_files = os.listdir(cloud_path)
+        print(f"   Files in cloud/: {cloud_files[:10]}")
+        if 'mobile_dashboard.py' in cloud_files:
+            print(f"   ✓ cloud/mobile_dashboard.py exists")
+        else:
+            print(f"   ✗ cloud/mobile_dashboard.py NOT FOUND")
+    else:
+        print(f"   ✗ cloud/ directory NOT FOUND")
+
     try:
         # Fallback to root mobile_dashboard
+        print("🔍 Attempting fallback to root mobile_dashboard...")
         from mobile_dashboard import app
-        print("⚠️ Using fallback root dashboard")
+        print("✅ Using fallback root dashboard")
     except ImportError as e2:
         print(f"❌ All dashboard imports failed: {e2}")
         from flask import Flask, jsonify
