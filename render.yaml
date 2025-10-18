@@ -10,6 +10,9 @@ services:
       python --version
       pip install --upgrade pip
       pip install -r requirements.txt
+      echo "Clearing Python bytecode cache..."
+      find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+      find . -type f -name "*.pyc" -delete 2>/dev/null || true
       echo "Generating production model with current pandas version..."
       python generate_model_production.py
       echo "Model generation complete"

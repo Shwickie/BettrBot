@@ -1317,6 +1317,7 @@ AI_CHAT_TEMPLATE = r"""
 
 
 HTML_TEMPLATE = """
+<!-- TEMPLATE VERSION: cloud.templates v3.0.1 LOADED 2025-10-18 -->
 <!DOCTYPE html>
 <html lang=\"en\">
 <head>
