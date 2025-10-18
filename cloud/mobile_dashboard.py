@@ -1868,7 +1868,8 @@ def api_predictions():
     print(f"🤖 ML System Status:")
     print(f"   Available: {ml_system is not None}")
     if ml_system:
-        print(f"   Model Type: {type(ml_system.model_data.get('model'))}")
+        model_obj = ml_system.model_data.get('model') if isinstance(ml_system.model_data, dict) else None
+        print(f"   Model Object: {type(model_obj).__name__ if model_obj else 'None'}")
         print(f"   Feature Count: {len(ml_system.model_data.get('feature_cols', []))}")
         print(f"   Team Data Loaded: {ml_system.team_power_data is not None}")
     
@@ -1906,7 +1907,8 @@ def api_predictions():
                     away_win_prob = 1.0 - home_win_prob
                     pick_abbr = g['home'] if home_win_prob >= away_win_prob else g['away']
                     confidence = max(home_win_prob, away_win_prob)
-
+                    
+                    # ⚡ CRITICAL FIX: Set ALL the flags correctly
                     rows.append({
                         'game_id': g['game_id'],
                         'matchup': f"{to_full(g['away'])} @ {to_full(g['home'])}",
@@ -1920,9 +1922,13 @@ def api_predictions():
                         'away_win_prob': float(away_win_prob),
                         'game_date': str(g['game_date']),
                         'game_time': str(g['game_time'])[:5] if g['game_time'] else 'TBD',
-                        'model_prediction': True,  # ✅ THIS IS THE KEY FLAG
+                        
+                        # ⚡ THE CRITICAL FLAGS - ALL SET TO TRUE FOR ML PREDICTIONS
+                        'model_prediction': True,
                         'using_ml_model': True,
-                        'prediction_method': '⚡ ML Model (34 features)',  # NEW: Direct display text
+                        'prediction_method': '⚡ ML Model',
+                        
+                        # Additional metadata
                         'power_difference': float(prediction_result.get('power_difference', 0)),
                         'key_factors': prediction_result.get('key_factors', {}),
                         'home_team': to_full(g['home']),
@@ -1965,13 +1971,17 @@ def api_predictions():
                     'away_win_prob': float(pa),
                     'game_date': str(g['game_date']),
                     'game_time': str(g['game_time'])[:5] if g['game_time'] else 'TBD',
-                    'model_prediction': False,  # ❌ Power-based fallback
+                    
+                    # ❌ FALLBACK FLAGS - ALL SET TO FALSE
+                    'model_prediction': False,
                     'using_ml_model': False,
-                    'prediction_method': 'Power Based',  # NEW: Direct display text
+                    'prediction_method': 'Power Based',
+                    
                     'power_difference': 0,
                     'key_factors': {},
                     'home_team': to_full(g['home']),
-                    'away_team': to_full(g['away'])
+                    'away_team': to_full(g['away']),
+                    'feature_count': 0
                 })
             except Exception as e:
                 print(f"Error predicting game {g['away']} @ {g['home']}: {e}")
@@ -1987,11 +1997,18 @@ def api_predictions():
     print(f"   ML successes: {ml_success_count}")
     print(f"   ML failures: {ml_failure_count}")
     print(f"   Using fallback: {len(rows) - ml_success_count}")
+    
+    # Verify what we're sending
+    if rows:
+        print(f"\n🔍 SAMPLE PREDICTION DATA:")
+        print(f"   First prediction: {rows[0]['matchup']}")
+        print(f"   model_prediction: {rows[0]['model_prediction']}")
+        print(f"   using_ml_model: {rows[0]['using_ml_model']}")
+        print(f"   feature_count: {rows[0]['feature_count']}")
 
     # Sort by date/time
     rows.sort(key=lambda r: (r['game_date'], str(r.get('game_time', '99:99'))[:5]))
     return jsonify(rows)
-
 
 def to_full(name: str | None) -> str:
     if not name:
