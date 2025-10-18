@@ -21,6 +21,19 @@ import math
 import traceback
 # CRITICAL: Use cloud.templates to get the version with ML Model display fix
 from cloud.templates import LOGIN_TEMPLATE, HTML_TEMPLATE, AI_CHAT_TEMPLATE
+
+# DIAGNOSTIC: Log template loading to verify correct file is imported
+print("=" * 80)
+print("🔍 TEMPLATE IMPORT DIAGNOSTIC")
+print(f"HTML_TEMPLATE length: {len(HTML_TEMPLATE)} characters")
+print(f"Template first 200 chars: {HTML_TEMPLATE[:200]}")
+if "TEMPLATE VERSION" in HTML_TEMPLATE:
+    version_start = HTML_TEMPLATE.find("TEMPLATE VERSION")
+    print(f"✅ Version marker found: {HTML_TEMPLATE[version_start:version_start+60]}")
+else:
+    print("❌ WARNING: Version marker NOT found in HTML_TEMPLATE")
+print("=" * 80)
+
 import sys
 import os
 from flask import Blueprint
