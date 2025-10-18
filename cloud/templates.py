@@ -1918,18 +1918,6 @@ HTML_TEMPLATE = """
             body.innerHTML = '<tr><td colspan="4" class="loading">No upcoming games.</td></tr>';
             return;
         }
-        
-        // 🔍 DEBUG: Log what we received
-        if (data.length > 0) {
-            console.log('🎯 FIRST PREDICTION:', {
-                matchup: data[0].matchup,
-                model_prediction: data[0].model_prediction,
-                model_prediction_type: typeof data[0].model_prediction,
-                using_ml_model: data[0].using_ml_model,
-                feature_count: data[0].feature_count,
-                all_fields: Object.keys(data[0])
-            });
-        }
 
         body.innerHTML = data.map(p => {
             // Parse team names from matchup string
@@ -1970,27 +1958,8 @@ HTML_TEMPLATE = """
                 confidenceColor = '#ff6b6b';
             }
             
-            // 🔍 CRITICAL: Check if using ML model (multiple ways to be safe)
-            const isUsingML = (
-                p.model_prediction === true || 
-                p.model_prediction === 'true' ||
-                p.using_ml_model === true ||
-                p.using_ml_model === 'true' ||
-                (p.feature_count && p.feature_count > 0)
-            );
-            
-            // 🔍 DEBUG: Log for first few predictions
-            if (data.indexOf(p) < 3) {
-                console.log(`Prediction ${data.indexOf(p) + 1}:`, {
-                    matchup: p.matchup,
-                    isUsingML: isUsingML,
-                    checks: {
-                        model_prediction: p.model_prediction,
-                        using_ml_model: p.using_ml_model,
-                        feature_count: p.feature_count
-                    }
-                });
-            }
+            // ⚡ FIXED: Check if using ML model - now correctly detects the flag
+            const isUsingML = p.model_prediction === true || p.using_ml_model === true;
             
             // Style the prediction display
             let predictionDisplay = p.prediction;
@@ -1999,7 +1968,7 @@ HTML_TEMPLATE = """
             }
             
             // Power difference indicator
-            const powerDiff = p.power_difference || p.key_factors?.power_diff || 0;
+            const powerDiff = p.power_difference || 0;
             let powerIndicator = '';
             if (Math.abs(powerDiff) > 4) {
                 powerIndicator = `<span style="color: #86f093; font-size: 10px;">⚡ Power Edge: ${powerDiff.toFixed(1)}</span>`;
