@@ -1270,6 +1270,9 @@ HTML_TEMPLATE = """
 <head>
     <meta charset=\"UTF-8\">
     <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+    <meta http-equiv=\"Cache-Control\" content=\"no-cache, no-store, must-revalidate\">
+    <meta http-equiv=\"Pragma\" content=\"no-cache\">
+    <meta http-equiv=\"Expires\" content=\"0\">
     <title>Bettr Bot Dashboard</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1832,7 +1835,20 @@ HTML_TEMPLATE = """
             body.innerHTML = '<tr><td colspan="4" class="loading">No upcoming games.</td></tr>';
             return;
         }
-        
+
+        // Debug log first prediction to verify model_prediction field
+        console.log('🔍 Bettr Bot Dashboard v2.0 - ML Model Display Fix Loaded');
+        if (data.length > 0) {
+            console.log('First prediction data:', {
+                matchup: data[0].matchup,
+                model_prediction: data[0].model_prediction,
+                feature_count: data[0].feature_count,
+                type: typeof data[0].model_prediction,
+                confidence: data[0].confidence
+            });
+            console.log('Expected display:', data[0].model_prediction ? '⚡ ML Model' : 'Power Based');
+        }
+
         body.innerHTML = data.map(p => {
             // Parse team names from matchup string
             const matchupParts = p.matchup.split(' @ ');
@@ -1919,7 +1935,10 @@ HTML_TEMPLATE = """
                             ${confidencePercent}%
                         </div>
                         <div style="font-size: 9px; color: #a8b5d3; margin-top: 2px; text-align: center;">
-                            ${p.model_prediction ? 'ML Model' : 'Power Based'}
+                            ${(p.model_prediction === true || p.model_prediction === 'true') ?
+                                '<span style="color: #2c86ff; font-weight: 600;">⚡ ML Model</span>' :
+                                '<span style="color: #ff9c7a;">Power Based</span>'}
+                            ${p.feature_count ? `<br><span style="font-size: 8px; color: #666;">${p.feature_count} features</span>` : ''}
                         </div>
                     </td>
                 </tr>
