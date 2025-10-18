@@ -1884,7 +1884,10 @@ def api_predictions():
                         away_team=away_full,
                         game_date=str(g['game_date'])
                     )
-                    print(f"✅ ML prediction succeeded for {away_full} @ {home_full}")
+                    print(f"✅ ML PREDICTION SUCCESS: {away_full} @ {home_full}")
+                    print(f"   Confidence: {prediction_result.get('confidence')}")
+                    print(f"   Home Win Prob: {prediction_result.get('home_win_probability')}")
+                    
                     home_win_prob = float(prediction_result.get('home_win_probability', 0.5))
                     away_win_prob = 1.0 - home_win_prob
                     pick_abbr = g['home'] if home_win_prob >= away_win_prob else g['away']
@@ -4269,6 +4272,40 @@ def diagnostic_page():
     </html>
     """
     return html
+
+
+@app.route('/api/debug/test-ml-prediction')
+@login_required
+def debug_test_ml_prediction():
+    """Test if ML predictions actually work"""
+    ml_system = get_ml_prediction_system()
+    
+    if not ml_system:
+        return jsonify({'error': 'ML system not loaded'})
+    
+    try:
+        # Test with a real game
+        result = ml_system.predict_game(
+            home_team="Kansas City Chiefs",
+            away_team="Buffalo Bills",
+            game_date="2025-01-15"
+        )
+        
+        return jsonify({
+            'success': True,
+            'ml_system_available': True,
+            'prediction_result': result,
+            'model_object_type': str(type(ml_system.model_data.get('model'))),
+            'feature_count': len(ml_system.model_data.get('feature_cols', [])),
+            'has_team_data': ml_system.team_power_data is not None
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        })
 
 @app.route('/api/system-diagnostic')
 def system_diagnostic():
