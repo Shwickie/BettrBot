@@ -1935,7 +1935,10 @@ HTML_TEMPLATE = """
                             ${confidencePercent}%
                         </div>
                         <div style="font-size: 9px; color: #a8b5d3; margin-top: 2px; text-align: center;">
-                            ${(p.model_prediction === true || p.model_prediction === 'true') ?
+                            ${(p.model_prediction === true ||
+                              p.model_prediction === 'true' ||
+                              p.using_ml_model === true ||
+                              p.feature_count > 0) ?
                                 '<span style="color: #2c86ff; font-weight: 600;">⚡ ML Model</span>' :
                                 '<span style="color: #ff9c7a;">Power Based</span>'}
                             ${p.feature_count ? `<br><span style="font-size: 8px; color: #666;">${p.feature_count} features</span>` : ''}
