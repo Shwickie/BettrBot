@@ -2035,7 +2035,43 @@ def to_full(name: str | None) -> str:
     return s
 
 
-
+@app.route('/api/debug/check-predictions')
+@login_required
+def debug_check_predictions():
+    """Check what predictions API is actually returning"""
+    try:
+        # Call the internal function
+        with app.test_request_context():
+            response = api_predictions()
+            data = response.get_json()
+        
+        if data and len(data) > 0:
+            first_pred = data[0]
+            return jsonify({
+                'total_predictions': len(data),
+                'first_prediction': {
+                    'matchup': first_pred.get('matchup'),
+                    'model_prediction': first_pred.get('model_prediction'),
+                    'using_ml_model': first_pred.get('using_ml_model'),
+                    'feature_count': first_pred.get('feature_count'),
+                    'prediction_method': first_pred.get('prediction_method'),
+                    'confidence': first_pred.get('confidence'),
+                    'all_keys': list(first_pred.keys())
+                },
+                'ml_count': sum(1 for p in data if p.get('model_prediction') == True),
+                'power_count': sum(1 for p in data if p.get('model_prediction') == False)
+            })
+        else:
+            return jsonify({'error': 'No predictions returned'})
+            
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        })
+    
+    
 @app.route('/api/predictions/debug')
 # Temporarily removed @login_required for debugging
 def debug_predictions():

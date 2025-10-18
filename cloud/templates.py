@@ -1918,27 +1918,17 @@ HTML_TEMPLATE = """
             body.innerHTML = '<tr><td colspan="4" class="loading">No upcoming games.</td></tr>';
             return;
         }
-        if (data && data.length > 0) {
-        console.log('🎯 PREDICTIONS DEBUG:', {
-            total: data.length,
-            first_game: data[0].matchup,
-            model_prediction: data[0].model_prediction,
-            using_ml_model: data[0].using_ml_model,
-            feature_count: data[0].feature_count,
-            all_fields: Object.keys(data[0])
-        });
-
-        // Debug log first prediction to verify model_prediction field
-        console.log('🔍 Bettr Bot Dashboard v2.0 - ML Model Display Fix Loaded');
+        
+        // 🔍 DEBUG: Log what we received
         if (data.length > 0) {
-            console.log('First prediction data:', {
+            console.log('🎯 FIRST PREDICTION:', {
                 matchup: data[0].matchup,
                 model_prediction: data[0].model_prediction,
+                model_prediction_type: typeof data[0].model_prediction,
+                using_ml_model: data[0].using_ml_model,
                 feature_count: data[0].feature_count,
-                type: typeof data[0].model_prediction,
-                confidence: data[0].confidence
+                all_fields: Object.keys(data[0])
             });
-            console.log('Expected display:', data[0].model_prediction ? '⚡ ML Model' : 'Power Based');
         }
 
         body.innerHTML = data.map(p => {
@@ -1951,7 +1941,7 @@ HTML_TEMPLATE = """
             const isHomePick = p.prediction === homeTeam || p.prediction.includes(homeTeam);
             const isAwayPick = p.prediction === awayTeam || p.prediction.includes(awayTeam);
             
-            // Get probabilities - handle both formats from your model
+            // Get probabilities
             const homeProb = (p.home_win_probability || p.home_win_prob || 0) * 100;
             const awayProb = (p.away_win_probability || p.away_win_prob || 0) * 100;
             
@@ -1959,34 +1949,56 @@ HTML_TEMPLATE = """
             const confidencePercent = (p.confidence * 100).toFixed(1);
             const confidenceValue = parseFloat(confidencePercent);
             
-            // Enhanced confidence classification and betting recommendation
+            // Enhanced confidence classification
             let confidenceClass, bettingRecommendation, confidenceColor;
             
             if (confidenceValue >= 65) {
                 confidenceClass = 'high-confidence';
                 bettingRecommendation = 'Strong Bet';
-                confidenceColor = '#15d07e'; // Green - good to bet
+                confidenceColor = '#15d07e';
             } else if (confidenceValue >= 58) {
                 confidenceClass = 'medium-confidence';
                 bettingRecommendation = 'Consider';
-                confidenceColor = '#ffcc33'; // Yellow - proceed with caution
+                confidenceColor = '#ffcc33';
             } else if (confidenceValue >= 52) {
                 confidenceClass = 'low-confidence';
                 bettingRecommendation = 'Weak Edge';
-                confidenceColor = '#ff9c7a'; // Orange - weak edge
+                confidenceColor = '#ff9c7a';
             } else {
                 confidenceClass = 'no-confidence';
                 bettingRecommendation = 'Avoid';
-                confidenceColor = '#ff6b6b'; // Red - don't bet
+                confidenceColor = '#ff6b6b';
+            }
+            
+            // 🔍 CRITICAL: Check if using ML model (multiple ways to be safe)
+            const isUsingML = (
+                p.model_prediction === true || 
+                p.model_prediction === 'true' ||
+                p.using_ml_model === true ||
+                p.using_ml_model === 'true' ||
+                (p.feature_count && p.feature_count > 0)
+            );
+            
+            // 🔍 DEBUG: Log for first few predictions
+            if (data.indexOf(p) < 3) {
+                console.log(`Prediction ${data.indexOf(p) + 1}:`, {
+                    matchup: p.matchup,
+                    isUsingML: isUsingML,
+                    checks: {
+                        model_prediction: p.model_prediction,
+                        using_ml_model: p.using_ml_model,
+                        feature_count: p.feature_count
+                    }
+                });
             }
             
             // Style the prediction display
             let predictionDisplay = p.prediction;
-            if (p.model_prediction) {
+            if (isUsingML) {
                 predictionDisplay += ` <span class="model-badge" style="background: #2c86ff; color: white; padding: 1px 4px; border-radius: 3px; font-size: 9px;">ML</span>`;
             }
             
-            // Power difference indicator (if available from your model)
+            // Power difference indicator
             const powerDiff = p.power_difference || p.key_factors?.power_diff || 0;
             let powerIndicator = '';
             if (Math.abs(powerDiff) > 4) {
@@ -2027,14 +2039,11 @@ HTML_TEMPLATE = """
                             ${confidencePercent}%
                         </div>
                         <div style="font-size: 9px; color: #a8b5d3; margin-top: 2px; text-align: center;">
-                          ${(p.model_prediction === true || 
-                            p.model_prediction === 'true' || 
-                            p.using_ml_model === true ||
-                            p.feature_count > 0) ?
-                              '<span style="color: #2c86ff; font-weight: 600;">⚡ ML Model</span>' :
-                              '<span style="color: #ff9c7a;">Power Based</span>'}
-                          ${p.feature_count ? `<br><span style="font-size: 8px; color: #666;">${p.feature_count} features</span>` : ''}
-                      </div>
+                            ${isUsingML ?
+                                '<span style="color: #2c86ff; font-weight: 600;">⚡ ML Model</span>' :
+                                '<span style="color: #ff9c7a;">Power Based</span>'}
+                            ${p.feature_count ? `<br><span style="font-size: 8px; color: #666;">${p.feature_count} features</span>` : ''}
+                        </div>
                     </td>
                 </tr>
             `;
