@@ -1871,24 +1871,39 @@ HTML_TEMPLATE = """
     }
 
     async function loadPredictions() {
-        try { 
-            const r = await fetch('/api/predictions'); 
-            const data = await r.json(); 
-            
-            // 🔍 DEBUG OUTPUT
-            console.log('🎯 PREDICTIONS LOADED:', {
+        try {
+            console.log('🎯 === LOADING PREDICTIONS v3.0 ===');
+            const r = await fetch('/api/predictions');
+            const data = await r.json();
+
+            console.log('📦 Raw API Response:', {
                 total: data.length,
                 ml_count: data.filter(p => p.model_prediction === true).length,
                 power_count: data.filter(p => p.model_prediction === false).length,
-                first_prediction: data[0]
+                first_item: data[0]
             });
-            
-            displayPredictions(data); 
-            window.__lastPreds = data; 
+
+            // Check flags on first prediction
+            if (data.length > 0) {
+                const first = data[0];
+                console.log('🔍 First Prediction Flags:', {
+                    model_prediction: first.model_prediction,
+                    model_prediction_type: typeof first.model_prediction,
+                    using_ml_model: first.using_ml_model,
+                    feature_count: first.feature_count,
+                    prediction_method: first.prediction_method
+                });
+
+                const test = first.model_prediction === true || first.using_ml_model === true;
+                console.log('✅ ML Detection Test Result:', test);
+            }
+
+            displayPredictions(data);
+            window.__lastPreds = data;
         }
-        catch(e){ 
+        catch(e){
             console.error('❌ Prediction load error:', e);
-            document.getElementById('predictions-body').innerHTML = '<tr><td colspan="4" class="loading">Error loading predictions</td></tr>'; 
+            document.getElementById('predictions-body').innerHTML = '<tr><td colspan="4" class="loading">Error loading predictions</td></tr>';
         }
     }
     async function loadRankings(){ try{ const r=await fetch('/api/rankings'); displayRankings(await r.json()); }catch(e){ document.getElementById('rankings-body').innerHTML='<tr><td colspan="5" class="loading">Error loading rankings</td></tr>'; } }
@@ -1913,13 +1928,24 @@ HTML_TEMPLATE = """
     // Replace the displayPredictions function in templates.py
 
     function displayPredictions(data){
+        console.log('🎨 === DISPLAY PREDICTIONS v3.0 ===', data.length, 'games');
+
         const body = document.getElementById('predictions-body');
         if (!Array.isArray(data) || data.length === 0){
             body.innerHTML = '<tr><td colspan="4" class="loading">No upcoming games.</td></tr>';
             return;
         }
 
-        body.innerHTML = data.map(p => {
+        body.innerHTML = data.map((p, index) => {
+            // Log first 3 predictions
+            if (index < 3) {
+                console.log(`🎲 Prediction ${index + 1}:`, p.matchup, {
+                    model_prediction: p.model_prediction,
+                    using_ml_model: p.using_ml_model,
+                    feature_count: p.feature_count,
+                    will_show: (p.model_prediction === true || p.using_ml_model === true) ? '⚡ ML Model' : 'Power Based'
+                });
+            }
             // Parse team names from matchup string
             const matchupParts = p.matchup.split(' @ ');
             const awayTeam = matchupParts[0];
