@@ -37,12 +37,30 @@ USE_CLOUD_DB = DATABASE_URL.startswith("postgresql+psycopg2://")
 
 # Add paths for proper imports
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
+PARENT_ROOT = os.path.abspath(os.path.join(PROJECT_ROOT, '..'))
 sys.path.insert(0, PROJECT_ROOT)
+sys.path.insert(0, PARENT_ROOT)
+
+print(f"🔍 PROJECT_ROOT: {PROJECT_ROOT}")
+print(f"🔍 PARENT_ROOT: {PARENT_ROOT}")
+print(f"🔍 Files in PROJECT_ROOT: {os.listdir(PROJECT_ROOT)[:10]}")
 
 try:
-    # Import dashboard app
-    from mobile_dashboard import app
-    print("✅ Successfully imported dashboard app")
+    # Try importing from cloud.mobile_dashboard first (we're in cloud/ dir)
+    print("🔍 Attempting to import from cloud.mobile_dashboard...")
+    from cloud.mobile_dashboard import app
+    print("✅ Successfully imported cloud dashboard app")
+except ImportError as e1:
+    print(f"⚠️ cloud.mobile_dashboard import failed: {e1}")
+    try:
+        # Fallback: import mobile_dashboard from current directory (cloud/)
+        print("🔍 Attempting to import mobile_dashboard from current directory...")
+        from mobile_dashboard import app
+        print("✅ Successfully imported dashboard app from current directory")
+    except ImportError as e2:
+        print(f"❌ mobile_dashboard import failed: {e2}")
+        print(f"   Available files: {os.listdir(PROJECT_ROOT)}")
+        raise
     
     # Verify model is available
     try:
