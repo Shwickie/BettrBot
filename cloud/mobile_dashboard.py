@@ -1921,6 +1921,7 @@ def api_predictions():
                         'game_time': str(g['game_time'])[:5] if g['game_time'] else 'TBD',
                         'model_prediction': True,  # ✅ THIS IS THE KEY FLAG
                         'using_ml_model': True,
+                        'prediction_method': '⚡ ML Model (34 features)',  # NEW: Direct display text
                         'power_difference': float(prediction_result.get('power_difference', 0)),
                         'key_factors': prediction_result.get('key_factors', {}),
                         'home_team': to_full(g['home']),
@@ -1965,6 +1966,7 @@ def api_predictions():
                     'game_time': str(g['game_time'])[:5] if g['game_time'] else 'TBD',
                     'model_prediction': False,  # ❌ Power-based fallback
                     'using_ml_model': False,
+                    'prediction_method': 'Power Based',  # NEW: Direct display text
                     'power_difference': 0,
                     'key_factors': {},
                     'home_team': to_full(g['home']),
