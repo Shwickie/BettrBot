@@ -1901,6 +1901,15 @@ HTML_TEMPLATE = """
             body.innerHTML = '<tr><td colspan="4" class="loading">No upcoming games.</td></tr>';
             return;
         }
+        if (data && data.length > 0) {
+        console.log('🎯 PREDICTIONS DEBUG:', {
+            total: data.length,
+            first_game: data[0].matchup,
+            model_prediction: data[0].model_prediction,
+            using_ml_model: data[0].using_ml_model,
+            feature_count: data[0].feature_count,
+            all_fields: Object.keys(data[0])
+        });
 
         // Debug log first prediction to verify model_prediction field
         console.log('🔍 Bettr Bot Dashboard v2.0 - ML Model Display Fix Loaded');
@@ -2001,11 +2010,14 @@ HTML_TEMPLATE = """
                             ${confidencePercent}%
                         </div>
                         <div style="font-size: 9px; color: #a8b5d3; margin-top: 2px; text-align: center;">
-                            ${(p.model_prediction === true || p.model_prediction === 'true') ?
-                                '<span style="color: #2c86ff; font-weight: 600;">⚡ ML Model</span>' :
-                                '<span style="color: #ff9c7a;">Power Based</span>'}
-                            ${p.feature_count ? `<br><span style="font-size: 8px; color: #666;">${p.feature_count} features</span>` : ''}
-                        </div>
+                          ${(p.model_prediction === true || 
+                            p.model_prediction === 'true' || 
+                            p.using_ml_model === true ||
+                            p.feature_count > 0) ?
+                              '<span style="color: #2c86ff; font-weight: 600;">⚡ ML Model</span>' :
+                              '<span style="color: #ff9c7a;">Power Based</span>'}
+                          ${p.feature_count ? `<br><span style="font-size: 8px; color: #666;">${p.feature_count} features</span>` : ''}
+                      </div>
                     </td>
                 </tr>
             `;
