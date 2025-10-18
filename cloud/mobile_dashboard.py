@@ -126,12 +126,19 @@ def _try_import_fixed_nfl_system():
 
 try:
     from model.ai_tools import list_value_bets
-except Exception:
-    import os, sys
-    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    if PROJECT_ROOT not in sys.path:
-        sys.path.insert(0, PROJECT_ROOT)
-    from model.ai_tools import list_value_bets
+except Exception as e1:
+    try:
+        import os, sys
+        PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        if PROJECT_ROOT not in sys.path:
+            sys.path.insert(0, PROJECT_ROOT)
+        from model.ai_tools import list_value_bets
+    except Exception as e2:
+        print(f"⚠️ Could not import model.ai_tools: {e1}, {e2}")
+        print(f"   This is OK - value bets feature will be disabled")
+        # Define a stub function so the code doesn't break
+        def list_value_bets(*args, **kwargs):
+            return []
 
 
 try:
