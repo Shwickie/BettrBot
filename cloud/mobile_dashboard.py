@@ -153,10 +153,17 @@ except ImportError:
 
 try:
     from dashboard.ai_chat_stub import comprehensive_ai_bp
-except Exception:
-    import os, sys
-    sys.path.append(os.path.dirname(__file__))
-    from ai_chat_stub import comprehensive_ai_bp
+except Exception as e1:
+    try:
+        import os, sys
+        sys.path.append(os.path.dirname(__file__))
+        from ai_chat_stub import comprehensive_ai_bp
+    except Exception as e2:
+        print(f"⚠️ Could not import AI chat module: {e1}, {e2}")
+        print(f"   AI chat features will be disabled")
+        # Create a stub blueprint so the code doesn't break
+        from flask import Blueprint
+        comprehensive_ai_bp = Blueprint('ai_chat_stub', __name__)
 
 
 def safe_query(query_str, params=None):

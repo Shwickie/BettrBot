@@ -56,20 +56,7 @@ if USE_CLOUD_DB:
         }
     )
     engine = ENGINE
-        DATABASE_URL,
-        pool_pre_ping=True,
-        pool_recycle=280,
-        pool_size=2,
-        max_overflow=3,
-        connect_args={
-            "client_encoding": "utf8",
-            "client_encoding": "utf8",
-            "client_encoding": "utf8",
-            "connect_timeout": 20,
-            "application_name": "bettr-bot",
-        }
-    )
-    
+
     print("✅ Using Railway PostgreSQL")
 
 # Model path configuration
