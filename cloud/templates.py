@@ -1871,8 +1871,25 @@ HTML_TEMPLATE = """
     }
 
     async function loadPredictions() {
-        try { const r = await fetch('/api/predictions'); const data = await r.json(); displayPredictions(data); window.__lastPreds = data; }
-        catch(e){ document.getElementById('predictions-body').innerHTML = '<tr><td colspan="4" class="loading">Error loading predictions</td></tr>'; }
+        try { 
+            const r = await fetch('/api/predictions'); 
+            const data = await r.json(); 
+            
+            // 🔍 DEBUG OUTPUT
+            console.log('🎯 PREDICTIONS LOADED:', {
+                total: data.length,
+                ml_count: data.filter(p => p.model_prediction === true).length,
+                power_count: data.filter(p => p.model_prediction === false).length,
+                first_prediction: data[0]
+            });
+            
+            displayPredictions(data); 
+            window.__lastPreds = data; 
+        }
+        catch(e){ 
+            console.error('❌ Prediction load error:', e);
+            document.getElementById('predictions-body').innerHTML = '<tr><td colspan="4" class="loading">Error loading predictions</td></tr>'; 
+        }
     }
     async function loadRankings(){ try{ const r=await fetch('/api/rankings'); displayRankings(await r.json()); }catch(e){ document.getElementById('rankings-body').innerHTML='<tr><td colspan="5" class="loading">Error loading rankings</td></tr>'; } }
     

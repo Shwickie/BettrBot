@@ -1823,10 +1823,9 @@ def api_predictions():
     """Predictions using ML when possible, otherwise power-based fallback (no crashes)."""
     conn = get_db()
     today = datetime.utcnow().date()
-    # FIXED: Back to 21 days like old system for predictions
     horizon = today + timedelta(days=21)
 
-    # Load games with proper database handling
+    # Load games
     try:
         if USE_CLOUD_DB:
             games = safe_query("""
@@ -1843,15 +1842,13 @@ def api_predictions():
                 ORDER BY date(game_date), time(start_time_local)
             """, conn, params=[today, horizon])
 
-        print(f"DEBUG: Found {len(games)} games between {today} and {horizon}")
-        if not games.empty:
-            print(f"Sample games: {games[['away', 'home', 'game_date']].head()}")
+        print(f"🎯 PREDICTIONS: Found {len(games)} games between {today} and {horizon}")
 
     except Exception as e:
         print(f"Error loading games for predictions: {e}")
         return jsonify([])
 
-    # --- build power fallback once ---
+    # Get power fallback
     try:
         pmap = get_power_map_cached(conn)
     except Exception:
@@ -1862,31 +1859,47 @@ def api_predictions():
         aw = pmap.get(to_full(away_abbr), pmap.get(away_abbr, 0.0))
         hm = pmap.get(to_full(home_abbr), pmap.get(home_abbr, 0.0)) + HFA
         ph = 1.0 / (1.0 + math.exp(-(hm - aw) / 8.0))
-        return 1.0 - ph, ph  # away, home
+        return 1.0 - ph, ph
 
     ml_system = get_ml_prediction_system()
-    if not ml_system:
-        print("ML system not available, using fallback predictions")
+    
+    # 🔍 CRITICAL DEBUG INFO
+    print(f"🤖 ML System Status:")
+    print(f"   Available: {ml_system is not None}")
+    if ml_system:
+        print(f"   Model Type: {type(ml_system.model_data.get('model'))}")
+        print(f"   Feature Count: {len(ml_system.model_data.get('feature_cols', []))}")
+        print(f"   Team Data Loaded: {ml_system.team_power_data is not None}")
     
     rows = []
+    ml_success_count = 0
+    ml_failure_count = 0
 
-    for _, g in games.iterrows():
+    for idx, g in games.iterrows():
         try:
             # 1) Try ML path
             if ml_system:
                 try:
                     home_full = to_full(g['home'])
                     away_full = to_full(g['away'])
-                    print(f"🔍 Attempting ML prediction: {away_full} @ {home_full}")
-
+                    
+                    # 🔍 DEBUG: Show what we're predicting
+                    if idx < 3:  # Only show first 3 to avoid spam
+                        print(f"\n🎲 Predicting game {idx + 1}: {away_full} @ {home_full}")
+                    
                     prediction_result = ml_system.predict_game(
                         home_team=home_full,
                         away_team=away_full,
                         game_date=str(g['game_date'])
                     )
-                    print(f"✅ ML PREDICTION SUCCESS: {away_full} @ {home_full}")
-                    print(f"   Confidence: {prediction_result.get('confidence')}")
-                    print(f"   Home Win Prob: {prediction_result.get('home_win_probability')}")
+                    
+                    # 🔍 DEBUG: Show prediction result
+                    if idx < 3:
+                        print(f"   ✅ ML SUCCESS!")
+                        print(f"   Home prob: {prediction_result.get('home_win_probability'):.3f}")
+                        print(f"   Away prob: {prediction_result.get('away_win_probability'):.3f}")
+                    
+                    ml_success_count += 1
                     
                     home_win_prob = float(prediction_result.get('home_win_probability', 0.5))
                     away_win_prob = 1.0 - home_win_prob
@@ -1906,8 +1919,8 @@ def api_predictions():
                         'away_win_prob': float(away_win_prob),
                         'game_date': str(g['game_date']),
                         'game_time': str(g['game_time'])[:5] if g['game_time'] else 'TBD',
-                        'model_prediction': True,  # 🔧 Boolean True (not string)
-                        'using_ml_model': True,    # 🔧 ADD: Extra flag for clarity
+                        'model_prediction': True,  # ✅ THIS IS THE KEY FLAG
+                        'using_ml_model': True,
                         'power_difference': float(prediction_result.get('power_difference', 0)),
                         'key_factors': prediction_result.get('key_factors', {}),
                         'home_team': to_full(g['home']),
@@ -1915,10 +1928,14 @@ def api_predictions():
                         'feature_count': len((ml_system.model_data or {}).get('feature_cols', []))
                     })
                     continue  # success → next game
+                    
                 except Exception as e:
-                    print(f"FixedNFLSystem failed for {g['away']} @ {g['home']}: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    ml_failure_count += 1
+                    # 🔍 DEBUG: Show why it failed
+                    if idx < 3:
+                        print(f"   ❌ ML FAILED: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
 
             # 2) Fallback path
             try:
@@ -1946,7 +1963,8 @@ def api_predictions():
                     'away_win_prob': float(pa),
                     'game_date': str(g['game_date']),
                     'game_time': str(g['game_time'])[:5] if g['game_time'] else 'TBD',
-                    'model_prediction': False,
+                    'model_prediction': False,  # ❌ Power-based fallback
+                    'using_ml_model': False,
                     'power_difference': 0,
                     'key_factors': {},
                     'home_team': to_full(g['home']),
@@ -1960,10 +1978,16 @@ def api_predictions():
             print(f"Error processing game {g['away']} @ {g['home']}: {e}")
             continue
 
+    # 🔍 FINAL SUMMARY
+    print(f"\n📊 PREDICTION SUMMARY:")
+    print(f"   Total games: {len(rows)}")
+    print(f"   ML successes: {ml_success_count}")
+    print(f"   ML failures: {ml_failure_count}")
+    print(f"   Using fallback: {len(rows) - ml_success_count}")
+
     # Sort by date/time
     rows.sort(key=lambda r: (r['game_date'], str(r.get('game_time', '99:99'))[:5]))
     return jsonify(rows)
-
 
 
 def to_full(name: str | None) -> str:
