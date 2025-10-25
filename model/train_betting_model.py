@@ -33,7 +33,7 @@ else:  # Local development
 PRICE_AGGREGATION = "median"   # "median" (conservative) or "best" (optimistic)
 MIN_EDGE          = 0.025      # Increased from 0.03 to find more bets
 MAX_BET_PCT       = 0.015      # Decreased to be more conservative
-MIN_CONF          = 0.55       # Decreased slightly
+MIN_CONF          = 0.58       # Optimized based on backtesting (58%+ confidence is profitable)
 MAX_DEC_ODDS_TO_BET   = 2.70    # skip longshots bigger than ~+170
 MIN_ABS_PROB_TO_BET   = 0.54    # only bet a side if your model has ≥54% on that side
 MIN_BOOKS_REQUIRED    = 3       # require consensus from at least 3 books

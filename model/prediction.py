@@ -193,13 +193,13 @@ class FixedNFLSystem:
             self._hydrate_feature_cols()  # <- ensures feature_cols exists
 
 
-            print(f"✅ SUCCESS: Loaded model pack from {MODEL_PATH}")
+            print(f"SUCCESS: Loaded model pack from {MODEL_PATH}")
             print(f"  Features: {len(self.feature_cols)}")
             print(f"  Model type: {type(self.model).__name__}")
             print(f"  Has predict_proba: {hasattr(self.model, 'predict_proba')}")
 
         except Exception as e:
-            print(f"❌ CRITICAL: Failed to load model from {MODEL_PATH}: {e}")
+            print(f"CRITICAL: Failed to load model from {MODEL_PATH}: {e}")
             import traceback
             traceback.print_exc()
             self.model_data = None

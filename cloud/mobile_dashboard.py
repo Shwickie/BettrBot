@@ -21,6 +21,7 @@ import math
 import traceback
 # CRITICAL: Use cloud.templates to get the version with ML Model display fix
 from cloud.templates import LOGIN_TEMPLATE, HTML_TEMPLATE, AI_CHAT_TEMPLATE
+from cloud.cache import cache, get_ttl
 
 # DIAGNOSTIC: Log template loading to verify correct file is imported
 print("=" * 80)
@@ -1613,6 +1614,16 @@ def dashboard():
 def api_rankings():
     """Fixed rankings API with proper tie support"""
     season = request.args.get("season", type=int) or date.today().year
+
+    # Check cache first (use season as part of cache key)
+    cache_key = f'rankings_{season}'
+    cached_rankings = cache.get(cache_key)
+    if cached_rankings:
+        print(f"Cache HIT: Returning cached rankings for season {season}")
+        return jsonify(cached_rankings)
+
+    print(f"Cache MISS: Generating fresh rankings for season {season}")
+
     try:
         with ENGINE.connect() as conn:
             
@@ -1741,7 +1752,13 @@ def api_rankings():
         })
 
         rankings_data = out.to_dict(orient="records")
-        return jsonify({"ok": True, "rankings": rankings_data})
+        result = {"ok": True, "rankings": rankings_data}
+
+        # Cache the result (rankings change when games complete)
+        cache.set(cache_key, result, ttl_seconds=get_ttl('power_rankings'))
+        print(f"Cache SET: Cached rankings for season {season} for {get_ttl('power_rankings')}s")
+
+        return jsonify(result)
         
     except Exception as e:
         print(f"Rankings error: {e}")
@@ -1849,6 +1866,15 @@ def debug_ai_status():
 @app.route('/api/predictions')
 def api_predictions():
     """Predictions using ML when possible, otherwise power-based fallback (no crashes)."""
+
+    # Check cache first
+    cached_predictions = cache.get('predictions')
+    if cached_predictions:
+        print("Cache HIT: Returning cached predictions")
+        return jsonify(cached_predictions)
+
+    print("Cache MISS: Generating fresh predictions")
+
     conn = get_db()
     today = datetime.utcnow().date()
     horizon = today + timedelta(days=21)
@@ -2035,6 +2061,11 @@ def api_predictions():
 
     # Sort by date/time
     rows.sort(key=lambda r: (r['game_date'], str(r.get('game_time', '99:99'))[:5]))
+
+    # Cache the result (predictions change when model retrains)
+    cache.set('predictions', rows, ttl_seconds=get_ttl('predictions'))
+    print(f"Cache SET: Cached {len(rows)} predictions for {get_ttl('predictions')}s")
+
     return jsonify(rows)
 
 def to_full(name: str | None) -> str:
@@ -2435,13 +2466,19 @@ def get_betting_recommendations_debug():
                 away_prob = float(prediction_result['away_win_probability'])
                 confidence = float(prediction_result.get('confidence', max(home_prob, away_prob)))
 
-                # modest threshold to actually show picks
-                if confidence < 0.55:
+                # BACKTESTING PROVEN: Only show picks with 58%+ confidence (profitable threshold)
+                if confidence < 0.58:
                     continue
 
                 for team_abbr in [game['home_team'], game['away_team']]:
                     model_prob = home_prob if team_abbr == game['home_team'] else away_prob
-                    if model_prob < 0.52:
+
+                    # Require 58%+ probability to recommend this team
+                    if model_prob < 0.58:
+                        continue
+
+                    # Don't bet on teams model thinks will lose (even if odds are long)
+                    if model_prob < 0.50:
                         continue
 
                     # FIXED: Use the normalize function instead of the missing one
@@ -2474,7 +2511,9 @@ def get_betting_recommendations_debug():
 
                     edge = model_prob - implied_prob
                     edge_pct = edge * 100.0
-                    if edge_pct < 2.0:
+
+                    # Require 2.5%+ edge (matches MIN_EDGE from training)
+                    if edge_pct < 2.5:
                         continue
 
                     kelly = (model_prob * decimal_odds - 1) / (decimal_odds - 1)
@@ -2826,6 +2865,15 @@ def get_betting_recommendations():
         user_data = USERS[username]
         user_bankroll = float(user_data.get('bankroll', 500))
 
+        # Check cache (use username as part of key since recommendations are personalized)
+        cache_key = f'betting_recs_{username}'
+        cached_recs = cache.get(cache_key)
+        if cached_recs:
+            print(f"Cache HIT: Returning cached betting recommendations for {username}")
+            return jsonify(cached_recs)
+
+        print(f"Cache MISS: Generating fresh betting recommendations for {username}")
+
         today = datetime.utcnow().date()
         end   = today + timedelta(days=7)
 
@@ -2877,13 +2925,19 @@ def get_betting_recommendations():
                 away_prob = float(prediction_result['away_win_probability'])
                 confidence = float(prediction_result.get('confidence', max(home_prob, away_prob)))
 
-                # modest threshold to actually show picks
-                if confidence < 0.55:
+                # BACKTESTING PROVEN: Only show picks with 58%+ confidence (profitable threshold)
+                if confidence < 0.58:
                     continue
 
                 for team_abbr in [game['home_team'], game['away_team']]:
                     model_prob = home_prob if team_abbr == game['home_team'] else away_prob
-                    if model_prob < 0.52:
+
+                    # Require 58%+ probability to recommend this team
+                    if model_prob < 0.58:
+                        continue
+
+                    # Don't bet on teams model thinks will lose (even if odds are long)
+                    if model_prob < 0.50:
                         continue
 
                     full_team_name = normalize_team_for_odds_lookup(team_abbr)
@@ -2910,7 +2964,9 @@ def get_betting_recommendations():
 
                     edge = model_prob - implied_prob
                     edge_pct = edge * 100.0
-                    if edge_pct < 2.0:
+
+                    # Require 2.5%+ edge (matches MIN_EDGE from training)
+                    if edge_pct < 2.5:
                         continue
 
                     kelly = (model_prob * decimal_odds - 1) / (decimal_odds - 1)
@@ -2940,7 +2996,7 @@ def get_betting_recommendations():
                 continue
 
         recommendations.sort(key=lambda x: x['edge_percentage'], reverse=True)
-        return jsonify({
+        result = {
             'ok': True,
             'success': True,
             'result': {
@@ -2949,7 +3005,13 @@ def get_betting_recommendations():
                 'total_recommended': round(total_staked, 2),
                 'user_info': f"Recommendations for {user_data.get('name', username)}"
             }
-        })
+        }
+
+        # Cache the result (shorter TTL since recommendations depend on odds)
+        cache.set(cache_key, result, ttl_seconds=get_ttl('betting_recs'))
+        print(f"Cache SET: Cached betting recommendations for {username} for {get_ttl('betting_recs')}s")
+
+        return jsonify(result)
     except Exception as e:
         # Return 200 so the UI doesn't show a "Network error" bubble; surface the error in JSON
         print(f"Error in get_betting_recommendations: {e}")
