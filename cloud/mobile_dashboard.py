@@ -1196,7 +1196,7 @@ def load_injury_impact_from_detail(conn):
                         COALESCE(designation, '') AS designation,
                         COALESCE(player_name, '') AS player
                     FROM nfl_injuries_tracking
-                    WHERE is_active = true
+                    WHERE is_active = 1
                     AND team IS NOT NULL
                     AND team != 'UNK'
                     AND designation IN ('IR', 'OUT', 'DOUBTFUL', 'QUESTIONABLE')
