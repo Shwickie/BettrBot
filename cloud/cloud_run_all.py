@@ -103,7 +103,7 @@ def run_update_scores():
         engine = setup_cloud_environment()
         if not engine:
             return False
-            
+
         SEASON = 2025
         
         # Get NFL data
