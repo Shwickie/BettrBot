@@ -1198,8 +1198,14 @@ def load_injury_impact_from_detail(conn):
                     FROM nfl_injuries_tracking
                     WHERE is_active = 1
                     AND team IS NOT NULL
-                    AND team != 'UNK'
-                    AND designation IN ('IR', 'OUT', 'DOUBTFUL', 'QUESTIONABLE')
+                    AND team NOT IN ('UNK', 'UNKNOWN')
+                    AND (
+                        designation IN ('IR', 'OUT', 'DOUBTFUL', 'QUESTIONABLE', 'PUP')
+                        OR designation ILIKE 'Injured Reserve'
+                        OR designation ILIKE 'Out'
+                        OR designation ILIKE 'Doubtful'
+                        OR designation ILIKE 'Questionable'
+                    )
                 """), db_conn)
         else:
             # SQLite version
