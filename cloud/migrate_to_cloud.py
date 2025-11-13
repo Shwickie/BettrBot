@@ -145,7 +145,7 @@ def normalize_odds_df(df: pd.DataFrame) -> pd.DataFrame:
 
 def write_df(df: pd.DataFrame, engine: Engine, table: str, *, replace: bool) -> None:
     if df.empty:
-        print(f"   ⚠️ {table}: source is empty, skipping")
+        print(f"   [EMOJI] {table}: source is empty, skipping")
         return
 
     # adapt chunk size to stay under param limits / table overrides
@@ -167,16 +167,16 @@ def write_df(df: pd.DataFrame, engine: Engine, table: str, *, replace: bool) -> 
         first = False
         done = min(start + chunk_rows, total)
         pct = done / total * 100
-        print(f"   📤 {done:,}/{total:,} rows migrated ({pct:.1f}%) [{table}] {mode.upper() if mode=='replace' else 'append'}")
+        print(f"   [EMOJI] {done:,}/{total:,} rows migrated ({pct:.1f}%) [{table}] {mode.upper() if mode=='replace' else 'append'}")
 
 
 def migrate_table(pg: Engine, sqlite_conn: sqlite3.Connection, table: str) -> bool:
-    print(f"\n📊 Migrating table: {table}")
+    print(f"\n[EMOJI] Migrating table: {table}")
 
     try:
         df = pd.read_sql_query(f'SELECT * FROM "{table}"', sqlite_conn)
     except Exception as e:
-        print(f"   ❌ Failed to read from SQLite: {e}")
+        print(f"   [EMOJI] Failed to read from SQLite: {e}")
         return False
 
     # Per-table normalization
@@ -186,7 +186,7 @@ def migrate_table(pg: Engine, sqlite_conn: sqlite3.Connection, table: str) -> bo
         df = normalize_odds_df(df)
 
     if df.empty:
-        print("   ⚠️ No rows, skipping")
+        print("   [EMOJI] No rows, skipping")
         return True
 
     # Idempotent path: certain tables are always cleared then appended
@@ -194,26 +194,26 @@ def migrate_table(pg: Engine, sqlite_conn: sqlite3.Connection, table: str) -> bo
         try:
             with pg.begin() as c:
                 c.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY'))
-            print("   🧹 Truncated destination table (RESTART IDENTITY)")
+            print("   [EMOJI] Truncated destination table (RESTART IDENTITY)")
             write_df(df, pg, table, replace=False)
-            print("   ✅ Truncate+Append complete")
+            print("   [EMOJI] Truncate+Append complete")
             return True
         except Exception as e:
-            print(f"   ⚠️ Truncate path failed ({e}); falling back to REPLACE")
+            print(f"   [EMOJI] Truncate path failed ({e}); falling back to REPLACE")
             try:
                 write_df(df, pg, table, replace=True)
-                print("   ✅ Replaced & migrated (fallback)")
+                print("   [EMOJI] Replaced & migrated (fallback)")
                 return True
             except Exception as e2:
-                print(f"   ❌ Replace fallback failed: {e2}")
+                print(f"   [EMOJI] Replace fallback failed: {e2}")
                 return False
 
     try:
         dest_cols = pg_table_columns(pg, table)
         if dest_cols is None:
-            print("   🆕 Destination table not found; creating it from DataFrame schema")
+            print("   [EMOJI] Destination table not found; creating it from DataFrame schema")
             write_df(df, pg, table, replace=True)
-            print("   ✅ Created & migrated")
+            print("   [EMOJI] Created & migrated")
             return True
 
         df_cols = list(df.columns)
@@ -222,18 +222,18 @@ def migrate_table(pg: Engine, sqlite_conn: sqlite3.Connection, table: str) -> bo
             ordered_cols = [c for c in dest_cols if c in df.columns]
             df2 = df[ordered_cols]
             write_df(df2, pg, table, replace=False)
-            print("   ✅ Appended (schemas compatible)")
+            print("   [EMOJI] Appended (schemas compatible)")
             return True
         else:
-            print(f"   ⚠️ Schema mismatch. Missing in destination: {missing[:8]}{' ...' if len(missing)>8 else ''}")
-            print("   🔁 Replacing destination table to match source schema (one-time destructive change)")
+            print(f"   [EMOJI] Schema mismatch. Missing in destination: {missing[:8]}{' ...' if len(missing)>8 else ''}")
+            print("   [EMOJI] Replacing destination table to match source schema (one-time destructive change)")
             write_df(df, pg, table, replace=True)
-            print("   ✅ Replaced & migrated")
+            print("   [EMOJI] Replaced & migrated")
             return True
 
     except Exception as e:
         msg = str(e)
-        print(f"   ❌ Append/Replace failed: {msg}")
+        print(f"   [EMOJI] Append/Replace failed: {msg}")
         # Common recoverable schema/param errors
         hints = (
             "UndefinedColumn", "does not exist", "INSERT has more expressions than target columns",
@@ -242,17 +242,17 @@ def migrate_table(pg: Engine, sqlite_conn: sqlite3.Connection, table: str) -> bo
         )
         if any(h in msg for h in hints):
             try:
-                print("   🔁 Retrying with REPLACE & safe chunks due to error")
+                print("   [EMOJI] Retrying with REPLACE & safe chunks due to error")
                 write_df(df, pg, table, replace=True)
-                print("   ✅ Replaced & migrated (retry)")
+                print("   [EMOJI] Replaced & migrated (retry)")
                 return True
             except Exception as e2:
-                print(f"   ❌ Replace retry failed: {e2}")
+                print(f"   [EMOJI] Replace retry failed: {e2}")
         return False
 
 
 def ensure_core_schemas(pg: Engine) -> bool:
-    print("\n🏗️ Ensuring essential table schemas exist (non-destructive)")
+    print("\n[EMOJI] Ensuring essential table schemas exist (non-destructive)")
     ddls = {
         "games": """
             CREATE TABLE IF NOT EXISTS games (
@@ -310,10 +310,10 @@ def ensure_core_schemas(pg: Engine) -> bool:
         with pg.begin() as c:
             for t, ddl in ddls.items():
                 c.execute(text(ddl))
-                print(f"   ✅ ensured: {t}")
+                print(f"   [EMOJI] ensured: {t}")
         return True
     except Exception as e:
-        print(f"   ❌ Schema ensure failed: {e}")
+        print(f"   [EMOJI] Schema ensure failed: {e}")
         return False
 
 
@@ -334,17 +334,17 @@ def table_count(pg: Engine, name: str) -> int:
 
 
 def verify_counts(pg: Engine, tables: Sequence[str]) -> None:
-    print("\n🔍 Verifying migration counts (Postgres)")
+    print("\n[EMOJI] Verifying migration counts (Postgres)")
     try:
         with pg.connect() as conn:
             for t in tables:
                 try:
                     n = conn.execute(text(f'SELECT COUNT(*) FROM "{t}"')).scalar() or 0
-                    print(f"   📊 {t}: {int(n):,} rows")
+                    print(f"   [EMOJI] {t}: {int(n):,} rows")
                 except Exception as e:
-                    print(f"   ❌ {t}: {e}")
+                    print(f"   [EMOJI] {t}: {e}")
     except Exception as e:
-        print(f"   ❌ Verification failed: {e}")
+        print(f"   [EMOJI] Verification failed: {e}")
 
 
 def maybe_fill_games_from_backup(pg: Engine, sqlite_conn: sqlite3.Connection) -> None:
@@ -356,16 +356,16 @@ def maybe_fill_games_from_backup(pg: Engine, sqlite_conn: sqlite3.Connection) ->
         except Exception:
             df_backup = pd.DataFrame()
         if not df_backup.empty:
-            print("\n🩹 games is empty; filling from games_backup...")
+            print("\n[EMOJI] games is empty; filling from games_backup...")
             df_backup = normalize_games_df(df_backup)
             write_df(df_backup, pg, "games", replace=True)
-            print("   ✅ games populated from games_backup")
+            print("   [EMOJI] games populated from games_backup")
         else:
-            print("\nℹ️ games is empty and games_backup not found or empty; skipping fill.")
+            print("\n[EMOJI] games is empty and games_backup not found or empty; skipping fill.")
 
 
 def main():
-    print("🚀 MIGRATING BETTR BOT TO CLOUD DATABASE")
+    print("[MIGRATION] MIGRATING BETTR BOT TO CLOUD DATABASE")
     print("=" * 56)
     # Connections
     try:
@@ -374,30 +374,30 @@ def main():
         pg = connect_postgres(POSTGRES_URL)
         with pg.connect() as c:
             c.execute(text("SELECT 1")).fetchone()
-        print("✅ Database connections established")
+        print("[OK] Database connections established")
     except Exception as e:
-        print(f"❌ Connection failed: {e}")
+        print(f"[ERROR] Connection failed: {e}")
         return
 
     if not ensure_core_schemas(pg):
-        print("❌ Failed to ensure schemas; aborting.")
+        print("[ERROR] Failed to ensure schemas; aborting.")
         return
 
     tables = list_sqlite_tables(sqlite_conn)
-    print(f"📋 Found {len(tables)} tables in SQLite")
+    print(f"[INFO] Found {len(tables)} tables in SQLite")
 
     essentials = [t for t in ESSENTIAL_TABLES if t in tables]
     others = [t for t in tables if t not in essentials]
 
     ok = fail = 0
-    print("\n📦 Migrating ESSENTIAL tables first...")
+    print("\n[MIGRATION] Migrating ESSENTIAL tables first...")
     for t in essentials:
         if migrate_table(pg, sqlite_conn, t):
             ok += 1
         else:
             fail += 1
 
-    print("\n📦 Migrating remaining tables...")
+    print("\n[MIGRATION] Migrating remaining tables...")
     for t in others:
         if migrate_table(pg, sqlite_conn, t):
             ok += 1
@@ -407,9 +407,9 @@ def main():
     # If games is empty but games_backup has data, fill it
     maybe_fill_games_from_backup(pg, sqlite_conn)
 
-    print("\n🎉 MIGRATION COMPLETE")
-    print(f"✅ Successful: {ok}")
-    print(f"❌ Failed: {fail}")
+    print("\n[SUCCESS] MIGRATION COMPLETE")
+    print(f"[OK] Successful: {ok}")
+    print(f"[ERROR] Failed: {fail}")
 
     # Verify
     verify_sample = list(dict.fromkeys([*essentials, *others[:5]]))
@@ -417,7 +417,7 @@ def main():
 
     sqlite_conn.close()
     pg.dispose()
-    print("\n🌐 Next Steps:")
+    print("\n[INFO] Next Steps:")
     print("1) Point your app at POSTGRES_URL (Render env).")
     print("2) Run app locally against cloud DB to sanity-check pages.")
     print("3) Commit & deploy to Render.")
