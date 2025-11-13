@@ -110,7 +110,7 @@ except Exception as e:
     logger.warning(f"ai_tools import error (ignored): {e}")
     list_value_bets = None  # noqa: F401
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway")
 
 # CRITICAL: Force cloud database usage
 USE_CLOUD_DB = True

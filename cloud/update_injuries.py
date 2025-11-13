@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import requests
 
 # Cloud PostgreSQL
-DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
+DATABASE_URL = "postgresql://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway"
 
 def get_engine():
     """Get cloud database engine"""

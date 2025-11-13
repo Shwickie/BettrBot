@@ -6,7 +6,7 @@ Find ALL team name variations in the database
 from sqlalchemy import create_engine, text
 import pandas as pd
 
-DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
+DATABASE_URL = "postgresql://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway"
 
 def find_all_names():
     print("ALL TEAM NAME VARIATIONS IN DATABASE")

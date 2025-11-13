@@ -6,7 +6,7 @@ Check what 2025 games are ACTUALLY in the database
 from sqlalchemy import create_engine, text
 import pandas as pd
 
-DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
+DATABASE_URL = "postgresql://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway"
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
 print("🔍 CHECKING 2025 GAMES IN DATABASE")

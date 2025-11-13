@@ -21,8 +21,13 @@ if str(ROOT) not in sys.path:
 def setup_cloud_environment():
     """Setup for cloud deployment with database connection"""
     try:
-        DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
-        
+        # Use environment variable or fallback to Railway
+        DATABASE_URL = os.environ.get('DATABASE_URL') or "postgresql://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway"
+
+        # Handle both postgres:// and postgresql:// formats
+        if DATABASE_URL.startswith('postgres://'):
+            DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+
         print(f"Connecting to database...")
         
         engine = create_engine(

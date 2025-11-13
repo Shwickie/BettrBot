@@ -34,7 +34,7 @@ while not (REPO_ROOT / '.git').exists() and REPO_ROOT.parent != REPO_ROOT:
 # FIXED: Use Session Pooler (IPv4 + port 5432)
 # SIMPLIFIED DATABASE SETUP
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway")
 
 USE_CLOUD_DB = True
 

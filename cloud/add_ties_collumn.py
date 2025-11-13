@@ -5,7 +5,7 @@ Add ties column to team_season_summary table
 
 from sqlalchemy import create_engine, text
 
-DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
+DATABASE_URL = "postgresql://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway"
 
 def add_ties_column():
     print("Adding ties column to team_season_summary...")

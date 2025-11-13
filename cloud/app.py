@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 os.environ.setdefault('FLASK_ENV', 'production')
 # SIMPLIFIED DATABASE SETUP
 # FIXED: Use Session Pooler (IPv4 compatible, port 5432)
-DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
+DATABASE_URL = "postgresql://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway"
 # Remove prefix if present
 if DATABASE_URL.startswith("DATABASE_URL="):
     DATABASE_URL = DATABASE_URL[13:].strip()

@@ -11,7 +11,7 @@ from datetime import datetime
 import difflib
 
 # Cloud database
-DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
+DATABASE_URL = "postgresql://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway"
 
 def get_engine():
     return create_engine(
@@ -235,9 +235,10 @@ def calculate_injury_impact():
                 impact_by_team[team] = 0
             impact_by_team[team] += impact
         
-        # Update validation table - FIXED: Use string formatting instead of cast
-        conn.execute(text("DELETE FROM ai_injury_validation_detail"))
-        
+        # Update validation table - Use UPSERT instead of DELETE + INSERT
+        # First, delete only TEAM_TOTAL records (not all data)
+        conn.execute(text("DELETE FROM ai_injury_validation_detail WHERE inj_name = 'TEAM_TOTAL'"))
+
         for team, impact in impact_by_team.items():
             impact_str = str(round(impact, 2))  # Convert to string in Python
             conn.execute(text("""

@@ -56,7 +56,7 @@ if PROJECT_ROOT not in sys.path:
 # FIXED: Use Transaction Pooler (IPv4 compatible)
 # FIXED: Use Session Pooler (IPv4 + port 5432)
 # SIMPLIFIED DATABASE SETUP
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway")
 
 # CRITICAL: Force cloud database usage
 USE_CLOUD_DB = True
@@ -369,7 +369,7 @@ def test_fixed_function():
     # CRITICAL FIX: Use direct connection, not pooler
     if DATABASE_URL:
         # Remove pooler reference and use direct port
-        DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
+        DATABASE_URL = "postgresql://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway"
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
 
     USE_CLOUD_DB = DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg2://"))

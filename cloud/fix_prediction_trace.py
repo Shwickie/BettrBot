@@ -199,7 +199,7 @@ def diagnose_power_rankings():
         import pandas as pd
         
         DATABASE_URL = os.environ.get("DATABASE_URL", 
-            "postgresql+psycopg2://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway")
+            "postgresql+psycopg2://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway")
         
         engine = create_engine(DATABASE_URL, pool_pre_ping=True)
         

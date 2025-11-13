@@ -13,7 +13,7 @@ from datetime import datetime
 LOCAL_DB = r"E:/Bettr Bot/betting-bot/data/betting.db"
 
 # Cloud PostgreSQL
-CLOUD_DB = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
+CLOUD_DB = "postgresql://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway"
 
 def migrate_injuries():
     """Copy injury data from local to cloud with proper types"""

@@ -16,8 +16,10 @@ SPORT = 'americanfootball_nfl'
 REGIONS = 'us'
 ODDS_FORMAT = 'american'
 
-# Database Configuration  
-DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
+# Database Configuration - Use environment variable or fallback to Railway
+DATABASE_URL = os.environ.get('DATABASE_URL') or "postgresql://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway"
+if DATABASE_URL.startswith('postgres://'):
+    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
 
 # Team name mapping
 TEAM_MAPPING = {
@@ -55,17 +57,29 @@ class CloudOddsFetcher:
         return TEAM_MAPPING.get(api_team_name, api_team_name)
     
     def clear_old_odds(self):
-        """Clear odds older than 24 hours"""
+        """Clear odds older than 24 hours AND odds for games that already started"""
         print("Clearing old odds...")
-        
+
         try:
             with self.engine.connect() as conn:
-                result = conn.execute(text("""
-                    DELETE FROM odds 
+                # Delete odds older than 24 hours
+                result1 = conn.execute(text("""
+                    DELETE FROM odds
                     WHERE timestamp < NOW() - INTERVAL '24 hours'
                 """))
+
+                # Delete odds for games that already started (past games)
+                result2 = conn.execute(text("""
+                    DELETE FROM odds
+                    WHERE game_id IN (
+                        SELECT game_id FROM games
+                        WHERE game_date < CURRENT_DATE
+                    )
+                """))
+
                 conn.commit()
-                print(f"  Cleared {result.rowcount} old odds records")
+                total_cleared = result1.rowcount + result2.rowcount
+                print(f"  Cleared {total_cleared} old odds records (stale: {result1.rowcount}, past games: {result2.rowcount})")
         except Exception as e:
             print(f"  Warning: Could not clear old odds: {e}")
     

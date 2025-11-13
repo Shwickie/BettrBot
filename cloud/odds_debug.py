@@ -17,7 +17,7 @@ REGIONS = 'us'
 ODDS_FORMAT = 'american'
 
 # Database Configuration
-DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
+DATABASE_URL = "postgresql://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway"
 
 # Team name mapping
 TEAM_MAPPING = {

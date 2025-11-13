@@ -9,7 +9,7 @@ from datetime import datetime, date, timedelta
 from sqlalchemy import create_engine, text
 
 def main():
-    DATABASE_URL = "postgresql://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway"
+    DATABASE_URL = "postgresql://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway"
     if not DATABASE_URL:
         print("ERROR: No DATABASE_URL environment variable")
         return

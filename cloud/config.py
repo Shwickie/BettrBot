@@ -15,9 +15,9 @@ class Config:
     
     # Database Configuration
     if IS_CLOUD or IS_PRODUCTION:
-        # Production/Cloud database (PostgreSQL)
-        DATABASE_URL = os.environ.get('DATABASE_URL') or "postgresql://postgres:ApeNuts123!@db.bmfwrdsastxbsbubuuhs.supabase.co:5432/postgres"
-        
+        # Production/Cloud database (PostgreSQL - Railway)
+        DATABASE_URL = os.environ.get('DATABASE_URL') or "postgresql://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway"
+
         # Handle both formats
         if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
             DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)

@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, text
 import pandas as pd
 
 # Your database URL
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://postgres:QAmpFszazifVixDGzdvWNXJTdzoXFgYw@maglev.proxy.rlwy.net:48520/railway")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://postgres:YviqtXqcsCIgRzSCofNjbfwgjkYNLydX@maglev.proxy.rlwy.net:54187/railway")
 
 ENGINE = create_engine(DATABASE_URL, pool_pre_ping=True)
 
